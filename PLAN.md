@@ -12,14 +12,33 @@ open so it can be added later without touching the app.
 
 Small, and it stops known-wrong numbers from getting frozen into the app.
 
-- [ ] `git init`, create the folder structure from CLAUDE.md, add `.gitignore`
-      covering `*.rds`, `.Rproj.user/`, `.Rhistory`
-- [ ] Fix the CSW% line (`%in%`, `"called_strike"`)
-- [ ] Add `csw_pct = "CSW%"` to `arsenal_gt()`'s `cols_label()`
-- [ ] Verify against a known pitcher that CSW% is no longer equal to whiff rate
+- [x] `git init`, create the folder structure from CLAUDE.md, add `.gitignore`
+      covering `*.rds`, `.Rproj.user/`, `.Rhistory`. `data/` needs the two-line
+      `data/*` plus `!data/.gitkeep` form, or the folder will not survive a clone
+- [x] ~~Fix the CSW% line~~ and ~~add `csw_pct` to `cols_label()`~~. Both were
+      already correct in the source. See the known bugs section of CLAUDE.md
+- [x] Verify on a known pitcher that CSW% is computed as defined
 
-**Check.** `arsenal_gt(arsenal_table(pl_trim, "R", stuff))` renders with a CSW%
-column whose values are meaningfully higher than the whiff column.
+**Check.** For one pitcher, with the `MIN_PITCH_COUNT` filter applied so the check
+sees the same rows `arsenal_table()` does:
+
+```
+csw_pct == round((cstr + whiffs) / n * 100, 1)    hand-computed, must match
+csw_pct >= swstr_pct                              strict wherever cstr > 0
+```
+
+The original check here compared CSW% against the whiff column, expecting CSW% to
+be "meaningfully higher". That is wrong and would fail correct code. The two use
+different denominators, whiff% off swings and CSW% off all pitches, and on 2026
+data whiff% exceeds CSW% for CH (33.9 vs 28.4) and SL (33.8 vs 30.1). The bug this
+guards against collapsed CSW% onto `swstr_pct`, so `swstr_pct` is the right
+comparison.
+
+The inequality is not strict for a pitch type with zero called strikes, which ties
+at zero, and the `MIN_PITCH_COUNT` filter matters: without it a 1-pitch `EP` row
+that the real pipeline drops fails the check.
+
+Ran 2026-08-19, PASS. Driver kept at `tests/phase0_csw_check.R`.
 
 ---
 

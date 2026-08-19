@@ -181,14 +181,27 @@ from `Learning_to_pull_stats.R`, which is what generated the existing reports.
 - No em dashes anywhere, including in code comments and UI copy
 - gt for tables, ggplot2 for plots, existing formatting preserved
 
-## Known bugs in the source file, fix before porting
+## Known bugs in the source file
 
-- `Learning_to_pull_stats.R` line 350 has `% in %` (spaces, will error) and
-  `"called strike"` (missing underscore, matches nothing). Correct form is
-  `mean(description %in% c("called_strike", whiff_desc))`.
-- `arsenal_gt()` `cols_label()` has no entry for `csw_pct`.
-- Line 530 builds `rico_tbl_L` by filtering `stand == "R"`, so that table was
-  mislabeled.
+Verified against the source on 2026-08-19. The file is
+`05_PlayerEval/scripts/Learning to pull stats.R`, with spaces in the name, not
+`Learning_to_pull_stats.R`.
+
+**Fixed already, do not re-fix.** Two entries listed here previously had been
+corrected in the source at some point and the note was never updated. Both were
+checked by grep, not by reading:
+
+- The CSW line, L349, already reads
+  `mean(description %in% c("called_strike", whiff_desc))`. There is no spaced
+  `% in %` anywhere in the file and no `"called strike"` without the underscore.
+- `arsenal_gt()`'s `cols_label()` already has `csw_pct = "CSW%"` at L365.
+
+**Still real.** L529 builds `rico_tbl_L` by filtering `stand == "R"`, so that
+table was mislabeled. It is a top-level analysis call, so the Phase 1 split
+deletes it along with every other top-level call rather than fixing it in place.
+
+The two fixed entries are kept here rather than deleted because the CSW typo is
+the origin of hard rule 4 above, and that rule is still live.
 
 ## Deployment
 
