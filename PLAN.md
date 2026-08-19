@@ -48,20 +48,40 @@ No app yet. The goal is that a fresh R session plus five `source()` calls gives
 every function, which permanently kills the re-paste bug class that has already
 cost two silent wrong numbers.
 
-- [ ] `R/theme.R`, `R/features.R`, `R/plots.R`, `R/tables.R`, `R/stuff.R`
-- [ ] Move constants (`MIN_PITCH_COUNT`, `KDE_BW`, `KDE_MIN_N`, `pitch_colors`,
+- [x] `R/theme.R`, `R/features.R`, `R/plots.R`, `R/tables.R`, `R/stuff.R`
+- [x] Move constants (`MIN_PITCH_COUNT`, `KDE_BW`, `KDE_MIN_N`, `pitch_colors`,
       `pitch_text_colors`, `swing_only`, `whiff_desc`) into `theme.R`
-- [ ] Move `FG_TO_SAVANT` and `load_fg_stuff()` into `stuff.R`. Add a resolver
-      that picks the newest export in `fg_stuff/` and returns the export date
-      alongside the grades, so the source note can print it
-- [ ] Add `release_pos_x`, `release_pos_z`, `plate_z` to the `pl_trim` select list
-- [ ] Delete all top-level calls from the R files. Functions only.
+- [x] Move `FG_TO_SAVANT` and `load_fg_stuff()` into `stuff.R`. The export
+      resolver is **deferred to Phase 4**, since nothing before the pitch
+      characteristics tab calls it. `load_fg_stuff()` lost its default path,
+      and `arsenal_gt(tbl, hand, fg_window = NULL)` prints the window instead.
+      When the resolver is written it must key on the date window in the
+      filename, never file mtime: the newest file by mtime is a half-season
+      export, which would put half-season Stuff+ beside full-season rates
+- [x] `PL_TRIM_COLS` in `features.R` is the single contract, 38 columns,
+      resolving the two disagreeing selects toward the wider L168 block, which
+      already carried all three of the named columns
+- [x] Delete all top-level calls from the R files. Functions only.
+- [x] Scrape functions moved to `scripts/update_data.R`, functions only
 
 `arsenal_table()` keeps its `stuff_all` argument unchanged. Do not inline the
 FanGraphs read into it.
 
-**Check.** Restart R, source the five files, run every plot and table on one
-pitcher, confirm output is identical to the current reports.
+**Check.** `Rscript scripts/phase1_check.R`. Runs the original definitions and
+the new `R/` files over one frozen fixture in separate subprocesses and compares
+14 artifacts.
+
+Not against the existing PDF reports. The Statcast store has been updated since
+those rendered, so correct code produces different numbers and that check would
+send you hunting a bug that does not exist. A pure refactor is tested old code
+against new code on identical input.
+
+Two differences are expected and named in the script: `plot_movement`, whose
+`set.seed(3)` is a deliberate change from the original's 42, and `arsenal_gt`'s
+source note. The check fails on any other difference, and equally if an expected
+difference disappears, since that means an intended change was reverted.
+
+Ran 2026-08-19, PASS.
 
 ---
 
@@ -127,9 +147,15 @@ Order matters. Each becomes a Shiny module in `R/mod_*.R`.
       export date in the source note
 - [ ] Heatmaps. Slowest render, so this is where `bindCache()` earns its place
 
-Handedness handling. `plot_usage`, `plot_movement`, and `plot_velo` ignore `stand`
-entirely, so they take one call. `arsenal_table`, `count_usage_tbl`, and
-`plot_heatmap` filter on `stand` internally and need the argument.
+Handedness handling. Three functions take one call and three take two, but not
+for the same reason, so do not collapse the two cases.
+
+- `plot_movement` and `plot_velo` genuinely ignore `stand`. One call, no argument.
+- `plot_usage` reads `stand` and renders both sides at once as a diverging bar.
+  One call, no argument, but it is not ignoring handedness. Do not "fix" it to
+  take a `hand` argument, that would destroy the two-sided chart.
+- `arsenal_table`, `count_usage_tbl`, and `plot_heatmap` filter to one side
+  internally and need the argument. Two calls each.
 
 Half-season toggle. 1H and 2H are presets on the date input, not a second filter.
 Wire the buttons to `updateDateRangeInput()` so there is one source of truth.
