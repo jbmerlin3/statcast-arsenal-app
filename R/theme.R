@@ -1,7 +1,7 @@
 # theme.R
 #
-# Constants shared across the other R/ files. No functions, no library() calls,
-# nothing here executes against data.
+# Constants shared across the other R/ files, plus one pure label helper. No
+# library() calls, nothing here executes against data.
 #
 # Source this first. pitch_text_colors is derived from pitch_colors at top level,
 # so it is the one ordering dependency in the file.
@@ -26,6 +26,25 @@ pitch_colors <- c(
 # reuses its fill color.
 pitch_text_colors <- pitch_colors
 pitch_text_colors[c("SL", "ST")] <- c("#B59410", "#B59410")
+
+
+# ---- Batter side labels ------------------------------------------------------
+
+#' Display label for a handedness filter
+#'
+#' switch() with no fallthrough, so an unrecognised value stops here. The two gt
+#' functions previously wrote `if (hand == "R") "vs RHH" else "vs LHH"`, and that
+#' else meant a third value would have been titled "vs LHH" over pooled data:
+#' wrong label, right numbers, no error.
+#'
+#' "All" means no stand filter at all, not a third batter side.
+hand_label <- function(hand) {
+  switch(hand,
+    R   = "vs RHH",
+    L   = "vs LHH",
+    All = "vs All Batters",
+    stop("unknown hand: ", hand, ". Expected R, L, or All.", call. = FALSE))
+}
 
 
 # ---- Sample floors and smoothing ---------------------------------------------

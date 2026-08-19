@@ -132,8 +132,15 @@ plot_heatmap <- function(df, hand) {
   situations <- list("0-0"=c("0-0"), "Hitter Ahead"=c("1-0","2-0","3-0","2-1","3-1"),
                      "Two Strikes"=c("0-2","1-2","2-2","3-2"))
   sit_levels <- names(situations)
+  # "All" pools both batter sides. That roughly doubles per-panel n, so more
+  # panels clear KDE_MIN_N and get a density surface instead of the white-dot
+  # fallback. Safe here because KDE_BW is 1.0 ft in x while the measured gap
+  # between the two sides' mean locations runs 0.19 to 0.79 ft, so the bandwidth
+  # smooths over the separation rather than showing two false modes. It does
+  # blur the platoon pattern, which is usually the point of this chart.
+  if (hand != "All") df <- filter(df, stand == hand)
   base <- df |>
-    filter(stand == hand, !is.na(plate_x), !is.na(plate_z)) |>
+    filter(!is.na(plate_x), !is.na(plate_z)) |>
     # Negate plate_x to draw from the catcher's view, which is how a hitting
     # coach reads a location chart.
     mutate(plate_x = -plate_x, cnt = paste(balls, strikes, sep = "-"), pitch_type = droplevels(pitch_type))

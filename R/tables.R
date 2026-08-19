@@ -26,7 +26,10 @@ library(gt)
 #' csw_pct is over all pitches, and xwoba is weighted by woba_denom so only
 #' PA-ending rows contribute.
 arsenal_table <- function(df, hand, stuff_all) {
-  df <- df |> filter(stand == hand) |> mutate(pitch_type = droplevels(pitch_type))
+  # "All" pools both batter sides rather than selecting a third one, so the
+  # filter is skipped entirely. For "L" and "R" this is identical to before.
+  if (hand != "All") df <- filter(df, stand == hand)
+  df <- df |> mutate(pitch_type = droplevels(pitch_type))
   df |>
     group_by(pitch_type) |>
     summarise(
@@ -63,7 +66,7 @@ arsenal_table <- function(df, hand, stuff_all) {
 #' A missing window prints as missing rather than falling back to a generic
 #' note. A stale export is invisible on the page otherwise, which is the failure
 #' this note exists to prevent.
-arsenal_gt <- function(tbl, hand, fg_window = NULL) {
+arsenal_gt <- function(tbl, hand, fg_window = NULL, label = hand_label(hand)) {
   source_note <- if (is.null(fg_window)) {
     "Stuff+ from FanGraphs. Export window not supplied."
   } else {
@@ -77,7 +80,7 @@ arsenal_gt <- function(tbl, hand, fg_window = NULL) {
       ivb = "IVB", hb = "HB", spin = "SPIN", strike_pct = "STRIKE%", whiff_pct = "WHIFF%", csw_pct = "CSW%",
       zone_pct = "IN-ZONE%", chase_pct = "CHASE%", xwoba = "xwOBA", stuff_plus = "Stuff+"
     ) |>
-    tab_header(title = paste0("PITCH CHARACTERISTICS (vs ", if (hand == "R") "RHH" else "LHH", ")")) |>
+    tab_header(title = paste0("PITCH CHARACTERISTICS (", label, ")")) |>
     cols_align("center") |>
     cols_width(everything() ~ px(80)) |>
     tab_style(cell_borders(sides = c("top", "bottom"), color = "black", weight = px(2)), cells_column_labels()) |>
@@ -120,7 +123,10 @@ arsenal_gt <- function(tbl, hand, fg_window = NULL) {
 #' if they do. The heatmaps use three coarser buckets instead, since a KDE needs
 #' a bigger per-panel sample. See CLAUDE.md, count buckets.
 count_usage_tbl <- function(df, hand) {
-  df <- df |> filter(stand == hand) |> mutate(pitch_type = droplevels(pitch_type))
+  # "All" pools both batter sides rather than selecting a third one, so the
+  # filter is skipped entirely. For "L" and "R" this is identical to before.
+  if (hand != "All") df <- filter(df, stand == hand)
+  df <- df |> mutate(pitch_type = droplevels(pitch_type))
   buckets <- list("All Counts"=NULL, "Early Count"=c("0-0","0-1","1-0"),
                   "Pitcher Ahead"=c("0-1","0-2","1-2","2-2"),
                   "Pitcher Behind"=c("1-0","2-0","3-0","2-1","3-1"),
@@ -141,10 +147,9 @@ count_usage_tbl <- function(df, hand) {
 
 
 #' Render the usage by count table
-count_usage_gt <- function(wide, hand) {
-  hand_label <- if (hand == "R") "vs RHH" else "vs LHH"
+count_usage_gt <- function(wide, hand, label = hand_label(hand)) {
   g <- wide |> gt() |> cols_label(pitch_type = "PITCH") |>
-    tab_header(title = paste("USAGE BY COUNT", hand_label)) |> cols_align("center") |>
+    tab_header(title = paste("USAGE BY COUNT", label)) |> cols_align("center") |>
     fmt_number(columns = -pitch_type, decimals = 1, pattern = "{x}%") |>
     tab_style(cell_text(weight = "bold"), cells_body(columns = "All Counts")) |>
     tab_style(cell_borders(sides = c("top","bottom"), color = "black", weight = px(2)),
