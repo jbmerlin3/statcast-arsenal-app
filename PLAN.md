@@ -46,11 +46,41 @@ pitcher, confirm output is identical to the current reports.
 
 ---
 
-## Phase 2. League reference
+## Phase 2. Minimal app
+
+One tab. Resist adding a second.
+
+- [ ] `app.R` with `selectizeInput` for pitcher (server-side, the index is large),
+      `dateRangeInput`, and a single `plotOutput` for `plot_movement()`
+- [ ] One reactive, `pitcher_data()`, that filters `app_data` to the selected
+      pitcher and date range. Every downstream output depends on it and on
+      nothing else.
+- [ ] Load `app_data.rds` at global scope, outside `server`, so it is shared
+      across sessions rather than reloaded per user. `league_ref.rds` does not
+      exist yet and is not needed to render a movement chart. It joins the same
+      global block in Phase 3
+- [ ] `data/app_data.rds` must exist before the app can start, and no earlier
+      phase creates it. Write it via step 3 of `scripts/update_data.R`, the
+      trimmed `pl_trim` column set, per the daily chain in CLAUDE.md
+
+**Check.** Change the pitcher, the plot changes. Change the date range, the plot
+changes. Nothing else exists yet.
+
+**This is the phase where Jonathan should be typing.** Claude Code explains the
+reactive graph, Jonathan writes `app.R`.
+
+---
+
+## Phase 3. League reference
 
 The precomputed context object. This is what makes the app a scouting tool rather
 than a chart viewer, and it has to be precomputed because running the per-pitcher
 league query inside a reactive will hang on every input change.
+
+Ordering note. This trails the minimal app deliberately, because nothing in the app
+needs `league_ref.rds` to render a movement chart and a working screen comes first.
+Running later does not make it reactive. It is still built on disk by the script
+below, for the reason in the paragraph above.
 
 - [ ] `scripts/build_league_ref.R`
 - [ ] Grain is `pitch_type` x `p_throws` x `stand` x `count_bucket` x `metric`
@@ -68,31 +98,11 @@ the grain is wrong.
 
 ---
 
-## Phase 3. Minimal app
-
-One tab. Resist adding a second.
-
-- [ ] `app.R` with `selectizeInput` for pitcher (server-side, the index is large),
-      `dateRangeInput`, and a single `plotOutput` for `plot_movement()`
-- [ ] One reactive, `pitcher_data()`, that filters `app_data` to the selected
-      pitcher and date range. Every downstream output depends on it and on
-      nothing else.
-- [ ] Load `app_data.rds` and `league_ref.rds` at global scope, outside `server`,
-      so they are shared across sessions rather than reloaded per user
-
-**Check.** Change the pitcher, the plot changes. Change the date range, the plot
-changes. Nothing else exists yet.
-
-**This is the phase where Jonathan should be typing.** Claude Code explains the
-reactive graph, Jonathan writes `app.R`.
-
----
-
 ## Phase 4. Remaining tabs, one at a time
 
 Order matters. Each becomes a Shiny module in `R/mod_*.R`.
 
-- [ ] Movement and velocity (refactor Phase 3 into a module)
+- [ ] Movement and velocity (refactor Phase 2 into a module)
 - [ ] Usage. `plot_usage()` plus `count_usage_gt()` for both hands
 - [ ] Pitch characteristics. `arsenal_gt()` with the FanGraphs grades and the
       export date in the source note
