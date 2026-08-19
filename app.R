@@ -1,10 +1,12 @@
 # app.R
 #
-# Phase 2, the minimal app. One tab, one reactive, one output.
-#
 # Thin by design. Every function it calls lives in R/, so the same code path
 # serves the app and the console. Logic added here rather than in R/ becomes
 # untestable outside a running server.
+#
+# Tabs are inline rather than R/mod_*.R modules. At this size a module would be
+# a function call with NS() ceremony around it: no tab owns an input of its own,
+# and none is instantiated twice. See CLAUDE.md for the trigger to revisit.
 
 library(shiny)
 library(dplyr)
@@ -26,13 +28,24 @@ library(ggplot2)
 
 app_data     <- load_app_data()
 player_index <- build_player_index(app_data)
+HALVES       <- season_halves(app_data)
 
 # game_date is stored as character. Keep the bounds as Date for the input widget
 # and convert back at comparison time, see pitcher_data() below.
-DATE_MIN <- as.Date(min(app_data$game_date))
-DATE_MAX <- as.Date(max(app_data$game_date))
+DATE_MIN <- HALVES$full[1]
+DATE_MAX <- HALVES$full[2]
 
 DEFAULT_PITCHER <- 702070   # Cameron, so the page renders something on load
+
+# 1H and 2H are omitted entirely when no break has happened yet, rather than
+# rendering buttons that would set an invented boundary.
+preset_buttons <- if (is.null(HALVES$first)) {
+  actionButton("preset_all", "All", class = "btn-sm")
+} else {
+  tagList(actionButton("preset_all", "All", class = "btn-sm"),
+          actionButton("preset_1h",  "1H",  class = "btn-sm"),
+          actionButton("preset_2h",  "2H",  class = "btn-sm"))
+}
 
 
 ui <- fluidPage(
@@ -46,12 +59,27 @@ ui <- fluidPage(
       dateRangeInput("dates", "Date range",
                      start = DATE_MIN, end = DATE_MAX,
                      min   = DATE_MIN, max = DATE_MAX),
+      div(style = "margin-bottom:15px;", preset_buttons),
+      radioButtons("hand", "Batter side",
+                   choices  = c("All" = "All", "vs LHH" = "L", "vs RHH" = "R"),
+                   selected = "All", inline = TRUE),
       helpText("Pitch types under ", MIN_PITCH_COUNT,
                " pitches in the selected window are dropped.")
     ),
     mainPanel(
       width = 9,
-      plotOutput("movement", height = "620px")
+      tabsetPanel(
+        id = "tabs",
+        tabPanel("Movement", plotOutput("movement", height = "620px")),
+        tabPanel("Usage",
+                 plotOutput("usage", height = "420px"),
+                 # Said out loud because the batter side control is visible and
+                 # this chart deliberately ignores it. Without the note the
+                 # toggle looks broken on this tab.
+                 helpText("The usage chart always shows both batter sides. ",
+                          "The table below follows the Batter side selector."),
+                 gt::gt_output("usage_table"))
+      )
     )
   )
 )
@@ -67,17 +95,27 @@ server <- function(input, output, session) {
                        selected = DEFAULT_PITCHER,
                        server   = TRUE)
 
-  # The one reactive. Reading input$pitcher and input$dates here is what
-  # subscribes to them: Shiny records the reads during evaluation, it does not
-  # take a declared list. Lazy and cached, so it recomputes once per
-  # invalidation no matter how many outputs ask for it. That is the whole reason
-  # to have it as a reactive rather than filtering inside renderPlot, and it is
-  # what keeps Phase 4's six outputs from running six identical filters over
-  # 548k rows on every input change.
+  # Presets write to the date input rather than acting as a second filter, so
+  # the input always shows the window actually applied and the two can never
+  # disagree.
+  set_range <- function(r) updateDateRangeInput(session, "dates", start = r[1], end = r[2])
+  observeEvent(input$preset_all, set_range(HALVES$full))
+  if (!is.null(HALVES$first)) {
+    observeEvent(input$preset_1h, set_range(HALVES$first))
+    observeEvent(input$preset_2h, set_range(HALVES$second))
+  }
+
+  # The one data reactive. It is deliberately NOT filtered by batter side.
+  # arsenal_table(), count_usage_tbl() and plot_heatmap() filter `stand`
+  # internally and take hand as an argument, while plot_usage() reads `stand`
+  # itself to draw both sides at once. Filtering here would double-filter the
+  # first three and silently halve the usage chart.
+  #
+  # It also means outputs that never read input$hand do not re-render when the
+  # toggle changes, because Shiny discovers dependencies by watching which
+  # inputs are read. That falls out for free rather than needing any condition.
   pitcher_data <- reactive({
     req(input$pitcher, input$dates)
-
-    # selectize returns a character string, and the pitcher column is integer.
     id <- as.integer(input$pitcher)
 
     # Compare character to character. Mixed character/Date comparison happens to
@@ -91,8 +129,6 @@ server <- function(input, output, session) {
       shape_arsenal()
 
     # An empty window is a normal thing for a user to select, not an error.
-    # Without this the plot errors on an empty factor and the page shows a stack
-    # trace instead of a sentence.
     validate(need(nrow(d) > 0,
                   "No pitches for this pitcher in the selected window."))
     d
@@ -100,6 +136,14 @@ server <- function(input, output, session) {
 
   output$movement <- renderPlot({
     plot_movement(pitcher_data())
+  })
+
+  output$usage <- renderPlot({
+    plot_usage(pitcher_data())
+  })
+
+  output$usage_table <- gt::render_gt({
+    count_usage_gt(count_usage_tbl(pitcher_data(), input$hand), input$hand)
   })
 }
 

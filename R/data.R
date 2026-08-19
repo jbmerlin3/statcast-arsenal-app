@@ -77,3 +77,32 @@ build_player_index <- function(app_data) {
 player_choices <- function(player_index) {
   stats::setNames(player_index$pitcher, player_index$display)
 }
+
+
+#' First and second half date ranges, derived from the schedule
+#'
+#' The half boundary is the All-Star break, found as the longest gap between
+#' consecutive game dates rather than hardcoded. In 2026 that is 2026-07-12 to
+#' 2026-07-16, the only gap over one day all season.
+#'
+#' The original script hardcoded 2026-07-17, which put 2026-07-16 in the first
+#' half. That day holds one game and 258 pitches, so it changed nothing
+#' materially, but deriving the boundary is right and survives a season whose
+#' break falls elsewhere.
+#'
+#' Returns `first` and `second` as NULL when no gap of at least `min_gap` days
+#' exists, which is the case early in a season. Callers should omit the presets
+#' rather than invent a boundary.
+season_halves <- function(app_data, min_gap = 3) {
+  d <- sort(unique(as.Date(app_data$game_date)))
+  full <- c(d[1], d[length(d)])
+  gaps <- as.numeric(diff(d))
+  if (!length(gaps) || max(gaps) < min_gap) {
+    return(list(full = full, first = NULL, second = NULL, boundary = NULL))
+  }
+  i <- which.max(gaps)
+  list(full     = full,
+       first    = c(d[1], d[i]),
+       second   = c(d[i + 1], d[length(d)]),
+       boundary = d[i + 1])
+}
