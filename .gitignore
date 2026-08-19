@@ -1,0 +1,19 @@
+# R session droppings
+.Rproj.user/
+.Rhistory
+.RData
+.RDataTmp*
+.Rapp.history
+
+# macOS
+.DS_Store
+
+# Pitch data is rebuildable from the daily chain and runs to tens of MB.
+*.rds
+
+# data/ holds the two artifacts the app reads at startup, both rebuilt by
+# scripts/update_data.R. The two-line form is required: a bare `data/` ignores
+# the directory itself, so git never descends into it and the negation below
+# could never re-include anything.
+data/*
+!data/.gitkeep
