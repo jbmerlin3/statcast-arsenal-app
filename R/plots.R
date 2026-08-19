@@ -63,10 +63,14 @@ plot_usage <- function(df) {
 #' The seed is fixed so the same pitcher and window redraw identically. In the
 #' app this matters more than it did for a one-off report, since a redraw that
 #' shuffles the points reads as the data having changed.
+#'
+#' The value 3 is a deliberate choice, not a leftover. The source script used 42
+#' and it was changed on purpose, so do not tidy it back. Which seed does not
+#' matter, but changing it reshuffles every movement chart, so it stays put.
 plot_movement <- function(df) {
   pitch_order <- levels(df$pitch_type)
   usage <- df |> count(pitch_type) |> mutate(k = pmax(1, round(n / sum(n) * 100)))
-  set.seed(42)
+  set.seed(3)
   mv <- map_dfr(pitch_order, function(pt) {
     d <- df |> filter(pitch_type == pt)
     slice_sample(d, n = min(nrow(d), usage$k[usage$pitch_type == pt]))
