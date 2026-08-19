@@ -8,29 +8,66 @@
 library(dplyr)
 
 
-#' Build the pitch-level frame for one pitcher
+#' Row-wise derived columns
 #'
-#' Rare pitch types are dropped before anything is computed, since a 3-pitch
-#' sample produces rate columns that read as real. Pitch type is returned as a
-#' factor ordered by usage, which is what fixes panel and legend order in every
-#' downstream plot, so the ordering is load bearing and not cosmetic.
-build_pitch_level <- function(df, mlb_id) {
-  one <- df |> filter(pitcher == mlb_id)
-  if (nrow(one) == 0) stop("No pitches found for id ", mlb_id)
-  pl <- one |>
-    filter(!is.na(pitch_type), pitch_type != "") |>
-    add_count(pitch_type, name = "pt_n") |>
-    filter(pt_n >= MIN_PITCH_COUNT) |>
+#' Depends only on the pitch itself, never on which other pitches are in the
+#' frame, so this runs once over every pitcher when app_data.rds is built rather
+#' than per query. Idempotent, so re-running it is harmless.
+#'
+#' Savant reports break in feet from the catcher's view. The sign flip on pfx_x
+#' is what makes arm side read positive, per CLAUDE.md.
+add_pitch_features <- function(df) {
+  df |>
     mutate(
-      # Savant reports break in feet from the catcher's view. The sign flip on
-      # pfx_x is what makes arm side read positive, per CLAUDE.md.
       hb = -pfx_x * 12,
       ivb = pfx_z * 12,
       in_zone = as.integer(plate_x >= -0.8291 & plate_x <= 0.8291 &
                              plate_z >= sz_bot & plate_z <= sz_top)
     )
+}
+
+
+#' Per-pitcher, per-window shaping
+#'
+#' Everything here depends on which rows are present, so none of it can be
+#' precomputed and stored.
+#'
+#' pt_n is the reason. It counts a pitch type within the frame it is given, so
+#' it is a function of the selected date window, not a property of the pitch. A
+#' stored season-wide pt_n would let a two-week view keep a pitch type that has
+#' 200 pitches on the season and one in the window. The usage ordering has the
+#' same dependence, which is why the existing pre-break and post-break reports
+#' legitimately show different pitch orders.
+#'
+#' Rare types are dropped before any rate is computed, since a 3-pitch sample
+#' produces rate columns that read as real. The returned factor ordering fixes
+#' panel and legend order in every downstream plot, so it is load bearing rather
+#' than cosmetic.
+#'
+#' Expects a frame already narrowed to one pitcher and one window.
+shape_arsenal <- function(df) {
+  pl <- df |>
+    filter(!is.na(pitch_type), pitch_type != "") |>
+    add_count(pitch_type, name = "pt_n") |>
+    filter(pt_n >= MIN_PITCH_COUNT)
   ord <- pl |> count(pitch_type, sort = TRUE) |> pull(pitch_type)
   pl |> mutate(pitch_type = factor(pitch_type, levels = ord))
+}
+
+
+#' Build the pitch-level frame for one pitcher
+#'
+#' The console and report entry point, unchanged in signature and output. It is
+#' now the composition of the two halves above, so the app and the console run
+#' the same code rather than two implementations that can drift.
+#'
+#' Composition order is deliberate. shape_arsenal() first, then features,
+#' reproduces the original column order [..., pt_n, hb, ivb, in_zone]. The
+#' reverse is numerically identical and silently reorders columns.
+build_pitch_level <- function(df, mlb_id) {
+  one <- df |> filter(pitcher == mlb_id)
+  if (nrow(one) == 0) stop("No pitches found for id ", mlb_id)
+  one |> shape_arsenal() |> add_pitch_features()
 }
 
 
@@ -56,6 +93,14 @@ PL_TRIM_COLS <- c(
   "estimated_woba_using_speedangle", "woba_denom",
   "vx0", "vy0", "vz0", "ax", "ay", "az", "release_pos_y"
 )
+
+
+#' The app_data.rds column set
+#'
+#' PL_TRIM_COLS minus pt_n. pt_n is the one member of the contract that cannot
+#' be stored, because it is a function of the selected window rather than of the
+#' pitch. See shape_arsenal(), which recomputes it per query.
+APP_DATA_COLS <- setdiff(PL_TRIM_COLS, "pt_n")
 
 
 #' Trim a pitch-level frame to the contract
