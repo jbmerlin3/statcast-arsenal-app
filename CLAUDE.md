@@ -72,9 +72,16 @@ statcast-arsenal-app/
 The app never pulls from Savant and never rebuilds the league reference. It reads
 two rds files and renders.
 
-Savant's endpoint uses `game_date_gt` / `game_date_lt`, which are strictly
-greater and less than, so the start date must be `last_date + 1` or the pull
-under-fetches.
+Savant's endpoint uses `game_date_gt` / `game_date_lt`. Both are **inclusive**,
+despite the names, confirmed by probing the endpoint on 2026-08-19:
+`gt=2026-05-05&lt=2026-05-07` returns all three dates, and a single-day request
+with `gt == lt` returns that day's rows rather than zero.
+
+Start the daily pull at `last_date + 1`. Not because anything is strict, but
+because `last_date` is already in the store and an inclusive lower bound would
+re-fetch it. The chunking in `pull_season_statcast()`,
+`ends = starts + chunk_days - 1`, is correct and non-overlapping under inclusive
+bounds, so no day is being dropped.
 
 ## Data contracts
 
@@ -94,6 +101,26 @@ Savant's `player_name` is "Last, First" and needs reformatting for display.
 
 **stuff_all.** A frame with `pitch_type`, `stuff_plus`, `fg_exact`. Produced by
 `load_fg_stuff()` and passed into `arsenal_table()` as an argument. See below.
+
+**game_date is character, not Date.** It arrives that way from Savant and is
+stored that way in `statcast_clean_2026.rds` and `app_data.rds`. Coerce
+explicitly when comparing against a date, `as.character(the_date)`, rather than
+comparing a character column to a `Date`.
+
+Mixed comparison currently gives the right answer, because R renders the `Date`
+back to `"YYYY-MM-DD"` and zero-padded ISO strings sort chronologically. The
+existing pre-break and post-break report splits rely on that and are correct.
+It is still worth not relying on: it holds only while every value stays
+zero-padded ISO, and a single `"2026-7-5"` sorts before `"2026-07-17"` while
+being later in time. Nothing errors when that happens.
+
+**pt_n is not storable.** It counts a pitch type within the frame it is given,
+so it is a function of the selected date window rather than a property of the
+pitch. `app_data.rds` therefore carries `APP_DATA_COLS`, which is
+`PL_TRIM_COLS` minus `pt_n`, and `shape_arsenal()` recomputes it after the date
+filter on every query. The same applies to the usage-ordered `pitch_type`
+factor. A stored season-wide `pt_n` would let a two-week window keep a pitch
+type that has 200 pitches on the season and one in the window.
 
 ## Stuff+, and the one rule that keeps the swap cheap
 
