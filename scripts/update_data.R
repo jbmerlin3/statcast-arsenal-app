@@ -18,6 +18,32 @@ library(purrr)
 library(dplyr)
 
 
+# ---- Paths -------------------------------------------------------------------
+#
+# The season store lives in the monorepo and is shared with 03_ArsenalReports.
+# Overridable so a dry run can point somewhere harmless.
+
+STORE_PATH <- Sys.getenv(
+  "STATCAST_STORE",
+  path.expand("~/Desktop/Baseball Questionnaires/03_ArsenalReports/statcast_clean_2026.rds")
+)
+APP_DATA_PATH <- "data/app_data.rds"
+
+
+#' Write via a temp file and rename
+#'
+#' The store is 89 MB and shared with another project. A saveRDS interrupted
+#' partway leaves a truncated file where a good one used to be, and the pull
+#' that produced it takes minutes to repeat. Rename is atomic on the same
+#' filesystem, so the old file survives until the new one is complete.
+save_rds_atomic <- function(x, path) {
+  tmp <- paste0(path, ".tmp")
+  saveRDS(x, tmp)
+  if (!file.rename(tmp, path)) stop("could not move ", tmp, " into place")
+  invisible(path)
+}
+
+
 #' Pull one Statcast chunk from Baseball Savant
 #'
 #' Retries on failure and returns NULL rather than erroring, so one bad chunk
@@ -136,4 +162,99 @@ build_app_data <- function(sc) {
     filter(!is.na(pitch_type), pitch_type != "") |>
     add_pitch_features() |>
     select(all_of(APP_DATA_COLS))
+}
+
+
+# ---- Step 1: refresh the season store ----------------------------------------
+
+#' The cleaning filter the store was built with
+#'
+#' Regular season only, and a pitch needs a type plus the three fields every
+#' downstream metric depends on. Kept as its own function so the incremental
+#' pull is filtered identically to the original full pull.
+clean_statcast <- function(df) {
+  df |>
+    filter(game_type == "R", pitch_type != "",
+           !is.na(release_speed), !is.na(pfx_x), !is.na(pfx_z))
+}
+
+
+#' Pull new days and fold them into the store
+#'
+#' Starts at `last_date + 1`. Savant's bounds are inclusive, so that is the
+#' first day not already held, see the note on get_statcast_chunk().
+#'
+#' Dedup on game_pk / at_bat_number / pitch_number rather than trusting the
+#' date arithmetic. Savant revises pitch classifications for several days after
+#' a game, so re-pulling a day already held is a normal thing to want to do and
+#' must not double the rows.
+refresh_store <- function(store_path = STORE_PATH, through = Sys.Date()) {
+  sc <- readRDS(store_path)
+  last  <- max(sc$game_date)
+  start <- as.Date(last) + 1
+
+  message("Store holds ", format(nrow(sc), big.mark = ","), " rows through ", last)
+  if (start > through) {
+    message("Nothing to pull, already current through ", through)
+    return(sc)
+  }
+  message("Pulling ", start, " to ", through)
+
+  new_raw <- pull_season_statcast(as.character(start), as.character(through))
+  if (is.null(new_raw) || nrow(new_raw) == 0) {
+    message("Pull returned no rows, store unchanged")
+    return(sc)
+  }
+  new_clean <- clean_statcast(new_raw)
+
+  # Savant has changed its column set before. Say so rather than letting
+  # bind_rows quietly fill a column with NA across half the season.
+  #
+  # in_zone is excluded because the store derives it and Savant never returns
+  # it, so it would warn on every single run. A check that cries wolf daily is
+  # one nobody reads on the day the column set actually changes.
+  DERIVED <- "in_zone"
+  only_new <- setdiff(names(new_clean), names(sc))
+  only_old <- setdiff(setdiff(names(sc), names(new_clean)), DERIVED)
+  if (length(only_new)) warning("Savant returned new columns: ", paste(only_new, collapse = ", "), call. = FALSE)
+  if (length(only_old)) warning("Pull is missing stored columns: ", paste(only_old, collapse = ", "), call. = FALSE)
+
+  out <- bind_rows(sc, new_clean) |>
+    distinct(game_pk, at_bat_number, pitch_number, .keep_all = TRUE)
+
+  # The store carries in_zone, and freshly scraped rows arrive without it.
+  # Recomputed across the whole frame rather than only the new rows: the formula
+  # is identical for existing rows, and this way the column can never be
+  # half-populated.
+  out <- out |> mutate(in_zone = in_zone_flag(plate_x, plate_z, sz_bot, sz_top))
+
+  message("Added ", format(nrow(out) - nrow(sc), big.mark = ","),
+          " rows, now ", format(nrow(out), big.mark = ","), " through ", max(out$game_date))
+  out
+}
+
+
+# ---- The chain ---------------------------------------------------------------
+#
+# Runs when this file is executed with Rscript, not when it is sourced.
+# sys.nframe() is 0 only at the top level of an Rscript invocation.
+#
+# Step 2, rebuilding league_ref.rds, lands in Phase 3 and belongs between these
+# two. The app reads app_data.rds at startup, so its date range follows from
+# step 3 with no separate action.
+
+if (sys.nframe() == 0L) {
+  if (!dir.exists("R")) stop("run this from the repo root: Rscript scripts/update_data.R", call. = FALSE)
+  invisible(lapply(sort(list.files("R", full.names = TRUE)), source))
+
+  message("== Step 1: season store ==")
+  sc <- refresh_store()
+  save_rds_atomic(sc, STORE_PATH)
+
+  message("\n== Step 3: app_data.rds ==")
+  ad <- build_app_data(sc)
+  save_rds_atomic(ad, APP_DATA_PATH)
+  message("Wrote ", APP_DATA_PATH, ", ", format(nrow(ad), big.mark = ","), " rows x ", ncol(ad),
+          " cols, ", round(file.size(APP_DATA_PATH) / 1024^2, 1), " MB")
+  message("App date range is now ", min(ad$game_date), " to ", max(ad$game_date))
 }

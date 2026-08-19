@@ -8,6 +8,22 @@
 library(dplyr)
 
 
+#' Strike zone membership, as a 0/1 integer
+#'
+#' The half-width is the rulebook plate plus a ball radius, in feet. Vertical
+#' bounds are the batter-specific zone Savant reports per pitch, not a constant.
+#'
+#' Its own function because the season store carries `in_zone` too and
+#' `scripts/update_data.R` has to recompute it for newly scraped rows. Two
+#' copies of 0.8291 in two files is exactly how a rate stat drifts from itself.
+#' The drawn zone box in plot_heatmap() is deliberately NOT this: that one is a
+#' rendering coordinate and must not move a rate.
+in_zone_flag <- function(plate_x, plate_z, sz_bot, sz_top) {
+  as.integer(plate_x >= -0.8291 & plate_x <= 0.8291 &
+               plate_z >= sz_bot & plate_z <= sz_top)
+}
+
+
 #' Row-wise derived columns
 #'
 #' Depends only on the pitch itself, never on which other pitches are in the
@@ -21,8 +37,7 @@ add_pitch_features <- function(df) {
     mutate(
       hb = -pfx_x * 12,
       ivb = pfx_z * 12,
-      in_zone = as.integer(plate_x >= -0.8291 & plate_x <= 0.8291 &
-                             plate_z >= sz_bot & plate_z <= sz_top)
+      in_zone = in_zone_flag(plate_x, plate_z, sz_bot, sz_top)
     )
 }
 
