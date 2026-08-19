@@ -8,9 +8,7 @@
 #   2. Rebuild data/league_ref.rds.
 #   3. Write data/app_data.rds, the trimmed column set.
 #
-# Phase 1 moves the two scrape functions here so they stop living in the old
-# script. The chain itself is not wired yet. Step 3 lands in Phase 2, which is
-# the first thing that needs app_data.rds, and step 2 in Phase 3.
+# Run the whole chain with:  Rscript scripts/update_data.R
 #
 # The app never calls anything in this file. It reads two rds files and renders.
 
@@ -27,7 +25,8 @@ STORE_PATH <- Sys.getenv(
   "STATCAST_STORE",
   path.expand("~/Desktop/Baseball Questionnaires/03_ArsenalReports/statcast_clean_2026.rds")
 )
-APP_DATA_PATH <- "data/app_data.rds"
+APP_DATA_PATH   <- "data/app_data.rds"
+LEAGUE_REF_PATH <- "data/league_ref.rds"
 
 
 #' Write via a temp file and rename
@@ -239,9 +238,8 @@ refresh_store <- function(store_path = STORE_PATH, through = Sys.Date()) {
 # Runs when this file is executed with Rscript, not when it is sourced.
 # sys.nframe() is 0 only at the top level of an Rscript invocation.
 #
-# Step 2, rebuilding league_ref.rds, lands in Phase 3 and belongs between these
-# two. The app reads app_data.rds at startup, so its date range follows from
-# step 3 with no separate action.
+# The app reads app_data.rds at startup, so its date range follows from step 3
+# with no separate action.
 
 if (sys.nframe() == 0L) {
   if (!dir.exists("R")) stop("run this from the repo root: Rscript scripts/update_data.R", call. = FALSE)
@@ -251,8 +249,19 @@ if (sys.nframe() == 0L) {
   sc <- refresh_store()
   save_rds_atomic(sc, STORE_PATH)
 
-  message("\n== Step 3: app_data.rds ==")
+  # Built once and used by both remaining steps. The league reference is
+  # derived from the same trimmed frame the app reads, so the context and the
+  # values it contextualises can never come from different column sets.
   ad <- build_app_data(sc)
+
+  message("\n== Step 2: league_ref.rds ==")
+  source("scripts/build_league_ref.R")
+  ref <- build_league_ref(ad)
+  save_rds_atomic(ref, LEAGUE_REF_PATH)
+  message("Wrote ", LEAGUE_REF_PATH, ", ", format(nrow(ref), big.mark = ","), " reference cells, ",
+          sum(ref$n_pitchers >= MIN_REF_PITCHERS), " above the pitcher floor")
+
+  message("\n== Step 3: app_data.rds ==")
   save_rds_atomic(ad, APP_DATA_PATH)
   message("Wrote ", APP_DATA_PATH, ", ", format(nrow(ad), big.mark = ","), " rows x ", ncol(ad),
           " cols, ", round(file.size(APP_DATA_PATH) / 1024^2, 1), " MB")

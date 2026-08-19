@@ -30,6 +30,18 @@ load_app_data <- function(path = "data/app_data.rds") {
 }
 
 
+#' Load the precomputed league reference
+#'
+#' Built by scripts/build_league_ref.R, step 2 of the daily chain. The app never
+#' rebuilds it: the per-pitcher league query it comes from would hang a reactive.
+load_league_ref <- function(path = "data/league_ref.rds") {
+  if (!file.exists(path)) {
+    stop("Missing ", path, ".\nBuild it with: Rscript scripts/update_data.R", call. = FALSE)
+  }
+  readRDS(path)
+}
+
+
 #' Savant's "Last, First" to display order
 #'
 #' Leaves anything without a comma untouched, so a single-token name passes

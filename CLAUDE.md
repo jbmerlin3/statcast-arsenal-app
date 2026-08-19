@@ -177,7 +177,14 @@ These each cause a silently wrong number rather than an error.
 - chase% is off out-of-zone pitches
 - CSW% is `(called_strike + whiffs) / total pitches`
 - in_zone is `plate_x` within +/- 0.8291 and `plate_z` between `sz_bot` and `sz_top`
-- IVB is `pfx_z * 12`, HB is `-pfx_x * 12`, so arm side reads positive
+- IVB is `pfx_z * 12`, HB is `-pfx_x * 12`. **Arm side reads positive for a RHP
+  only.** HB is not handedness-normalized, so median HB has the opposite sign
+  for lefties: SI is +15.5 for RHP and -15.6 for LHP, ST is -13.8 and +14.0.
+  That is correct for the movement chart, where actual direction is the point,
+  but it means any league comparison must keep `p_throws` in the grain. Pooling
+  the hands gives a bimodal distribution with almost nothing at its own centre,
+  and no sample-size floor catches it. See the fallback ladder in `R/league.R`,
+  which never drops `p_throws` for this reason.
 - IP is not derivable from pitch-level data. `events` is one row per PA, so a
   double play reads as one out. Pull IP from FanGraphs or `mlb_pitcher_game_logs()`.
 
