@@ -23,13 +23,21 @@ library(dplyr)
 #' Retries on failure and returns NULL rather than erroring, so one bad chunk
 #' cannot abort a long run.
 #'
-#' Boundary caveat, unresolved. CLAUDE.md states that `game_date_gt` and
-#' `game_date_lt` are strictly greater and less than, and separately that the
-#' daily pull should start at `last_date + 1`. Those two cannot both be right:
-#' if the bound is strict, starting at `last_date + 1` fetches from
-#' `last_date + 2` and silently drops a day. Moved verbatim here rather than
-#' guessing which half is wrong. Settle it against the live endpoint before
-#' wiring step 1, since either reading loses a day of pitches without erroring.
+#' Date bounds are INCLUSIVE, both of them, established by probing the endpoint
+#' on 2026-08-19 rather than from the docs:
+#'
+#'   gt=2026-05-05 lt=2026-05-07 -> 2026-05-05, 2026-05-06, 2026-05-07 all present
+#'   gt=2026-05-06 lt=2026-05-06 -> 4324 rows, a strict bound would return zero
+#'
+#' So `game_date_gt` means >= despite the name. CLAUDE.md previously called both
+#' bounds strict, which is wrong, though the instruction it drew from that
+#' (start the daily pull at `last_date + 1`) is right for a different reason:
+#' `last_date` is already in the store and an inclusive lower bound would just
+#' re-fetch it.
+#'
+#' Two things follow. The chunking below, `ends = starts + chunk_days - 1`, is
+#' correct and non-overlapping. And no day is being silently dropped, which was
+#' the open worry.
 get_statcast_chunk <- function(start_date, end_date, retries = 3) {
 
   url <- paste0(
@@ -107,4 +115,25 @@ pull_season_statcast <- function(start_date, end_date, chunk_days = 4) {
 
   # Combine all successful pulls
   bind_rows(results)
+}
+
+
+# ---- Step 3: write app_data.rds ----------------------------------------------
+
+#' Build the app's pitch store from the season store
+#'
+#' Requires R/theme.R and R/features.R to be sourced, for MIN_PITCH_COUNT,
+#' add_pitch_features(), and APP_DATA_COLS.
+#'
+#' Only row-wise work happens here. No per-pitcher counting, no MIN_PITCH_COUNT
+#' floor, no usage ordering, because all three depend on the date window the
+#' user has not chosen yet. shape_arsenal() does that at query time.
+#'
+#' The pitch_type filter is defensive. statcast_clean already applies it, but
+#' this file is what the app reads and a stray empty code would reach a plot.
+build_app_data <- function(sc) {
+  sc |>
+    filter(!is.na(pitch_type), pitch_type != "") |>
+    add_pitch_features() |>
+    select(all_of(APP_DATA_COLS))
 }
