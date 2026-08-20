@@ -92,6 +92,16 @@ expect("plot_movement ref=NULL equals no ref",
 expect("plot_movement with a ref actually differs",
        isTRUE(all.equal(pspec(plot_movement(pm)), pspec(plot_movement(pm, ref = ref)))), FALSE)
 
+# Every reference mark carries the n it was built from. Asserted because
+# deleting the label layer passed every other check in this file.
+mref <- movement_ref(ref, levels(droplevels(pm$pitch_type)), pm$p_throws[1])
+mb   <- suppressMessages(suppressWarnings(ggplot2::ggplot_build(plot_movement(pm, ref = ref))))
+labs <- unlist(lapply(mb$data, function(d) if ("label" %in% names(d)) as.character(d$label)))
+ns   <- grep("^n=[0-9]+$", labs, value = TRUE)
+expect("one n label per reference mark", length(ns), nrow(mref))
+expect("the n labels are the reference pitcher counts",
+       sort(as.integer(sub("^n=", "", ns))), sort(as.integer(mref$n_pitchers)))
+
 uw <- count_usage_tbl(pm, "R")
 uctx <- resolve_usage(uw, count_usage_denoms(pm, "R"), ref, pm$p_throws[1], "R")
 gspec <- function(g) { h <- as.character(gt::as_raw_html(g))
