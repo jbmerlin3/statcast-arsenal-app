@@ -139,6 +139,44 @@ expect("xwoba direction from spec", METRIC_SPEC$direction[METRIC_SPEC$metric == 
 expect("unknown direction stops",
        tryCatch({pctile_fill(50, "up"); "no error"}, error = function(e) "stopped"), "stopped")
 
+cat("\n=== FLOOR BOUNDARY: floor and floor-1 on a rate metric ===\n")
+# The value and the league reference are real: Baz FF whiff% vs RHH against a
+# 172-pitcher cell. Only the denominator is pinned, to 50 and 49, which is the
+# only way to sit exactly on the boundary. No real pitch type is guaranteed to
+# land on 50 swings, and one that did would drift on the next data pull.
+#
+# The denominators are written as LITERALS, not as `fl` and `fl - 1`, and that
+# is the whole point of this block. A test that reads the same constant the code
+# reads slides along with it: nudge the floor to 49 and a `swings = fl - 1` cell
+# becomes a 48-swing cell, still below floor, still passing. It would test the
+# comparison operator and never the parameter. Verified by mutation, that
+# earlier version passed a 50 -> 49 nudge.
+#
+# So changing a floor deliberately now requires editing this block. That is
+# intended: the floors come from a measured resampling study recorded in
+# theme.R, not from taste, and a silent edit to one is exactly what this guards.
+fl   <- METRIC_SPEC$floor[METRIC_SPEC$metric == "whiff_pct"]
+pl_r <- build_pitch_level(ad, 669358) |> filter(stand == "R", pitch_type == "FF")
+v_ff <- metric_value(pl_r, "whiff_pct")
+at_floor <- resolve_cell(ref, v_ff, "whiff_pct", "FF", "R", "R", "All Counts",
+                         list(pitches = 500, swings = 50, oz = 200, pa = 100))
+below_1  <- resolve_cell(ref, v_ff, "whiff_pct", "FF", "R", "R", "All Counts",
+                         list(pitches = 500, swings = 49, oz = 200, pa = 100))
+show("at floor     swings=50", at_floor)
+show("floor - 1    swings=49", below_1)
+
+# Pins the parameter itself, independently of the two cells above.
+expect("the rate floor is still the measured 50", fl, 50)
+
+# n == floor must be eligible. This pins the comparison operator: a >= quietly
+# changed to > flips the at-floor cell and nothing else in the file.
+expect("at floor is eligible",     at_floor$state, "exact")
+expect("at floor is filled",       at_floor$fill != PCTILE_UNFILLED, TRUE)
+expect("floor - 1 is below floor", below_1$state,  "below_floor")
+expect("floor - 1 is unfilled",    below_1$fill,   PCTILE_UNFILLED)
+expect("floor - 1 reports its n",  below_1$marker, " (49)")
+expect("the two sides of the boundary differ", at_floor$state == below_1$state, FALSE)
+
 cat("\n=== resolve_column matches resolve_cell, cell by cell ===\n")
 pl  <- build_pitch_level(ad, 669358) |> filter(stand == "R")
 dn  <- denoms(pl)
