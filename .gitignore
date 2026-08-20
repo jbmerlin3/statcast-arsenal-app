@@ -17,3 +17,6 @@
 # could never re-include anything.
 data/*
 !data/.gitkeep
+
+# Chain run log, machine-local
+logs/

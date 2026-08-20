@@ -194,20 +194,31 @@ clean_statcast <- function(df) {
 #' apart from "Savant returned nothing because the pull broke". Only those two
 #' produce the same empty frame, and only one of them is fine.
 #'
-#' Counts Final games only. A game in Preview or In Progress has no complete
-#' Statcast rows to pull yet, so counting it would make every evening run look
-#' like a failure.
+#' Counts Final games only, and only on dates BEFORE today. Both exclusions
+#' matter and they are different.
+#'
+#' Preview and In Progress games have no complete Statcast rows to pull, so
+#' counting them would make every evening run look like a failure.
+#'
+#' Today's FINAL games are excluded because Savant lags the schedule by hours.
+#' A game can be final at 22:00 and not appear on Savant until the small hours,
+#' and erroring on that gap would fire nightly. Verified 2026-08-20: six games
+#' were final and Savant returned nothing for the date, which is normal and not
+#' a failure. Yesterday's games have had a full day, so if those are missing
+#' something is genuinely wrong, and the 06:15 run is the one that catches it.
 #'
 #' Returns NA when the schedule itself cannot be reached, which the caller
 #' treats as "cannot judge" rather than as zero.
-schedule_final_games <- function(from, to) {
+schedule_final_games <- function(from, to, today = Sys.Date()) {
   u <- sprintf(paste0("https://statsapi.mlb.com/api/v1/schedule",
                       "?sportId=1&startDate=%s&endDate=%s&gameType=R"), from, to)
   j <- tryCatch(jsonlite::fromJSON(u, flatten = TRUE), error = function(e) NULL)
   if (is.null(j) || is.null(j$dates) || !NROW(j$dates)) return(0L)
   gs <- tryCatch(j$dates$games, error = function(e) NULL)
   if (is.null(gs)) return(NA_integer_)
-  sum(unlist(lapply(gs, function(g)
+  keep <- as.Date(j$dates$date) < as.Date(today)
+  if (!any(keep)) return(0L)
+  sum(unlist(lapply(gs[keep], function(g)
     if (is.null(g) || !NROW(g)) 0L else sum(g$status.abstractGameState == "Final"))))
 }
 
@@ -227,7 +238,7 @@ refresh_store <- function(store_path = STORE_PATH, through = Sys.Date()) {
   # Asked before the pull, so a broken pull cannot also break the sanity check.
   n_games <- schedule_final_games(as.character(start), as.character(through))
   message(if (is.na(n_games)) "Schedule unreachable, cannot judge an empty pull"
-          else paste0(n_games, " final games in that window"))
+          else paste0(n_games, " final games in that window before today"))
 
   new_raw <- pull_season_statcast(as.character(start), as.character(through))
   if (is.null(new_raw) || nrow(new_raw) == 0) {
@@ -240,7 +251,8 @@ refresh_store <- function(store_path = STORE_PATH, through = Sys.Date()) {
            "Savant is failing or the request is wrong. Store left at ", last,
            ".", call. = FALSE)
     }
-    message("Pull returned no rows and no games finished, store unchanged")
+    message("Pull returned no rows, and nothing finished before today, ",
+            "store unchanged. Savant lags the schedule by hours.")
     return(sc)
   }
   new_clean <- clean_statcast(new_raw)
