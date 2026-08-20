@@ -151,3 +151,35 @@ on the diverging good-to-bad scale, so it actively asserts quality.
 Not fixed, and not obviously fixable by a colour rule. The cheapest partial
 answer is per-pitch-type expectation in the label rather than in the fill, so
 the reader sees "35th among sinkers" and supplies the context themselves.
+
+## Phase 5 closed, 2026-08-20
+
+All three bullets landed: percentile fill on the arsenal table, league reference
+marks on the movement plot, league rates on the usage table. Wired into the app
+and verified by driving the running server.
+
+**The usage floor was a bug, now fixed.** `usage_pct` is a share, so its
+precision comes from the cut's total pitches, not the numerator. It floored on
+the pitch type's own count, which greyed a well-measured 30% share because the
+pitch itself was uncommon. `denom` is now `cut_pitches`, and `DENOM_COLS` in
+theme.R keeps the reference builder and the app supplying the same names.
+
+Cameron's usage table, vs RHH:
+
+| window | before | after |
+|---|---|---|
+| full season | 24 exact, 4 fallback, 8 below floor | 36 exact |
+| two weeks | 1 exact, 35 below floor | 36 exact |
+
+`league_ref.rds` was rebuilt through the chain's own step 2 off the existing
+`app_data.rds`, so no Savant pull was involved. 4,112 cells, 2,616 above the
+pitcher floor.
+
+**One pitcher CAN produce two fallback grains, structurally.** The earlier
+measurement said one and was taken on the arsenal table, where every column
+shares the `All Counts` bucket. The usage table varies the bucket by column, and
+the ladder's second and third rungs differ by bucket, so different columns land
+on different rungs. The assertion caught it the first time the usage table ran
+full season. The dagger note now enumerates the cuts it used rather than naming
+one, still as a single line, because two lines under one marker leave the reader
+unable to tell which applies.

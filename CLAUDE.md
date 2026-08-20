@@ -297,6 +297,29 @@ down.
 `pitch_colors` lives in `R/theme.R` and is the single source of truth. Copy it
 from `Learning_to_pull_stats.R`, which is what generated the existing reports.
 
+
+6. **An explicit constraint with no test behind it.** "Every reference line
+   carries the n it was built from" was written into the plan and into the code,
+   and deleting the `geom_text` layer that carried it passed every check in
+   `tests/step3_render.R`. Found by mutation, not by review.
+
+   The tell is that the constraint lived in prose and in one line of drawing
+   code, with nothing in between. A stated requirement that no assertion names is
+   a comment, whatever it is written on. When a constraint is worth stating, ask
+   what would fail if it were quietly removed; if the answer is nothing, that is
+   the missing test.
+
+7. **A check caught by a crash rather than by an assertion.** Two mutations,
+   `below_floor` set to filled and `count_usage_gt`'s early return removed, were
+   "caught" by errors inside `gt::cell_fill(color = NA)` and `nrow(NULL)`. That
+   proves those functions are intolerant of bad input, not that anything was
+   guarding the behaviour, and both would go quiet the moment the downstream code
+   got more permissive.
+
+   Fixed by asserting the invariant each crash stood in for: every resolved fill
+   is a real hex, and every render returns a `gt_tbl`. Helpers that render inside
+   a check must catch and return a marker rather than letting the error stop the
+   file, or one dead render hides every check after it.
 ## gt mechanics that are not obvious
 
 Both of these were found by probing gt, not by reading it, and both produce a

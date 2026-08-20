@@ -181,16 +181,34 @@ Ran 2026-08-19, PASS. Every tab checked by hand against the PDF reports, and
 
 ## Phase 5. League context in the UI
 
-- [ ] Percentile fill or a delta column on the arsenal table
-- [ ] League average reference lines on the movement plot for that pitch type and
+- [x] Percentile fill or a delta column on the arsenal table
+- [x] League average reference lines on the movement plot for that pitch type and
       pitcher hand
-- [ ] Usage table shows the pitcher's rate against the league rate for the same
+- [x] Usage table shows the pitcher's rate against the league rate for the same
       count bucket
-- [ ] Every context number carries the n it was built from
+- [x] Every context number carries the n it was built from
 
 **Check.** A pitch that scouts as plus should read as plus. If the context says
 otherwise, the grain or the floor is wrong, not the pitcher.
 
+
+Ran 2026-08-20, PASS. All three bullets landed together rather than the first
+shipping and the other two deferring: the resolver written for the arsenal
+table carried over, so the movement marks and the usage rates cost a function
+each rather than a phase each.
+
+Two corrections the phase forced. usage_pct was floored on the pitch type's own
+count when it is a share measured over the cut's total, which greyed most of a
+two-week usage table; `denom` is now `cut_pitches` and `league_ref.rds` was
+rebuilt. And a pitcher can produce two fallback grains after all, since the
+usage table varies the count bucket by column.
+
+`arsenal_gt(ref = NULL)`, `count_usage_gt(ref = NULL)` and
+`plot_movement(ref = NULL)` all render what they rendered before.
+`scripts/phase1_check.R` guards the usage table's NULL path but CANNOT guard
+the other two, since `arsenal_gt` and `plot_movement` are both sanctioned in
+`EXPECTED_DIFFS`. `tests/step3_null_identical.R` and `tests/step3_render.R`
+are the guards there.
 ---
 
 ## Phase 6. Results panel
