@@ -37,6 +37,25 @@ DATE_MAX <- HALVES$full[2]
 
 DEFAULT_PITCHER <- 702070   # Cameron, so the page renders something on load
 
+# Which FanGraphs export backs the Stuff+ column. Resolved once, by the date
+# window in the filename rather than by file mtime: the newest file by mtime in
+# a working fg_stuff/ is typically a half-season export, and pairing half-season
+# Stuff+ against a full-season table is wrong in a way the page would not show.
+#
+# A missing or unreadable directory degrades to a blank Stuff+ column rather
+# than taking the app down, since every other column is still worth reading.
+FG_EXPORT <- tryCatch(resolve_fg_export("fg_stuff"), error = function(e) {
+  warning("No FanGraphs export resolved: ", conditionMessage(e), call. = FALSE)
+  NULL
+})
+
+# The stuff_all contract, three columns, as load_fg_stuff() returns on no match.
+# arsenal_table() takes this as an argument and never learns where it came from,
+# which is the seam that lets the v4 model replace FanGraphs later without
+# touching tables.R. See CLAUDE.md.
+EMPTY_STUFF <- tibble::tibble(pitch_type = character(), stuff_plus = numeric(),
+                              fg_exact = logical())
+
 # 1H and 2H are omitted entirely when no break has happened yet, rather than
 # rendering buttons that would set an invented boundary.
 preset_buttons <- if (is.null(HALVES$first)) {
@@ -78,7 +97,8 @@ ui <- fluidPage(
                  # toggle looks broken on this tab.
                  helpText("The usage chart always shows both batter sides. ",
                           "The table below follows the Batter side selector."),
-                 gt::gt_output("usage_table"))
+                 gt::gt_output("usage_table")),
+        tabPanel("Characteristics", gt::gt_output("chars_table"))
       )
     )
   )
@@ -144,6 +164,25 @@ server <- function(input, output, session) {
 
   output$usage_table <- gt::render_gt({
     count_usage_gt(count_usage_tbl(pitcher_data(), input$hand), input$hand)
+  })
+
+  # Stuff+ for the selected pitcher. The read is about 11 ms, so it runs per
+  # invalidation rather than being cached; caching would add a staleness bug
+  # for no perceptible gain.
+  #
+  # suppressMessages because load_fg_stuff() announces each match, which is
+  # useful once in the console and console spam on every filter change. Its
+  # warning on a missing pitcher is deliberately left audible.
+  stuff_all <- reactive({
+    req(input$pitcher)
+    if (is.null(FG_EXPORT)) return(EMPTY_STUFF)
+    suppressMessages(load_fg_stuff(as.integer(input$pitcher), FG_EXPORT$path))
+  })
+
+  output$chars_table <- gt::render_gt({
+    arsenal_gt(arsenal_table(pitcher_data(), input$hand, stuff_all()),
+               input$hand,
+               fg_window = if (is.null(FG_EXPORT)) NULL else FG_EXPORT$label)
   })
 }
 
