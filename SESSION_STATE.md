@@ -77,3 +77,32 @@ drops to `pitch_type x p_throws x count` on 22 reference pitchers.
   script itself.
 - Do not `git checkout` a file to undo a mutation test unless it is committed.
   That cost uncommitted work once already.
+
+## Fallback is rare per cell, common per pitcher
+
+Measured 2026-08-20 over 3,290 arsenal cells, 60 pitchers, vs RHH, full season:
+
+| state | share |
+|---|---|
+| exact | 75.6% |
+| below floor | 21.0% |
+| fallback | 2.2% |
+| no reference | 1.2% |
+
+The 2.2% is the number that misleads. **35 of those 60 pitchers carry at least
+one fallback cell**, and Baz carries six. The plan's "126 cells across all 802
+pitchers, about 0.16 per pitcher" was measured on a different cut and badly
+understates the vs-RHH view, which is the view the arsenal table is built
+against.
+
+"Rare per cell, common per pitcher" is the accurate description. It does not
+change the design, since the loud-marker decision rests on per-cell rarity and
+that holds. It does change what to expect on screen: most pitchers will show a
+dagger somewhere, so the footnote is not an edge case a reader meets once.
+
+One thing that does not multiply: **no pitcher produces more than one distinct
+fallback grain.** Baz's several distinct note strings differed only in the
+pitcher count behind them, 20 to 79 across the population, never in the grain.
+That is what lets a single `†` line name one grain unambiguously. It is asserted
+in `R/league.R` rather than assumed, and the assertion stops rather than picking
+one silently.

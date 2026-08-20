@@ -210,6 +210,13 @@ correct code?** Both halves. Entry 4 is the second half failing.
    difference is allowed. Reverting a sanctioned change while another takes its
    place still passes. Still live. Recorded at `scripts/phase1_check.R`.
 
+   Recurred 2026-08-20, and not in a test file. A human verification
+   instruction said to confirm `arsenal_gt(ref = NULL)` is byte-identical by
+   running `phase1_check.R` at six diffs, but all three `arsenal_gt` artifacts
+   were already sanctioned, so the check could not fail on that function at
+   all. Breaking the xwOBA format passed. The failure mode is not confined to
+   test code; it lands in instructions about tests just as easily.
+
 4. **A check that fails correct code.** Phase 0 originally compared CSW% against
    the whiff column expecting CSW% to be "meaningfully higher". The two use
    different denominators, whiff% off swings and CSW% off all pitches, so on 2026
@@ -289,6 +296,28 @@ down.
 
 `pitch_colors` lives in `R/theme.R` and is the single source of truth. Copy it
 from `Learning_to_pull_stats.R`, which is what generated the existing reports.
+
+## gt mechanics that are not obvious
+
+Both of these were found by probing gt, not by reading it, and both produce a
+wrong page rather than an error.
+
+**`fmt()` does not compound. The last call on a column wins, and it receives the
+raw values.** Stacking a marker `fmt` on top of `arsenal_gt()`'s xwOBA `fmt`
+silently drops the leading-zero rule and renders `0.32` where the table has
+always shown `.320`. A column needing both a format and a suffix needs them in
+one `fns`, not two calls.
+
+**The later `tab_style()` wins.** `arsenal_gt()` ends by folding one pitch-colour
+fill per pitch type across every body cell, so percentile fills must be applied
+**after** that reduce. Applied before, the pitch colour silently overwrites them
+and the context strip renders as the identity block.
+
+**gt stamps one random table id** into rendered HTML, used as `id="..."` and in
+every CSS selector, so two renders of the same object never compare equal.
+Strip that one token and the render is deterministic. That is what
+`gt_spec()` in `tests/phase1_artifacts.R` does, and why it compares the rendered
+page rather than the internal spec.
 
 ## Style
 
