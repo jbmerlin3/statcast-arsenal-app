@@ -132,6 +132,24 @@ expect("count_usage_gt ref=NULL equals no ref",
 expect("count_usage_gt with a ref actually differs",
        identical(gspec(count_usage_gt(uw, "R")), gspec(count_usage_gt(uw, "R", ref = uctx))), FALSE)
 
+cat("\n=== every plot function returns VISIBLY ===\n")
+# renderPlot() relies on auto-printing, so a function ending in an assignment
+# returns invisibly and Shiny draws a blank white device with no error at all.
+# plot_movement did exactly that for four commits. Nothing here caught it,
+# because ggplot_build() and print() both work fine on an invisible value: the
+# tests consumed the object directly, and Shiny does not.
+pd <- shape_arsenal(dplyr::filter(ad, pitcher == 702070))
+for (fn in c("plot_movement", "plot_velo", "plot_usage")) {
+  vis <- withVisible(do.call(fn, list(pd)))$visible
+  cat(sprintf("  %-14s visible: %s\n", fn, vis))
+  expect(paste(fn, "returns visibly"), vis, TRUE)
+}
+expect("plot_movement returns visibly with a ref too",
+       withVisible(plot_movement(pd, ref = ref))$visible, TRUE)
+# plot_heatmap takes a hand argument, so it is checked separately.
+expect("plot_heatmap returns visibly",
+       withVisible(plot_heatmap(pd, "R"))$visible, TRUE)
+
 cat("\n", strrep("-", 58), "\n", sep = "")
 if (length(fails)) { cat("FAILURES:\n"); for (f in fails) cat("  ", f, "\n") }
 cat("STEP 3 RENDER: ", if (length(fails)) "FAIL" else "PASS", "\n", sep = "")

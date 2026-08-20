@@ -122,6 +122,13 @@ plot_movement <- function(df, ref = NULL) {
     theme_minimal(base_size = 13) +
     theme(legend.position = "none", panel.grid.major = element_line(color = "gray90"),
           aspect.ratio = 1, plot.margin = margin(t = 20, r = 5, b = 5, l = 5))
+
+  # A bare `g`, not the assignment above. A function ending in an assignment
+  # returns INVISIBLY, and renderPlot() relies on auto-printing, so an invisible
+  # return draws a blank white device with no error. Every test here calls
+  # ggplot_build() or print() on the returned object, both of which work fine on
+  # an invisible value, so nothing caught it for four commits.
+  g
 }
 
 

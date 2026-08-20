@@ -205,7 +205,9 @@ server <- function(input, output, session) {
   })
 
   output$movement <- renderPlot({
-    plot_movement(pitcher_data())
+    # league_ref was wired into the characteristics table in Phase 5 but not
+    # here, so the reference marks existed and never reached the page.
+    plot_movement(pitcher_data(), ref = league_ref)
   })
 
   output$usage <- renderPlot({
