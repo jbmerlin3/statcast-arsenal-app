@@ -170,11 +170,14 @@ build_pitch_level <- function(df, mlb_id) {
 #' against whichever happened to be in the session, which is the re-paste bug
 #' class the split exists to close. This vector is the single definition.
 #'
-#' This is the analysis contract and is deliberately wider than the deploy
+#' This is the ANALYSIS contract and is deliberately wider than the deploy
 #' artifact. Trajectory (vx0 through az, plus release_pos_y for the 50 ft
-#' reference) is kept because VAA is a standing formula convention and six
-#' doubles are cheap. If app_data.rds later exceeds the shinyapps.io ceiling it
-#' gets trimmed in Phase 6 against a measured file size, not pre-emptively.
+#' reference) is kept because VAA is a standing formula convention, and release
+#' point because reports use it ad hoc. Both stay available from the console.
+#'
+#' They no longer ship. Phase 7 measured the cost: the ten columns below are
+#' 27.0 MB of the 49.2 MB file and 42.4 MB of the 144.3 MB resident footprint,
+#' and nothing in R/, scripts/ or app.R reads any of them. See APP_DATA_COLS.
 PL_TRIM_COLS <- c(
   "pitcher", "player_name", "game_date", "pitch_type", "pt_n",
   "stand", "p_throws", "balls", "strikes",
@@ -189,10 +192,33 @@ PL_TRIM_COLS <- c(
 
 #' The app_data.rds column set
 #'
-#' PL_TRIM_COLS minus pt_n. pt_n is the one member of the contract that cannot
-#' be stored, because it is a function of the selected window rather than of the
-#' pitch. See shape_arsenal(), which recomputes it per query.
-APP_DATA_COLS <- setdiff(PL_TRIM_COLS, "pt_n")
+#' PL_TRIM_COLS minus pt_n and minus the ten columns nothing reads.
+#'
+#' pt_n cannot be stored at all: it is a function of the selected window rather
+#' than of the pitch. See shape_arsenal(), which recomputes it per query.
+#'
+#' The other ten are readable, just unread. Measured 2026-08-20 by scanning every
+#' .R in R/, scripts/ and app.R with this contract and PL_TRIM_COLS excluded:
+#' zero references outside the contract itself. Dropping them takes app_data.rds
+#' from 37 columns to 27, 49.2 MB to 22.2 MB on disk, 144.3 MB to 101.9 MB
+#' resident.
+#'
+#' They are dropped from the DEPLOY artifact only. PL_TRIM_COLS still carries
+#' them, so a console session keeps release point and trajectory. Putting one
+#' back is a one-line edit here plus a chain rerun.
+#'
+#' Two that look droppable and are not: arm_angle is read by plot_movement(),
+#' and launch_speed backs HH% in the results panel.
+APP_DATA_UNREAD <- c(
+  # Trajectory, for a VAA that is not implemented. See the backlog in PLAN.md.
+  "vx0", "vy0", "vz0", "ax", "ay", "az", "release_pos_y",
+  # Release point. Ad hoc in reports, nothing in the app.
+  "release_pos_x", "release_pos_z",
+  # bb_type. CLAUDE.md documents its empty-string trap, but nothing reads it.
+  "bb_type"
+)
+
+APP_DATA_COLS <- setdiff(PL_TRIM_COLS, c("pt_n", APP_DATA_UNREAD))
 
 
 #' Trim a pitch-level frame to the contract

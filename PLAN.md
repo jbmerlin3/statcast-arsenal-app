@@ -270,6 +270,18 @@ byte-identical.
 
 ## Backlog, not scheduled
 
+- **VAA, vertical approach angle. Unimplemented.** It is the reason the seven
+  trajectory columns existed, and nothing ever computed it. Phase 7 dropped them
+  from the deploy artifact, so the intent is recorded here rather than
+  disappearing with the columns.
+
+  `vx0`, `vy0`, `vz0`, `ax`, `ay`, `az` and `release_pos_y` are still in
+  `PL_TRIM_COLS`, the analysis contract, so a console session pulling from
+  `statcast_clean_2026.rds` has them. They are NOT in `APP_DATA_COLS`, so the
+  app does not. Implementing VAA means removing them from `APP_DATA_UNREAD` in
+  `R/features.R` and rerunning the chain, plus about 30 MB back on the resident
+  footprint. `release_pos_y` is the 50 ft reference the formula needs.
+
 - **Stuff+ v4 integration.** Split `stuffv4.R` into a pure library, a build
   script, and a `score_pitches()` function. Score pitch-level `pred` in the daily
   chain, aggregate with the bundle's frozen `moments_arsenal` and `type_centers`,
