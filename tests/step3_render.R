@@ -85,8 +85,10 @@ cat("\n=== NULL paths on the two functions phase1_check cannot guard ===\n")
 # (expected)" whatever happens inside it. These compare the two call shapes
 # against each other instead, which needs no historical baseline.
 pm <- build_pitch_level(ad, 702070) |> filter(game_date >= "2026-08-04", game_date <= "2026-08-17")
-pspec <- function(p) { b <- suppressMessages(suppressWarnings(ggplot2::ggplot_build(p)))
-                       list(data = b$data, theme = b$plot$theme) }
+pspec <- function(p) tryCatch({
+  b <- suppressMessages(suppressWarnings(ggplot2::ggplot_build(p)))
+  list(data = b$data, theme = b$plot$theme)
+}, error = function(e) paste("BUILD FAILED:", conditionMessage(e)))
 expect("plot_movement ref=NULL equals no ref",
        isTRUE(all.equal(pspec(plot_movement(pm)), pspec(plot_movement(pm, ref = NULL)))), TRUE)
 expect("plot_movement with a ref actually differs",
@@ -111,9 +113,15 @@ renders <- function(expr) tryCatch({ g <- expr; inherits(g, "gt_tbl") }, error =
 
 uw <- count_usage_tbl(pm, "R")
 uctx <- resolve_usage(uw, count_usage_denoms(pm, "R"), ref, pm$p_throws[1], "R")
-gspec <- function(g) { h <- as.character(gt::as_raw_html(g))
+# Tolerant on purpose. A render that dies must show up as a named comparison
+# failure, not as an uncaught error that stops the file before the remaining
+# checks run.
+gspec <- function(g) tryCatch({
+  h <- as.character(gt::as_raw_html(g))
   for (id in unique(regmatches(h, gregexpr('(?<=id=")[a-z]{10,}(?=")', h, perl = TRUE))[[1]]))
-    h <- gsub(id, "GT_ID", h, fixed = TRUE); h }
+    h <- gsub(id, "GT_ID", h, fixed = TRUE)
+  h
+}, error = function(e) paste("RENDER FAILED:", conditionMessage(e)))
 expect("count_usage_gt renders with no ref",     renders(count_usage_gt(uw, "R")), TRUE)
 expect("count_usage_gt renders with ref = NULL", renders(count_usage_gt(uw, "R", ref = NULL)), TRUE)
 expect("count_usage_gt renders with a context",  renders(count_usage_gt(uw, "R", ref = uctx)), TRUE)
