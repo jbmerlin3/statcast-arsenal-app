@@ -186,6 +186,60 @@ These each cause a silently wrong number rather than an error.
    panels below `KDE_MIN_N` fall back to a white-dot scatter rather than a KDE
    built on nothing.
 
+## Checks that did not discriminate
+
+Every entry here is a check that ran green while the thing it existed to protect
+was broken. They were recorded in three different files, which is why the same
+species kept recurring; this is the one list.
+
+The question to ask of any new check: **can it fail the real bug, and can it pass
+correct code?** Both halves. Entry 4 is the second half failing.
+
+1. **A fixture that does not sit on the threshold.** Nudging `KDE_MIN_N` from 15
+   to 14 passes `phase1_check.R`, because no heatmap panel in the one fixture has
+   exactly 14 pitches. One pitcher cannot sit on every threshold. Recorded at
+   `scripts/phase1_check.R`.
+
+2. **Comparing too narrow a slice of the artifact.** Plots were compared on built
+   layer data only, so every purely thematic edit passed silently: panel colours,
+   legend position, and the heatmap margin fix all reported "identical". Fixed by
+   comparing themes as well. Recorded at `tests/phase1_artifacts.R`.
+
+3. **A sanction coarser than the thing it sanctions.** `EXPECTED_DIFFS` is keyed
+   by artifact name, so it records THAT an artifact may differ, not WHICH
+   difference is allowed. Reverting a sanctioned change while another takes its
+   place still passes. Still live. Recorded at `scripts/phase1_check.R`.
+
+4. **A check that fails correct code.** Phase 0 originally compared CSW% against
+   the whiff column expecting CSW% to be "meaningfully higher". The two use
+   different denominators, whiff% off swings and CSW% off all pitches, so on 2026
+   data whiff% legitimately exceeds CSW% for CH and SL. `swstr_pct` is the right
+   comparison. Recorded in PLAN.md, Phase 0.
+
+5. **A fixture that moves with the mutation.** Its own species, and the one that
+   is hardest to see, because the check is correct and the FIXTURE is what fails.
+   The floor-boundary cells in `tests/step2_states.R` were written as
+   `swings = fl` and `swings = fl - 1`, reading the same `METRIC_SPEC$floor` the
+   code reads. Nudge the floor from 50 to 49 and the cells slide with it: the
+   `fl - 1` cell becomes a 48-swing cell, still below floor, still passing. The
+   check tested the comparison operator and never the parameter.
+
+   Measured both ways rather than argued, since the difference is invisible on
+   reading: same mutation, `whiff_pct` floor 50 to 49.
+
+   ```
+   self-referential cells, swings = fl and fl - 1   -> PASS   (mutation survives)
+   literal cells, swings = 50 and 49                -> FAIL   (5 assertions)
+   ```
+
+   **The rule: a fixture pinning a parameter must use literals, and must never
+   read the constant under test.** The cost is that changing a floor deliberately
+   now requires editing the test, which is the point. Floors come from the
+   resampling study recorded in `R/theme.R`, not from taste.
+
+   The same trap is waiting anywhere a fixture is written in terms of the thing
+   it checks: `MIN_PITCH_COUNT`, `MIN_REF_PITCHERS`, `KDE_MIN_N`.
+
 ## Formula conventions
 
 - whiff% is off swings, not off total pitches
