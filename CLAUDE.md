@@ -49,7 +49,7 @@ statcast-arsenal-app/
     tables.R                # arsenal_table, arsenal_gt, count_usage_tbl, count_usage_gt
     stuff.R                 # load_fg_stuff() and the stuff_all contract
     league.R                # league_ref lookup + percentile helpers
-    mod_*.R                 # Shiny modules, one per tab, added as tabs are built
+    mod_*.R                 # Shiny modules, one per tab. NOT YET, see below
   scripts/
     update_data.R           # the daily chain, see below
     build_league_ref.R      # precomputes league context
@@ -59,6 +59,21 @@ statcast-arsenal-app/
   fg_stuff/                 # dated FanGraphs Stuff+ exports
   tests/
 ```
+
+## Tabs are inline in app.R, not modules yet
+
+A module buys three things: namespacing so two instances can coexist,
+encapsulation of inputs a tab owns privately, and file separation. None of the
+four tabs owns an input of its own; pitcher, dates and batter side are all
+global and shared, and no tab is instantiated twice. So the first two buy
+nothing here and the third is available from a plain function in `R/`. A module
+with no inputs, one output and one instance is a function call with `NS()`
+wrapped around it.
+
+Two triggers to revisit, whichever comes first. The comparison pane in the
+backlog renders the same table for two windows, which is exactly what
+namespacing exists for. And the first tab that grows its own control, such as a
+FanGraphs export selector on the characteristics tab.
 
 ## The daily chain
 

@@ -56,6 +56,7 @@ FG_EXPORT <- tryCatch(resolve_fg_export("fg_stuff"), error = function(e) {
 EMPTY_STUFF <- tibble::tibble(pitch_type = character(), stuff_plus = numeric(),
                               fg_exact = logical())
 
+
 # 1H and 2H are omitted entirely when no break has happened yet, rather than
 # rendering buttons that would set an invented boundary.
 preset_buttons <- if (is.null(HALVES$first)) {
@@ -98,7 +99,17 @@ ui <- fluidPage(
                  helpText("The usage chart always shows both batter sides. ",
                           "The table below follows the Batter side selector."),
                  gt::gt_output("usage_table")),
-        tabPanel("Characteristics", gt::gt_output("chars_table"))
+        tabPanel("Characteristics", gt::gt_output("chars_table")),
+        tabPanel("Heat Maps",
+                 # Taller than the other outputs: facet_grid lays out three
+                 # situations by however many pitch types the window holds, and
+                 # coord_fixed keeps each panel square.
+                 plotOutput("heatmap", height = "700px"),
+                 helpText("Three coarse count buckets, not the six in the usage ",
+                          "table. A density estimate needs a larger per-panel ",
+                          "sample than a usage percentage does. Panels under ",
+                          KDE_MIN_N, " pitches show the raw locations ",
+                          "as white dots instead of a smoothed surface."))
       )
     )
   )
@@ -177,6 +188,10 @@ server <- function(input, output, session) {
     req(input$pitcher)
     if (is.null(FG_EXPORT)) return(EMPTY_STUFF)
     suppressMessages(load_fg_stuff(as.integer(input$pitcher), FG_EXPORT$path))
+  })
+
+  output$heatmap <- renderPlot({
+    plot_heatmap(pitcher_data(), input$hand)
   })
 
   output$chars_table <- gt::render_gt({
