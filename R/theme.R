@@ -215,6 +215,45 @@ PCTILE_PAL_NEUTRAL   <- c("#F6F2F9", "#E3D9EC", "#D0C0DE", "#BDA7D1", "#AA8EC3")
 # to read as calm and normal rather than as a warning.
 PCTILE_GREY <- "#767676"
 
+# The unfilled states paint white explicitly rather than painting nothing. The
+# pitch-colour row fill runs across every body cell, so "no fill" would show the
+# pitch colour through and read as a fill. White is what makes the right of the
+# table a context strip and the left an identity block.
+PCTILE_UNFILLED <- "#FFFFFF"
+
+# How each of the four cell states renders, as data rather than as conditionals
+# spread through league.R and tables.R. resolve_cell() joins against this and
+# tables.R passes the columns straight to gt, so neither one re-derives a state.
+#
+# The four must survive greyscale: these tables get screenshotted into a
+# portfolio, and four states separated only by hue collapse into one. They are
+# separated on three channels that all survive it.
+#
+#   filled      splits {exact, fallback} from {below_floor, no_reference}
+#   font_weight splits exact from fallback
+#   marker/n    splits below_floor from no_reference
+#
+# Volume drives the weights, and the two rare-vs-common cases pull opposite
+# ways. Fallback is 126 cells across all 802 pitchers, so bold plus a dagger
+# costs nothing and it should be seen. Below floor is about half the cells in a
+# two-week window, so it stays unbolded and unmarked: a half-grey table that
+# shouts trains you to ignore it.
+#
+# Markers are a family with a grammar. The dagger pair says something about the
+# LEAGUE reference, single for a coarser one and double for none at all. A
+# parenthetical instead says something about the PITCHER's own sample. A reader
+# who learns that once can read any cell without the footnote.
+CELL_STATE_STYLE <- data.frame(
+  state       = c("exact", "fallback",  "below_floor", "no_reference"),
+  filled      = c(TRUE,    TRUE,        FALSE,         FALSE),
+  text_color  = c("#000000", "#000000", PCTILE_GREY,   PCTILE_GREY),
+  font_style  = c("normal", "normal",   "italic",      "italic"),
+  font_weight = c("normal", "bold",     "normal",      "normal"),
+  # below_floor's marker is built at runtime, since it carries its own n.
+  marker      = c("",       "\u2020",   "",            "\u2021"),
+  stringsAsFactors = FALSE
+)
+
 # Minimum contributing pitchers before a reference cell may be quoted. Below
 # this the lookup falls back to a coarser cell. At the full grain the Two
 # Strikes cells hold a median of 4 eligible pitchers for whiff%, and a

@@ -112,3 +112,154 @@ lg_eligible <- function(metric, counts) {
   n <- counts[[spec$denom]]
   isTRUE(is.finite(n) && n >= spec$floor)
 }
+
+
+# ---- Percentile to colour ----------------------------------------------------
+
+#' Fill colour for a percentile, on the scale its direction demands
+#'
+#' Direction always arrives from METRIC_SPEC and is never inferred from the
+#' metric name or from the value. The switch has no fallthrough on purpose: an
+#' unrecognised direction stops here rather than defaulting to high-is-good,
+#' which is the failure that renders a .420 xwOBA green.
+#'
+#' "low" inverts the percentile, not the palette. Same scale, same reading, so a
+#' plus pitch is the same colour whichever direction its metric runs.
+#'
+#' Vectorised over `pctile`, since a metric has one direction and a column has
+#' many values. NA in, NA out.
+pctile_fill <- function(pctile, direction) {
+  spec <- switch(direction,
+    high    = list(stops = PCTILE_PAL_DIVERGING, invert = FALSE),
+    low     = list(stops = PCTILE_PAL_DIVERGING, invert = TRUE),
+    neutral = list(stops = PCTILE_PAL_NEUTRAL,   invert = FALSE),
+    stop("unknown direction: ", direction,
+         ". Expected high, low, or neutral.", call. = FALSE))
+
+  p   <- if (spec$invert) 100 - pctile else pctile
+  out <- rep(NA_character_, length(p))
+  ok  <- is.finite(p)
+  if (any(ok)) {
+    m <- grDevices::colorRamp(spec$stops)(pmin(1, pmax(0, p[ok] / 100)))
+    out[ok] <- grDevices::rgb(m[, 1], m[, 2], m[, 3], maxColorValue = 255)
+  }
+  out
+}
+
+
+# ---- One cell, one question --------------------------------------------------
+
+#' Resolve one table cell into exactly one of the four states
+#'
+#' This is the only place a state is decided. Everything a renderer needs comes
+#' back in one object, so tables.R never reconstructs a state from a percentile,
+#' a count, or a NULL. If a caller has to ask a second question, the return
+#' shape is wrong rather than the caller.
+#'
+#' `counts` is the pitch type's own denominators in the selected window, a named
+#' list with `pitches`, `swings`, `oz`, `pa`. Nothing here scans app_data, so
+#' this is safe to call inside a reactive.
+#'
+#' Precedence. Below floor beats no reference when both are true, for two
+#' reasons. It is a statement about the number actually printed on the page:
+#' 22.2 off 9 swings is not worth reading even against a perfect reference, so
+#' it is the nearer defect. And it is the more useful label, because it carries
+#' the n, which tells the reader how much more data would fix it, where no
+#' reference tells them nothing they can act on. The ladder is still walked and
+#' its answer still returned in `has_ref`, so a systematic hole in league_ref
+#' stays visible to a test even while every thin cell is labelled below floor.
+#'
+#' A non-finite value folds into below floor for the same reason. In practice it
+#' only arises from a zero denominator, and the parenthetical n then says so.
+resolve_cell <- function(ref, value, metric, pitch_type, p_throws, stand,
+                         count_bucket = "All Counts", counts) {
+  spec <- METRIC_SPEC[METRIC_SPEC$metric == metric, ]
+  if (nrow(spec) != 1) stop("unknown metric: ", metric, call. = FALSE)
+
+  n_own <- counts[[spec$denom]]
+  hit   <- lg_pctile(ref, value, metric, pitch_type, p_throws, stand, count_bucket)
+
+  state <- if (!lg_eligible(metric, counts) || !isTRUE(is.finite(value))) {
+    "below_floor"
+  } else if (!is.finite(hit$pctile)) {
+    "no_reference"
+  } else if (isTRUE(hit$exact)) {
+    "exact"
+  } else {
+    "fallback"
+  }
+
+  sty <- CELL_STATE_STYLE[CELL_STATE_STYLE$state == state, ]
+
+  # Below floor's marker is its own denominator, which differs per column and so
+  # cannot live in the style table. Inline is the only unambiguous place for it:
+  # swings for whiff%, out-of-zone for chase%, PA for xwOBA.
+  marker <- if (identical(state, "below_floor")) {
+    paste0(" (", if (isTRUE(is.finite(n_own))) n_own else 0, ")")
+  } else {
+    sty$marker
+  }
+
+  state_note <- switch(state,
+    exact    = NA_character_,
+    fallback = paste0("Percentile from a coarser league cut, ", hit$grain,
+                      ", built on ", hit$n_pitchers, " pitchers."),
+    below_floor = paste0("Grey values sit below the ", spec$floor, " ", spec$denom,
+                         " floor for this metric. The figure in parentheses is ",
+                         "the value's own denominator."),
+    no_reference = paste0("No league reference at any grain for this pitch type ",
+                          "and pitcher hand, so no percentile is shown. The ",
+                          "pitcher's own sample is not the limit here."))
+
+  list(
+    state       = state,
+    fill        = if (sty$filled) pctile_fill(hit$pctile, spec$direction) else PCTILE_UNFILLED,
+    text_color  = sty$text_color,
+    font_style  = sty$font_style,
+    font_weight = sty$font_weight,
+    marker      = marker,
+    n           = if (isTRUE(is.finite(n_own))) as.integer(n_own) else NA_integer_,
+    denom       = spec$denom,
+    floor       = spec$floor,
+    pctile      = hit$pctile,
+    n_pitchers  = hit$n_pitchers,
+    # Named only when the state is fallback. An exact hit is at the finest grain
+    # by definition, so naming it would be noise.
+    grain       = if (identical(state, "fallback")) hit$grain else NA_character_,
+    state_note  = state_note,
+    # A separate channel from state_note on purpose. state_note is about this
+    # cell's reference; metric_note is about how the metric reads at all, and an
+    # hb cell can be a fallback as well.
+    metric_note = if (metric %in% names(METRIC_NOTES)) unname(METRIC_NOTES[[metric]]) else NA_character_,
+    # Diagnostic, not a rendering input. Below floor hides whether the reference
+    # existed, so this is what lets a test see a hole in league_ref.
+    has_ref     = isTRUE(is.finite(hit$pctile))
+  )
+}
+
+
+#' Resolve a whole arsenal column, one row per pitch type
+#'
+#' gt fills column-wise, so this is the grain tables.R actually renders at: it
+#' folds one tab_style per distinct fill into a column. The scalar form above
+#' stays the unit of truth and the unit of test.
+#'
+#' Deliberately branch-free. Any logic added here rather than to resolve_cell()
+#' is a state decided in two places, which is the thing this pair exists to
+#' prevent.
+#'
+#' `counts` is one row per pitch type, aligned to `values`, carrying the four
+#' denominator columns.
+resolve_column <- function(ref, values, metric, pitch_types, p_throws, stand,
+                           count_bucket = "All Counts", counts) {
+  stopifnot("values, pitch_types and counts must be the same length" =
+              length(values) == length(pitch_types) && nrow(counts) == length(values))
+
+  cells <- lapply(seq_along(values), function(i) {
+    resolve_cell(ref, values[[i]], metric, as.character(pitch_types[[i]]),
+                 p_throws, stand, count_bucket, as.list(counts[i, , drop = FALSE]))
+  })
+
+  out <- do.call(rbind, lapply(cells, as.data.frame, stringsAsFactors = FALSE))
+  cbind(pitch_type = as.character(pitch_types), out, stringsAsFactors = FALSE)
+}
