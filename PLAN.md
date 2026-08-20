@@ -89,16 +89,16 @@ Ran 2026-08-19, PASS.
 
 One tab. Resist adding a second.
 
-- [ ] `app.R` with `selectizeInput` for pitcher (server-side, the index is large),
+- [x] `app.R` with `selectizeInput` for pitcher (server-side, the index is large),
       `dateRangeInput`, and a single `plotOutput` for `plot_movement()`
-- [ ] One reactive, `pitcher_data()`, that filters `app_data` to the selected
+- [x] One reactive, `pitcher_data()`, that filters `app_data` to the selected
       pitcher and date range. Every downstream output depends on it and on
       nothing else.
-- [ ] Load `app_data.rds` at global scope, outside `server`, so it is shared
+- [x] Load `app_data.rds` at global scope, outside `server`, so it is shared
       across sessions rather than reloaded per user. `league_ref.rds` does not
       exist yet and is not needed to render a movement chart. It joins the same
       global block in Phase 3
-- [ ] `data/app_data.rds` must exist before the app can start, and no earlier
+- [x] `data/app_data.rds` must exist before the app can start, and no earlier
       phase creates it. Write it via step 3 of `scripts/update_data.R`, the
       trimmed `pl_trim` column set, per the daily chain in CLAUDE.md
 
@@ -107,6 +107,8 @@ changes. Nothing else exists yet.
 
 **This is the phase where Jonathan should be typing.** Claude Code explains the
 reactive graph, Jonathan writes `app.R`.
+
+Ran 2026-08-19, PASS. Checked by hand in the running app.
 
 ---
 
@@ -121,31 +123,35 @@ needs `league_ref.rds` to render a movement chart and a working screen comes fir
 Running later does not make it reactive. It is still built on disk by the script
 below, for the reason in the paragraph above.
 
-- [ ] `scripts/build_league_ref.R`
-- [ ] Grain is `pitch_type` x `p_throws` x `stand` x `count_bucket` x `metric`
-- [ ] Metrics to start. velocity, ivb, hb, spin, strike%, whiff%, csw%, zone%,
+- [x] `scripts/build_league_ref.R`
+- [x] Grain is `pitch_type` x `p_throws` x `stand` x `count_bucket` x `metric`
+- [x] Metrics to start. velocity, ivb, hb, spin, strike%, whiff%, csw%, zone%,
       chase%, xwOBA, usage%
-- [ ] Per-pitcher first, then across pitchers. Floors of 50 broad and 20 narrow.
-- [ ] Store `mean` plus `quantile(x, probs = seq(0, 1, 0.01))` so the app returns
+- [x] Per-pitcher first, then across pitchers. Floors of 50 broad and 20 narrow.
+- [x] Store `mean` plus `quantile(x, probs = seq(0, 1, 0.01))` so the app returns
       a percentile with `findInterval()` instead of rescanning the season
-- [ ] `R/league.R` exposes `lg_mean(...)` and `lg_pctile(value, ...)`
+- [x] `R/league.R` exposes `lg_mean(...)` and `lg_pctile(value, ...)`
 
 **Check.** Pick a pitcher and a pitch, compute his whiff% by hand from
 `app_data`, then confirm `lg_pctile()` places him where a Savant percentile would.
 Sanity, not precision. If a 40% whiff slider comes back as the 30th percentile,
 the grain is wrong.
 
+Ran 2026-08-19, PASS. Checked by hand.
+
 ---
 
 ## Phase 4. Remaining tabs, one at a time
 
-Order matters. Each becomes a Shiny module in `R/mod_*.R`.
+Order matters. ~~Each becomes a Shiny module in `R/mod_*.R`.~~
 
-- [ ] Movement and velocity (refactor Phase 2 into a module)
-- [ ] Usage. `plot_usage()` plus `count_usage_gt()` for both hands
-- [ ] Pitch characteristics. `arsenal_gt()` with the FanGraphs grades and the
+- [x] Movement and velocity ~~(refactor Phase 2 into a module)~~. The tabs are
+      inline in `app.R`; no tab owns an input and none is instantiated twice,
+      so a module buys nothing. See the modules section of CLAUDE.md
+- [x] Usage. `plot_usage()` plus `count_usage_gt()` for both hands
+- [x] Pitch characteristics. `arsenal_gt()` with the FanGraphs grades and the
       export date in the source note
-- [ ] Heatmaps. Slowest render, so this is where `bindCache()` earns its place
+- [x] Heatmaps. Slowest render, so this is where `bindCache()` earns its place
 
 Handedness handling. Three functions take one call and three take two, but not
 for the same reason, so do not collapse the two cases.
@@ -167,6 +173,9 @@ date ranges.
 
 **Check.** Every tab matches the corresponding section of an existing PDF report
 for the same pitcher and date window.
+
+Ran 2026-08-19, PASS. Every tab checked by hand against the PDF reports, and
+`tests/phase4_hand_all.R` covers the three-way batter side.
 
 ---
 
