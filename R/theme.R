@@ -119,6 +119,27 @@ KDE_MIN_N <- 15
 # `denom` is the column the metric actually divides by, not pitch count. The
 # conversions differ a lot: 50 swings is about 106 pitches, 50 out-of-zone about
 # 87, and 50 PA-ending rows for xwOBA about 198.
+#
+# `direction` decides which fill scale a percentile is drawn on, and it is the
+# one column here that changes a number's meaning rather than its precision.
+#
+#   high     a high percentile is a good pitch, drawn good-to-bad diverging
+#   low      a high VALUE is bad, so the percentile is inverted before filling.
+#            xwoba only. Without this a .420 xwOBA renders green
+#   neutral  the metric ranks but does not grade, drawn monochrome so the cell
+#            reads as rank rather than as quality
+#
+# ivb is neutral because it depends on the pitch: high IVB is good on a
+# four-seam and bad on a curveball, where drop is the point. zone_pct is a
+# choice rather than a virtue, a pitcher can live off the plate on purpose.
+#
+# hb is neutral for a second and worse reason, see METRIC_NOTES below.
+#
+# ext and usage_pct are not on the arsenal table, so nothing renders either one
+# today. They still carry a real value rather than a placeholder, because the
+# next person to add an extension column inherits whatever is written here
+# silently. ext is high: more extension is less reaction time. usage_pct is
+# neutral, it is genuinely directionless.
 METRIC_SPEC <- data.frame(
   metric = c("velo", "ivb", "hb", "spin", "ext",
              "strike_pct", "csw_pct", "zone_pct", "usage_pct",
@@ -130,8 +151,69 @@ METRIC_SPEC <- data.frame(
   floor  = c(rep(25, 5),
              rep(50, 4),
              50, 50, 50),
+  direction = c("high", "neutral", "neutral", "high", "high",
+                "high", "high", "neutral", "neutral",
+                "high", "high", "low"),
   stringsAsFactors = FALSE
 )
+
+# Metrics whose percentile is correct but whose reading is not self-evident.
+# Rendered as a footnote on that column, keyed by metric so tables.R asks
+# "does this metric have a note" rather than testing for hb by name.
+#
+# hb is the only entry and is worse than directionless. IVB is pfx_z * 12 and HB
+# is -pfx_x * 12, so arm side reads positive for a RHP only: median SI HB is
+# +15.5 for a righty and -15.6 for a lefty. The percentile is right, because the
+# reference keeps p_throws in the grain and never drops it, but "84th percentile
+# HB" means arm-side run for one hand and glove-side for the other. See
+# CLAUDE.md, formula conventions.
+METRIC_NOTES <- c(
+  hb = paste("HB is not arm-side normalized, so a high value is arm-side run",
+             "for a RHP and glove-side for a LHP. Percentiles are within hand.")
+)
+
+# Arsenal table column name to METRIC_SPEC metric name. Only `velocity` actually
+# differs, which is the whole reason this map has to exist rather than being
+# assumed: one silent mismatch drops a column's context with no error.
+#
+# The ten keys here are exactly the columns that take percentile fill. PITCH,
+# COUNT and PITCH% keep the pitch-colour row fill so the left of the table stays
+# the identity block, and Stuff+ has no league reference to sit against.
+ARSENAL_METRIC_COLS <- c(
+  velocity   = "velo",
+  ivb        = "ivb",
+  hb         = "hb",
+  spin       = "spin",
+  strike_pct = "strike_pct",
+  whiff_pct  = "whiff_pct",
+  csw_pct    = "csw_pct",
+  zone_pct   = "zone_pct",
+  chase_pct  = "chase_pct",
+  xwoba      = "xwoba"
+)
+
+
+# ---- Percentile fill palettes ------------------------------------------------
+
+# Two scales, because a directional metric and a directionless one are answering
+# different questions and must not look alike.
+#
+# Diverging, for direction "high" and "low". Blue poor, near-white average, red
+# plus, which is the Savant convention a scout already reads without a legend.
+# Stops are deliberately light: the plan puts black text on these cells, so every
+# stop stays above roughly 7:1 against black. A saturated Savant pill needs white
+# text and would force a second text rule.
+#
+# Monochrome, for direction "neutral". A single low-chroma hue reads as rank
+# rather than as quality. Violet on purpose: it avoids the diverging scale's blue
+# and red, and it avoids grey, which the below-floor state already owns.
+PCTILE_PAL_DIVERGING <- c("#7FA8D6", "#BFD3E8", "#F0F0F0", "#EFC0AE", "#DC8163")
+PCTILE_PAL_NEUTRAL   <- c("#F6F2F9", "#E3D9EC", "#D0C0DE", "#BDA7D1", "#AA8EC3")
+
+# Below floor and no reference both render unfilled with grey italic text. Grey
+# is reserved for them: half the cells in a two-week window land here, so it has
+# to read as calm and normal rather than as a warning.
+PCTILE_GREY <- "#767676"
 
 # Minimum contributing pitchers before a reference cell may be quoted. Below
 # this the lookup falls back to a coarser cell. At the full grain the Two
