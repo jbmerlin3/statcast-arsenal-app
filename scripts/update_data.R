@@ -188,6 +188,30 @@ clean_statcast <- function(df) {
 #' date arithmetic. Savant revises pitch classifications for several days after
 #' a game, so re-pulling a day already held is a normal thing to want to do and
 #' must not double the rows.
+#' How many regular-season games finished in a date window
+#'
+#' The chain needs to tell "Savant returned nothing because nothing was played"
+#' apart from "Savant returned nothing because the pull broke". Only those two
+#' produce the same empty frame, and only one of them is fine.
+#'
+#' Counts Final games only. A game in Preview or In Progress has no complete
+#' Statcast rows to pull yet, so counting it would make every evening run look
+#' like a failure.
+#'
+#' Returns NA when the schedule itself cannot be reached, which the caller
+#' treats as "cannot judge" rather than as zero.
+schedule_final_games <- function(from, to) {
+  u <- sprintf(paste0("https://statsapi.mlb.com/api/v1/schedule",
+                      "?sportId=1&startDate=%s&endDate=%s&gameType=R"), from, to)
+  j <- tryCatch(jsonlite::fromJSON(u, flatten = TRUE), error = function(e) NULL)
+  if (is.null(j) || is.null(j$dates) || !NROW(j$dates)) return(0L)
+  gs <- tryCatch(j$dates$games, error = function(e) NULL)
+  if (is.null(gs)) return(NA_integer_)
+  sum(unlist(lapply(gs, function(g)
+    if (is.null(g) || !NROW(g)) 0L else sum(g$status.abstractGameState == "Final"))))
+}
+
+
 refresh_store <- function(store_path = STORE_PATH, through = Sys.Date()) {
   sc <- readRDS(store_path)
   last  <- max(sc$game_date)
@@ -200,9 +224,23 @@ refresh_store <- function(store_path = STORE_PATH, through = Sys.Date()) {
   }
   message("Pulling ", start, " to ", through)
 
+  # Asked before the pull, so a broken pull cannot also break the sanity check.
+  n_games <- schedule_final_games(as.character(start), as.character(through))
+  message(if (is.na(n_games)) "Schedule unreachable, cannot judge an empty pull"
+          else paste0(n_games, " final games in that window"))
+
   new_raw <- pull_season_statcast(as.character(start), as.character(through))
   if (is.null(new_raw) || nrow(new_raw) == 0) {
-    message("Pull returned no rows, store unchanged")
+    # Zero rows on a day with completed games is a failure, not a no-op. The
+    # old behaviour returned the store unchanged and let the chain finish
+    # green, which is how a stale store survives a run that looked fine.
+    if (isTRUE(n_games > 0)) {
+      stop("Pull returned 0 rows for ", start, " to ", through,
+           ", but ", n_games, " regular-season games finished in that window. ",
+           "Savant is failing or the request is wrong. Store left at ", last,
+           ".", call. = FALSE)
+    }
+    message("Pull returned no rows and no games finished, store unchanged")
     return(sc)
   }
   new_clean <- clean_statcast(new_raw)
@@ -228,22 +266,44 @@ refresh_store <- function(store_path = STORE_PATH, through = Sys.Date()) {
   # half-populated.
   out <- out |> mutate(in_zone = in_zone_flag(plate_x, plate_z, sz_bot, sz_top))
 
-  message("Added ", format(nrow(out) - nrow(sc), big.mark = ","),
+  added <- nrow(out) - nrow(sc)
+  # Rows can come back and still all be duplicates, which dedup silently drops.
+  # Same failure as an empty pull, one step later.
+  if (added == 0 && isTRUE(n_games > 0)) {
+    stop("Pull returned ", format(nrow(new_clean), big.mark = ","),
+         " rows but every one was already stored, with ", n_games,
+         " final games in ", start, " to ", through,
+         ". The store did not advance past ", last, ".", call. = FALSE)
+  }
+
+  message("Added ", format(added, big.mark = ","),
           " rows, now ", format(nrow(out), big.mark = ","), " through ", max(out$game_date))
+
+  # Savant lags the schedule by hours, so this is reported and not an error:
+  # the evening run legitimately sees today's finals before Savant posts them.
+  if (max(out$game_date) < as.character(through)) {
+    message("Note: store ends ", max(out$game_date), ", request ran to ", through,
+            ". Savant has not posted the rest yet.")
+  }
   out
 }
 
 
 # ---- The chain ---------------------------------------------------------------
-#
-# Runs when this file is executed with Rscript, not when it is sourced.
-# sys.nframe() is 0 only at the top level of an Rscript invocation.
-#
-# The app reads app_data.rds at startup, so its date range follows from step 3
-# with no separate action.
 
-if (sys.nframe() == 0L) {
-  if (!dir.exists("R")) stop("run this from the repo root: Rscript scripts/update_data.R", call. = FALSE)
+#' Run all four steps
+#'
+#' A named function rather than a bare block, because the bare block was gated
+#' on `sys.nframe() == 0L` and that is TRUE only under Rscript. Sourcing this
+#' file from an R session gives `sys.nframe() == 4`, so the whole chain was
+#' skipped, printed nothing, and returned cleanly. A stale store survived a run
+#' that looked like it had worked. The gate now selects between running and
+#' SAYING it is not running, never between running and silence.
+#'
+#' The app reads app_data.rds at startup, so its date range follows from step 3
+#' with no separate action.
+run_chain <- function() {
+  if (!dir.exists("R")) stop("run this from the repo root", call. = FALSE)
   invisible(lapply(sort(list.files("R", full.names = TRUE)), source))
 
   message("== Step 1: season store ==")
@@ -287,4 +347,14 @@ if (sys.nframe() == 0L) {
   message("Wrote ", APP_DATA_PATH, ", ", format(nrow(ad), big.mark = ","), " rows x ", ncol(ad),
           " cols, ", round(file.size(APP_DATA_PATH) / 1024^2, 1), " MB")
   message("App date range is now ", min(ad$game_date), " to ", max(ad$game_date))
+  invisible(ad)
+}
+
+
+if (sys.nframe() == 0L) {
+  run_chain()
+} else {
+  # Sourced, not run. Say so, loudly. This is the branch that used to be empty.
+  message("update_data.R sourced: functions loaded, THE CHAIN DID NOT RUN.")
+  message("  Rscript scripts/update_data.R   to run it, or call run_chain()")
 }
