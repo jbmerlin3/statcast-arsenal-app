@@ -318,24 +318,38 @@ resolve_table <- function(tbl, denoms, ref, p_throws, stand, count_bucket = "All
 state_notes <- function(cells) {
   fb <- cells[cells$state == "fallback", , drop = FALSE]
 
-  # Measured on 2026: no pitcher produces two distinct fallback grains, which is
-  # what lets one dagger line name a grain unambiguously. If that ever stops
-  # holding, one line would silently describe cells it does not apply to, so
-  # this stops rather than picking the first.
+  # One dagger line whatever the number of grains, because two lines under one
+  # marker leave the reader unable to tell which applies to a given cell. When
+  # more than one rung answered, the line enumerates them.
+  #
+  # The arsenal table only ever produces one grain, measured across 60 pitchers.
+  # The usage table produces two, and that is structural rather than incidental:
+  # its columns each carry a different count bucket, and the ladder's second and
+  # third rungs differ by bucket, so different columns land on different rungs.
+  # An assertion written for the arsenal table caught this on the usage table
+  # the first time it ran.
+  #
+  # Ordered by the ladder, finest first, so the line does not reorder between
+  # renders. An unrecognised grain still stops, since it means the ladder grew a
+  # rung this has not been thought about against.
+  ladder_grains <- vapply(LADDER, function(r) r$grain, character(1))
   grains <- unique(fb$grain)
-  if (length(grains) > 1) {
-    stop("more than one fallback grain in one table: ",
-         paste(grains, collapse = " | "),
-         ". One dagger line cannot name them all. Split the note by grain ",
-         "before shipping this.", call. = FALSE)
+  unknown <- setdiff(grains, ladder_grains)
+  if (length(unknown)) {
+    stop("fallback grain not on the ladder: ", paste(unknown, collapse = " | "),
+         call. = FALSE)
   }
+  grains <- ladder_grains[ladder_grains %in% grains]
 
   notes <- character(0)
   if (nrow(fb)) {
+    parts <- vapply(grains, function(gr) paste0(
+      gr, " (at least ", min(fb$n_pitchers[fb$grain == gr]), " pitchers)"),
+      character(1))
     notes <- c(notes, paste0(
-      "† Percentile from a coarser league cut, ", grains,
-      ", because the exact cell held fewer than ", MIN_REF_PITCHERS,
-      " pitchers. Built on at least ", min(fb$n_pitchers), " pitchers."))
+      "† Percentile from a coarser league cut than the exact one, because that ",
+      "cell held fewer than ", MIN_REF_PITCHERS, " pitchers. Cut used: ",
+      paste(parts, collapse = "; "), "."))
   }
   if (any(cells$state == "no_reference")) {
     notes <- c(notes, paste0(
