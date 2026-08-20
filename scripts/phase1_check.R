@@ -44,21 +44,28 @@ EXPECTED_DIFFS <- c(
   arsenal_gt_R        = "source note now reports the FanGraphs export window",
   arsenal_gt_L        = "source note now reports the FanGraphs export window",
   arsenal_gt_footnote = "source note now reports the FanGraphs export window",
-  plot_heatmap_R      = "strip annotation enlarged from size 3.2 to 4.2, deliberate presentation change",
-  plot_heatmap_L      = "strip annotation enlarged from size 3.2 to 4.2, deliberate presentation change"
+  plot_heatmap_R      = "deliberate presentation change: strip annotation 3.2 to 4.2, plus plot.margin and strip.text margin so the column labels stop clipping",
+  plot_heatmap_L      = "deliberate presentation change: strip annotation 3.2 to 4.2, plus plot.margin and strip.text margin so the column labels stop clipping"
 )
 
-# What this check does NOT see, verified rather than assumed. The heatmap also
-# gained a plot.margin and a larger strip.text bottom margin, to stop the column
-# labels clipping against the top edge. Reverting the annotation size alone
-# makes both plot_heatmap entries report "identical" and the whole check PASS,
-# with the margin edits still in place.
+# Plots are compared on built layer data AND on the theme, see plot_spec() in
+# tests/phase1_artifacts.R. Layer data alone used to leave every purely thematic
+# edit invisible: the heatmap margin fix changed the plot and still reported
+# "identical". Adding the theme closed that, verified by mutation rather than
+# assumed:
 #
-# The reason is that this compares ggplot_build()$data, which holds the built
-# layers: geometry, aesthetics, and geom parameters like size. Theme is not
-# layer data. So any purely thematic edit, margins, fonts, panel colours,
-# legend position, passes here silently. Comparing $plot$theme as well would
-# close it.
+#   revert the heatmap annotation size, keep the margins -> still differs
+#     (before the theme was compared, this reported identical and passed)
+#   flip plot_velo's legend.position, an otherwise untouched plot
+#     -> DIFFERS (UNEXPECTED), check FAILS
+#
+# Adding the theme produced no new differences on plots nobody had edited, so
+# nothing was added to EXPECTED_DIFFS to accommodate it.
+#
+# One limit that remains. EXPECTED_DIFFS is keyed by artifact name, so it
+# records THAT an artifact may differ, not WHICH difference is sanctioned. An
+# entry stays satisfied if the sanctioned change is reverted while some other
+# change takes its place.
 
 
 # ---- Fixture -----------------------------------------------------------------

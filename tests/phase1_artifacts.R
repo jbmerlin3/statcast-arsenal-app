@@ -69,11 +69,18 @@ stuff_mixed <- tibble(pitch_type = c("FF", "SL"),
 GT_PARTS <- c("_data", "_boxhead", "_styles", "_heading", "_source_notes", "_footnotes")
 gt_spec  <- function(g) stats::setNames(lapply(GT_PARTS, function(p) g[[p]]), GT_PARTS)
 
-# Built layers rather than the plot object. A plot object holds unevaluated
-# quosures and environment references that differ harmlessly between sessions,
-# while the built data is what actually reaches the page, so a changed constant
-# or a dropped column shows up here.
-plot_layers <- function(p) suppressMessages(suppressWarnings(ggplot2::ggplot_build(p)$data))
+# Built layers plus the theme. The layers are what reaches the page as geometry
+# and aesthetics; the theme is everything else about how it looks. Comparing
+# only the layers made every purely thematic edit invisible: margins, fonts,
+# panel colours, legend position all passed silently, which is how a heatmap
+# margin fix could change the plot and still report "identical".
+#
+# Still not the whole plot object, which carries quosures and environment
+# references that differ harmlessly between two sessions.
+plot_spec <- function(p) {
+  b <- suppressMessages(suppressWarnings(ggplot2::ggplot_build(p)))
+  list(data = b$data, theme = b$plot$theme)
+}
 
 artifacts <- list(
   arsenal_table_R    = as.data.frame(arsenal_table(plt, "R", stuff_empty)),
@@ -81,11 +88,11 @@ artifacts <- list(
   count_usage_tbl_R  = as.data.frame(count_usage_tbl(plt, "R")),
   count_usage_tbl_L  = as.data.frame(count_usage_tbl(plt, "L")),
 
-  plot_usage         = plot_layers(plot_usage(plt)),
-  plot_movement      = plot_layers(plot_movement(plt)),
-  plot_velo          = plot_layers(plot_velo(plt)),
-  plot_heatmap_R     = plot_layers(plot_heatmap(plt, "R")),
-  plot_heatmap_L     = plot_layers(plot_heatmap(plt, "L")),
+  plot_usage         = plot_spec(plot_usage(plt)),
+  plot_movement      = plot_spec(plot_movement(plt)),
+  plot_velo          = plot_spec(plot_velo(plt)),
+  plot_heatmap_R     = plot_spec(plot_heatmap(plt, "R")),
+  plot_heatmap_L     = plot_spec(plot_heatmap(plt, "L")),
 
   arsenal_gt_R       = gt_spec(arsenal_gt(arsenal_table(plt, "R", stuff_empty), "R")),
   arsenal_gt_L       = gt_spec(arsenal_gt(arsenal_table(plt, "L", stuff_empty), "L")),
