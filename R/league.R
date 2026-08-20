@@ -263,3 +263,87 @@ resolve_column <- function(ref, values, metric, pitch_types, p_throws, stand,
   out <- do.call(rbind, lapply(cells, as.data.frame, stringsAsFactors = FALSE))
   cbind(pitch_type = as.character(pitch_types), out, stringsAsFactors = FALSE)
 }
+
+
+# ---- One table, one call -----------------------------------------------------
+
+#' Resolve a whole arsenal table: per-cell styling plus the table's note lines
+#'
+#' The grain tables.R renders at. resolve_column() would leave arsenal_gt()
+#' holding ten note vectors and doing the union, dedupe and ordering itself,
+#' which is the same aggregation this pair exists to keep off the table side,
+#' reappearing one level up.
+#'
+#' Returns three things and nothing else is needed to render:
+#'   cells     one row per (column, pitch type), carrying fill, text colour,
+#'             font style and weight, and the marker to append
+#'   notes     ordered, deduplicated, marker-prefixed source-note lines
+#'   col_notes named by table column, for metrics whose reading needs a caveat
+#'
+#' Order is fixed rather than incidental: dagger, then double dagger, then the
+#' grey line. A set that reordered between renders would make the byte-identity
+#' baseline flake.
+#'
+#' `denoms` is matched to `tbl` by pitch type rather than by position, so the
+#' two frames cannot silently drift out of alignment.
+resolve_table <- function(tbl, denoms, ref, p_throws, stand, count_bucket = "All Counts") {
+  cols <- ARSENAL_METRIC_COLS[names(ARSENAL_METRIC_COLS) %in% names(tbl)]
+  pt   <- as.character(tbl$pitch_type)
+
+  idx <- match(pt, as.character(denoms$pitch_type))
+  stopifnot("every pitch type in the table needs a denominator row" = !anyNA(idx))
+  dn <- as.data.frame(denoms)[idx, c("pitches", "swings", "oz", "pa"), drop = FALSE]
+
+  cells <- do.call(rbind, lapply(seq_along(cols), function(k) {
+    col <- names(cols)[k]
+    out <- resolve_column(ref, tbl[[col]], unname(cols[k]), pt,
+                          p_throws, stand, count_bucket, dn)
+    cbind(column = col, metric = unname(cols[k]), row = seq_along(pt),
+          out, stringsAsFactors = FALSE)
+  }))
+
+  fb <- cells[cells$state == "fallback", , drop = FALSE]
+
+  # Measured on 2026: no pitcher produces two distinct fallback grains, which is
+  # what lets one dagger line name a grain unambiguously. If that ever stops
+  # holding, one line would silently describe cells it does not apply to, so
+  # this stops rather than picking the first.
+  grains <- unique(fb$grain)
+  if (length(grains) > 1) {
+    stop("more than one fallback grain in one table: ",
+         paste(grains, collapse = " | "),
+         ". One dagger line cannot name them all. Split the note by grain ",
+         "before shipping this.", call. = FALSE)
+  }
+
+  notes <- character(0)
+  if (nrow(fb)) {
+    notes <- c(notes, paste0(
+      "† Percentile from a coarser league cut, ", grains,
+      ", because the exact cell held fewer than ", MIN_REF_PITCHERS,
+      " pitchers. Built on at least ", min(fb$n_pitchers), " pitchers."))
+  }
+  if (any(cells$state == "no_reference")) {
+    notes <- c(notes, paste0(
+      "‡ No league reference exists at any grain for this pitch type and ",
+      "pitcher hand, so no percentile is shown. The pitcher's own sample is not ",
+      "the limit here."))
+  }
+  # One line, and it does not enumerate per-metric floors. The floors differ by
+  # denominator, so naming them would put several near-identical grey lines under
+  # one table. The parenthetical already carries each value's own denominator,
+  # which is where the reader needs it.
+  if (any(cells$state == "below_floor")) {
+    notes <- c(notes, paste0(
+      "Grey italic values sit below the sample floor for their metric and are ",
+      "not placed against the league. The figure in parentheses is that value's ",
+      "own denominator."))
+  }
+
+  cn <- vapply(unname(cols),
+               function(m) if (m %in% names(METRIC_NOTES)) unname(METRIC_NOTES[[m]]) else NA_character_,
+               character(1))
+  names(cn) <- names(cols)
+
+  list(cells = cells, notes = notes, col_notes = cn[!is.na(cn)])
+}

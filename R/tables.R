@@ -55,7 +55,38 @@ arsenal_table <- function(df, hand, stuff_all) {
 }
 
 
+#' The four denominators behind the arsenal table, one row per pitch type
+#'
+#' Deliberately NOT columns on arsenal_table(). Its output is a compared
+#' artifact in the Phase 1 regression, so widening it would make both
+#' arsenal_table_R and arsenal_table_L differ and cost two sanctioned entries in
+#' EXPECTED_DIFFS. The approved plan said to return them from arsenal_table();
+#' the byte-identity invariant outranks that, so they live here instead.
+#'
+#' The filter and the droplevels have to match arsenal_table() exactly, or a
+#' pitch type present in one frame is missing from the other.
+arsenal_denoms <- function(df, hand) {
+  if (hand != "All") df <- filter(df, stand == hand)
+  df |>
+    mutate(pitch_type = droplevels(pitch_type)) |>
+    group_by(pitch_type) |>
+    summarise(
+      pitches = n(),
+      swings  = sum(description %in% swing_only),
+      oz      = sum(in_zone == 0),
+      pa      = sum(woba_denom, na.rm = TRUE),
+      .groups = "drop"
+    )
+}
+
+
 #' Render the pitch characteristics table
+#'
+#' `ref` is the resolved context from resolve_table(), not the raw league
+#' reference. NULL means no context, and must render exactly what this function
+#' rendered before Part B existed. tests/step3_null_identical.R is the guard;
+#' scripts/phase1_check.R cannot be, since all three arsenal_gt artifacts are
+#' already sanctioned in EXPECTED_DIFFS.
 #'
 #' fg_window is the date window of the FanGraphs export behind the Stuff+
 #' column, passed in as free text and printed in the source note. It is an
@@ -66,7 +97,8 @@ arsenal_table <- function(df, hand, stuff_all) {
 #' A missing window prints as missing rather than falling back to a generic
 #' note. A stale export is invisible on the page otherwise, which is the failure
 #' this note exists to prevent.
-arsenal_gt <- function(tbl, hand, fg_window = NULL, label = hand_label(hand)) {
+arsenal_gt <- function(tbl, hand, fg_window = NULL, label = hand_label(hand),
+                       ref = NULL) {
   source_note <- if (is.null(fg_window)) {
     "Stuff+ from FanGraphs. Export window not supplied."
   } else {
@@ -108,11 +140,50 @@ arsenal_gt <- function(tbl, hand, fg_window = NULL, label = hand_label(hand)) {
   # Row fill at 20 alpha, with the pitch code itself in the full color. gt has
   # no vectorised way to key fill off a value, so each pitch type is folded in
   # as its own tab_style.
-  reduce(as.character(tbl$pitch_type), function(gt_tbl, pt) {
+  g <- reduce(as.character(tbl$pitch_type), function(gt_tbl, pt) {
     gt_tbl |>
       tab_style(cell_fill(color = paste0(pitch_colors[[pt]], "20")), cells_body(rows = pitch_type == pt)) |>
       tab_style(cell_text(color = pitch_text_colors[[pt]], weight = "bold"), cells_body(columns = pitch_type, rows = pitch_type == pt))
   }, .init = g)
+
+  if (is.null(ref)) return(g)
+
+  # AFTER the pitch-colour reduce, never before. The later tab_style wins in gt,
+  # so applying these first would let the row fill silently overwrite every
+  # percentile and render the context strip as the identity block.
+  #
+  # No conditionals below. Every cell carries a concrete fill, colour, style,
+  # weight and marker, with white for the unfilled states and "" for no marker,
+  # which is what keeps the state decision in resolve_cell() and out of here.
+  g <- reduce(seq_len(nrow(ref$cells)), function(gt_tbl, i) {
+    ce <- ref$cells[i, ]
+    gt_tbl |>
+      tab_style(cell_fill(color = ce$fill),
+                cells_body(columns = ce$column, rows = ce$row)) |>
+      tab_style(cell_text(color = ce$text_color, style = ce$font_style,
+                          weight = ce$font_weight),
+                cells_body(columns = ce$column, rows = ce$row))
+  }, .init = g)
+
+  # text_transform, not fmt. fmt does not compound: a marker fmt stacked on the
+  # xwOBA fmt above wins outright, drops the leading-zero rule and renders 0.32
+  # where the table has always shown .320. text_transform receives the text gt
+  # has already formatted, so it composes with both that rule and gt's own
+  # per-column decimal padding.
+  mk <- ref$cells[nzchar(ref$cells$marker), , drop = FALSE]
+  g <- reduce(seq_len(nrow(mk)), function(gt_tbl, i) {
+    col <- mk$column[i]; rw <- mk$row[i]; m <- mk$marker[i]
+    gt_tbl |> text_transform(cells_body(columns = col, rows = rw),
+                             fn = function(x) paste0(x, m))
+  }, .init = g)
+
+  # On the column label, where there is no collision with the cell markers.
+  g <- reduce(names(ref$col_notes), function(gt_tbl, col) {
+    gt_tbl |> tab_footnote(ref$col_notes[[col]], cells_column_labels(columns = col))
+  }, .init = g)
+
+  # In the order resolve_table() fixed them: dagger, double dagger, grey line.
+  reduce(ref$notes, function(gt_tbl, n) tab_source_note(gt_tbl, n), .init = g)
 }
 
 
