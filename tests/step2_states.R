@@ -34,6 +34,12 @@ denoms <- function(d) {
               pa      = sum(woba_denom, na.rm = TRUE), .groups = "drop")
 }
 metric_value <- function(d, metric) switch(metric,
+  ivb       = mean(d$ivb, na.rm = TRUE),
+  spin      = mean(d$release_spin_rate, na.rm = TRUE),
+  strike_pct= mean(d$type %in% c("S", "X")) * 100,
+  csw_pct   = mean(d$description %in% c("called_strike", whiff_desc)) * 100,
+  zone_pct  = mean(d$in_zone, na.rm = TRUE) * 100,
+  chase_pct = sum(d$in_zone == 0 & d$description %in% swing_only) / sum(d$in_zone == 0) * 100,
   whiff_pct = sum(d$description %in% whiff_desc) / sum(d$description %in% swing_only) * 100,
   xwoba     = sum(d$estimated_woba_using_speedangle * d$woba_denom, na.rm = TRUE) /
                 sum(d$woba_denom, na.rm = TRUE),
@@ -138,6 +144,25 @@ expect("low is the mirror of high", pctile_fill(90, "low"), pctile_fill(10, "hig
 expect("xwoba direction from spec", METRIC_SPEC$direction[METRIC_SPEC$metric == "xwoba"], "low")
 expect("unknown direction stops",
        tryCatch({pctile_fill(50, "up"); "no error"}, error = function(e) "stopped"), "stopped")
+
+cat("\n=== every resolved fill is a usable colour ===\n")
+# M3 last turn set below_floor to filled and was caught by a crash inside
+# gt::cell_fill(color = NA), because a below-floor cell's percentile can be NA.
+# A crash proves gt is intolerant, not that the guard works. This asserts the
+# invariant gt was accidentally enforcing: fill is always a real colour, so any
+# state that starts producing NA is named here instead of aborting a render.
+all_fills <- unlist(lapply(unname(ARSENAL_METRIC_COLS), function(m) {
+  pl2 <- build_pitch_level(ad, 669358) |> filter(stand == "R")
+  d2  <- denoms(pl2)
+  vapply(levels(droplevels(pl2$pitch_type)), function(pt) {
+    dd <- filter(pl2, pitch_type == pt)
+    resolve_cell(ref, tryCatch(metric_value(dd, m), error = function(e) NA_real_),
+                 m, pt, "R", "R", "All Counts", denoms(dd))$fill
+  }, character(1))
+}))
+cat("  ", length(all_fills), " fills, ", sum(is.na(all_fills)), " NA\n", sep = "")
+expect("no resolved fill is NA", sum(is.na(all_fills)), 0L)
+expect("every fill is a 6-digit hex", all(grepl("^#[0-9A-Fa-f]{6}$", all_fills)), TRUE)
 
 cat("\n=== FLOOR BOUNDARY: floor and floor-1 on a rate metric ===\n")
 # The value and the league reference are real: Baz FF whiff% vs RHH against a

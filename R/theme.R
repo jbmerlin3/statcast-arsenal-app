@@ -145,8 +145,13 @@ METRIC_SPEC <- data.frame(
              "strike_pct", "csw_pct", "zone_pct", "usage_pct",
              "whiff_pct", "chase_pct", "xwoba"),
   kind   = c(rep("mean", 5), rep("rate", 7)),
+  # usage_pct's denominator is the CUT's total pitches, not the pitch type's.
+  # It is a share: its precision comes from how many pitches the share was
+  # measured over, not from how many were of this type. Flooring it on the pitch
+  # type's own count greys a well-measured 30% share because the pitch is
+  # uncommon, which is backwards.
   denom  = c(rep("pitches", 5),
-             rep("pitches", 4),
+             "pitches", "pitches", "pitches", "cut_pitches",
              "swings", "oz", "pa"),
   floor  = c(rep(25, 5),
              rep(50, 4),
@@ -258,6 +263,11 @@ CELL_STATE_STYLE <- data.frame(
 # this the lookup falls back to a coarser cell. At the full grain the Two
 # Strikes cells hold a median of 4 eligible pitchers for whiff%, and a
 # percentile off 4 pitchers is a fabrication.
+# Every denominator a metric can divide by. One list, so a frame of counts and
+# METRIC_SPEC$denom cannot drift apart silently: a denom naming a column nobody
+# supplies resolves to no sample at all and greys the metric everywhere.
+DENOM_COLS <- c("pitches", "swings", "oz", "pa", "cut_pitches")
+
 MIN_REF_PITCHERS <- 20
 
 # The six overlapping count buckets, matching count_usage_tbl() in tables.R.

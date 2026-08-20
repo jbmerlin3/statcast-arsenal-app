@@ -232,7 +232,10 @@ count_usage_denoms <- function(df, hand) {
     d <- if (is.null(counts)) df else filter(df, cnt %in% counts)
     tidyr::complete(count(d, pitch_type, name = "pitches"),
                     pitch_type = levels(df$pitch_type), fill = list(pitches = 0)) |>
-      mutate(count_bucket = nm, swings = 0, oz = 0, pa = 0)
+      # cut_pitches is the bucket total and is the same for every pitch type in
+      # the bucket, since that is what each share was measured over.
+      mutate(count_bucket = nm, cut_pitches = sum(pitches),
+             swings = 0, oz = 0, pa = 0)
   })
 }
 

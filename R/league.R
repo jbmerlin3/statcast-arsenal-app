@@ -292,7 +292,7 @@ resolve_table <- function(tbl, denoms, ref, p_throws, stand, count_bucket = "All
 
   idx <- match(pt, as.character(denoms$pitch_type))
   stopifnot("every pitch type in the table needs a denominator row" = !anyNA(idx))
-  dn <- as.data.frame(denoms)[idx, c("pitches", "swings", "oz", "pa"), drop = FALSE]
+  dn <- as.data.frame(denoms)[idx, intersect(DENOM_COLS, names(denoms)), drop = FALSE]
 
   cells <- do.call(rbind, lapply(seq_along(cols), function(k) {
     col <- names(cols)[k]
@@ -435,7 +435,7 @@ resolve_usage <- function(wide, denoms, ref, p_throws, stand) {
     idx <- match(pt, dn$pitch_type)
     stopifnot("every pitch type needs a denominator row per bucket" = !anyNA(idx))
     out <- resolve_column(ref, wide[[b]], "usage_pct", pt, p_throws, stand, b,
-                          dn[idx, c("pitches", "swings", "oz", "pa"), drop = FALSE])
+                          dn[idx, intersect(DENOM_COLS, names(dn)), drop = FALSE])
     cbind(column = b, metric = "usage_pct", row = seq_along(pt), out,
           stringsAsFactors = FALSE)
   }))

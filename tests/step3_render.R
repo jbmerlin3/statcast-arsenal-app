@@ -102,11 +102,23 @@ expect("one n label per reference mark", length(ns), nrow(mref))
 expect("the n labels are the reference pitcher counts",
        sort(as.integer(sub("^n=", "", ns))), sort(as.integer(mref$n_pitchers)))
 
+# M7 removed count_usage_gt's early return, so ref = NULL flowed into the context
+# block and died on nrow(NULL). Nothing can make that call succeed: the function
+# genuinely cannot proceed without a context. What CAN be fixed is that the
+# check reported an uncaught error instead of a named failure, so the render is
+# asserted to produce a gt_tbl rather than assumed to.
+renders <- function(expr) tryCatch({ g <- expr; inherits(g, "gt_tbl") }, error = function(e) FALSE)
+
 uw <- count_usage_tbl(pm, "R")
 uctx <- resolve_usage(uw, count_usage_denoms(pm, "R"), ref, pm$p_throws[1], "R")
 gspec <- function(g) { h <- as.character(gt::as_raw_html(g))
   for (id in unique(regmatches(h, gregexpr('(?<=id=")[a-z]{10,}(?=")', h, perl = TRUE))[[1]]))
     h <- gsub(id, "GT_ID", h, fixed = TRUE); h }
+expect("count_usage_gt renders with no ref",     renders(count_usage_gt(uw, "R")), TRUE)
+expect("count_usage_gt renders with ref = NULL", renders(count_usage_gt(uw, "R", ref = NULL)), TRUE)
+expect("count_usage_gt renders with a context",  renders(count_usage_gt(uw, "R", ref = uctx)), TRUE)
+expect("arsenal_gt renders with no ref",
+       renders(arsenal_gt(arsenal_table(pm, "R", tibble(pitch_type=character(), stuff_plus=numeric(), fg_exact=logical())), "R")), TRUE)
 expect("count_usage_gt ref=NULL equals no ref",
        identical(gspec(count_usage_gt(uw, "R")), gspec(count_usage_gt(uw, "R", ref = NULL))), TRUE)
 expect("count_usage_gt with a ref actually differs",

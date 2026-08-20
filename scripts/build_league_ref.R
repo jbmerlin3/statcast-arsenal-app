@@ -56,7 +56,10 @@ pitcher_cells <- function(d, by_stand) {
   # denominator is his total rather than the pitch type's.
   cells |>
     group_by(across(all_of(c("pitcher", setdiff(grain, "pitch_type"))))) |>
-    mutate(usage_pct = pitches / sum(pitches) * 100) |>
+    # cut_pitches is usage_pct's denominator: the pitcher's total in this cut,
+    # which is what the share is measured over. See METRIC_SPEC in theme.R.
+    mutate(cut_pitches = sum(pitches),
+           usage_pct = pitches / cut_pitches * 100) |>
     ungroup()
 }
 
@@ -72,7 +75,8 @@ summarise_cells <- function(cells, grain) {
     # Each metric is filtered on its own denominator. A slider with 200 pitches
     # but 30 swings clears the velocity floor and fails the whiff floor, which
     # is the intended behaviour.
-    mutate(denom_n = case_when(denom == "pitches" ~ pitches,
+    mutate(denom_n = case_when(denom == "cut_pitches" ~ cut_pitches,
+                               denom == "pitches" ~ pitches,
                                denom == "swings"  ~ swings,
                                denom == "oz"      ~ oz,
                                denom == "pa"      ~ pa)) |>
