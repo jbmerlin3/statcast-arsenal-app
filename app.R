@@ -27,6 +27,10 @@ library(ggplot2)
 # helpers living in another. From the console, source them yourself as usual.
 
 app_data     <- load_app_data()
+# Same reasoning as app_data: loaded once, shared by every session. It is small
+# next to app_data, but the app never rebuilds it either. scripts/update_data.R
+# step 2 owns that, per the daily chain in CLAUDE.md.
+league_ref   <- load_league_ref()
 player_index <- build_player_index(app_data)
 HALVES       <- season_halves(app_data)
 
@@ -218,9 +222,15 @@ server <- function(input, output, session) {
   })
 
   output$chars_table <- gt::render_gt({
-    arsenal_gt(arsenal_table(pitcher_data(), input$hand, stuff_all()),
-               input$hand,
-               fg_window = if (is.null(FG_EXPORT)) NULL else FG_EXPORT$label)
+    d   <- pitcher_data()
+    tbl <- arsenal_table(d, input$hand, stuff_all())
+    # resolve_table() reads league_ref and the table, never app_data, so this
+    # stays cheap enough to run on every input change.
+    ctx <- resolve_table(tbl, arsenal_denoms(d, input$hand), league_ref,
+                         d$p_throws[1], input$hand)
+    arsenal_gt(tbl, input$hand,
+               fg_window = if (is.null(FG_EXPORT)) NULL else FG_EXPORT$label,
+               ref = ctx)
   })
 }
 

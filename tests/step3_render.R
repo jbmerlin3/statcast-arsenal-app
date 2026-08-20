@@ -57,11 +57,18 @@ expect("cell does NOT carry the pitch-colour fill", grepl(pc, cell3, ignore.case
 cat("\n=== note order is dagger, double dagger, grey ===\n")
 nts <- baz$ctx$notes
 for (n in nts) cat("  ", substr(n, 1, 72), "\n", sep = "")
-rank_of <- function(n) if (startsWith(n, "†")) 1L else if (startsWith(n, "‡")) 2L else 3L
+# Scope note first, it frames every other line. Then the marker grammar:
+# dagger, double dagger, grey.
+rank_of <- function(n) {
+  if (startsWith(n, "Percentiles rank")) 0L
+  else if (startsWith(n, "\u2020")) 1L
+  else if (startsWith(n, "\u2021")) 2L
+  else 3L
+}
 expect("notes are in marker-grammar order", !is.unsorted(vapply(nts, rank_of, integer(1))), TRUE)
 # The rendered order must match, or the vector's order is decorative.
 h <- as.character(as_raw_html(baz$g))
-pos <- vapply(nts, function(n) regexpr(substr(n, 4, 40), h, fixed = TRUE), integer(1))
+pos <- vapply(nts, function(n) regexpr(substr(n, nchar(n) - 30, nchar(n)), h, fixed = TRUE), integer(1))
 expect("rendered source notes follow the same order", !is.unsorted(pos), TRUE)
 
 cat("\n=== one dagger line names one grain, and two grains stop ===\n")

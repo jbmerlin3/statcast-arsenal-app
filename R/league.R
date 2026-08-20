@@ -280,8 +280,8 @@ resolve_column <- function(ref, values, metric, pitch_types, p_throws, stand,
 #'   notes     ordered, deduplicated, marker-prefixed source-note lines
 #'   col_notes named by table column, for metrics whose reading needs a caveat
 #'
-#' Order is fixed rather than incidental: dagger, then double dagger, then the
-#' grey line. A set that reordered between renders would make the byte-identity
+#' Order is fixed rather than incidental: the scope note, then dagger, then
+#' double dagger, then the grey line. A set that reordered between renders would make the byte-identity
 #' baseline flake.
 #'
 #' `denoms` is matched to `tbl` by pitch type rather than by position, so the
@@ -339,6 +339,14 @@ resolve_table <- function(tbl, denoms, ref, p_throws, stand, count_bucket = "All
       "not placed against the league. The figure in parentheses is that value's ",
       "own denominator."))
   }
+
+  # Always present when there is any context at all, because the fill implies a
+  # comparison and the table never says which one. It does not fix the sinker
+  # versus slider reading, see CLAUDE.md, but it stops the page implying a
+  # cross-pitch ranking it is not making.
+  notes <- c(paste0(
+    "Percentiles rank this pitcher against other pitchers throwing the same ",
+    "pitch type from the same side, not against all pitches."), notes)
 
   cn <- vapply(unname(cols),
                function(m) if (m %in% names(METRIC_NOTES)) unname(METRIC_NOTES[[m]]) else NA_character_,
