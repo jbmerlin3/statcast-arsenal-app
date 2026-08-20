@@ -63,6 +63,9 @@ drops to `pitch_type x p_throws x count` on 22 reference pitchers.
 - `plot_movement` errors with "figure margins too large" below about 600px of
   panel width. `aspect.ratio = 1` plus its margins. Pre-existing, fine at desktop
   widths, ugly on a phone.
+  **CLOSED 2026-08-20 as misdiagnosed.** Never reproduced at any size. The
+  real fault was plot_movement returning invisibly, so renderPlot drew a
+  blank white device. See CLAUDE.md, closed as misdiagnosed.
 - `EXPECTED_DIFFS` is keyed by artifact name, so it sanctions *that* an artifact
   may differ, not *which* difference. Reverting a sanctioned change while another
   takes its place still passes. Noted in `scripts/phase1_check.R`.

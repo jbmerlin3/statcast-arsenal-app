@@ -361,6 +361,22 @@ from `Learning_to_pull_stats.R`, which is what generated the existing reports.
    Any helper that renders, builds, or evaluates inside a check should catch and
    return a marker value, so a dead call fails the comparison it belongs to and
    everything after it still runs.
+
+8. **Testing where the app does not stand.** `plot_movement()` ended on an
+   assignment, so it returned INVISIBLY, and `renderPlot()` relies on
+   auto-printing. Shiny drew a blank white device with no error anywhere: not in
+   the log, not in the browser console, not in any of six suites. Live for four
+   commits.
+
+   Every test consumed the returned object directly, `ggplot_build(p)` or
+   `print(p)`, and **both work perfectly on an invisible value**. The one
+   consumer that depended on visibility was Shiny, and no test stood where Shiny
+   stands. The checks were not weak, they were in the wrong place.
+
+   Ask what the real consumer does differently from the test harness. Here it
+   was auto-printing; elsewhere it could be lazy evaluation, a different
+   environment, or a device. `tests/step3_render.R` now asserts visibility for
+   all four plot functions, verified by mutation.
 ## gt mechanics that are not obvious
 
 Both of these were found by probing gt, not by reading it, and both produce a
@@ -406,6 +422,30 @@ Open. See SESSION_STATE.md.
 - No em dashes anywhere, including in code comments and UI copy
 - gt for tables, ggplot2 for plots, existing formatting preserved
 
+
+## Closed as misdiagnosed, do not re-open from an old doc
+
+**"plot_movement errors with figure margins too large below about 600px of panel
+width."** Recorded in an earlier SESSION_STATE and carried forward for several
+sessions. Closed 2026-08-20. The history is kept here rather than deleted so it
+is not re-added from a stale handoff.
+
+It was never reproduced. Swept 120px to 900px wide, heights 140px to 1240px, at
+res 96 and 192, square and short, on the same device Shiny renders through. The
+error never fired once.
+
+What was actually wrong was that **`plot_movement()` returned invisibly**. The
+Phase 5 restructure left it ending on `g <- g + theme(...)`, an assignment, and
+a function ending in an assignment returns invisibly. `renderPlot()` relies on
+auto-printing, so Shiny drew a blank white device with nothing in the log and
+nothing in the browser console. Blank at every width, desktop included, which is
+also why "below 600px" never held up.
+
+The lesson is in the check list above, entry 8: every test consumed the returned
+object with `ggplot_build()` or `print()`, both of which work fine on an
+invisible value. Shiny was the only consumer that depended on visibility and no
+test stood where Shiny stands. `tests/step3_render.R` now asserts visibility for
+all four plot functions.
 ## Known bugs in the source file
 
 Verified against the source on 2026-08-19. The file is
