@@ -66,8 +66,26 @@ stuff_mixed <- tibble(pitch_type = c("FF", "SL"),
 
 # gt stamps a random table id into rendered HTML, so two renders of the same
 # object never compare equal. Compare the internal spec instead.
-GT_PARTS <- c("_data", "_boxhead", "_styles", "_heading", "_source_notes", "_footnotes")
-gt_spec  <- function(g) stats::setNames(lapply(GT_PARTS, function(p) g[[p]]), GT_PARTS)
+# gt stamps one random table id into rendered HTML, used as id="..." and in
+# every CSS selector, so two renders of the same object never compare equal.
+# Strip that one token and the rendered page is deterministic, verified by
+# rendering the same spec twice.
+#
+# The rendered page rather than the internal spec, because the spec omits
+# _formats: two tables differing only in fmt() compared identical, and
+# arsenal_gt() renders its percentile markers through fmt(). Same species as
+# the layers-without-theme gap below. See the check list in CLAUDE.md.
+#
+# _formats cannot simply be added to a parts list: it holds format closures
+# whose environments do not survive the comparison ("object pitch_type not
+# found"). The rendered page sidesteps that and is a stronger artifact anyway,
+# since it is what actually reaches the reader.
+gt_spec <- function(g) {
+  h <- as.character(gt::as_raw_html(g))
+  ids <- unique(regmatches(h, gregexpr('(?<=id=")[a-z]{10,}(?=")', h, perl = TRUE))[[1]])
+  for (id in ids) h <- gsub(id, "GT_ID", h, fixed = TRUE)
+  h
+}
 
 # Built layers plus the theme. The layers are what reaches the page as geometry
 # and aesthetics; the theme is everything else about how it looks. Comparing
