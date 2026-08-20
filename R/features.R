@@ -42,6 +42,75 @@ add_pitch_features <- function(df) {
 }
 
 
+#' Remap or drop pitch codes this app cannot chart
+#'
+#' The single choke point. Every code that reaches a plotting or table function
+#' has passed through here, so pitch_colors[[pt]] cannot fail.
+#'
+#' Runs BEFORE add_count() in shape_arsenal(), so a remapped code counts toward
+#' its target for both pt_n and the usage ordering. Freddy Peralta's 39 CS join
+#' his 292 CU as one 331-pitch curve rather than two rows.
+#'
+#' Anything neither in PITCH_CODE_RULES nor in pitch_colors is dropped, not
+#' passed through. A code Savant introduces next season therefore degrades to a
+#' visible note instead of crashing three tabs.
+#'
+#' The report rides as an attribute rather than a column, because it is a fact
+#' about the frame and not about any row, and as an attribute rather than a
+#' message() because this runs on every reactive invalidation.
+reconcile_pitch_codes <- function(df) {
+  known <- names(pitch_colors)
+  pt    <- as.character(df$pitch_type)
+  log   <- list()
+
+  maps <- PITCH_CODE_RULES[PITCH_CODE_RULES$action == "map", ]
+  for (i in seq_len(nrow(maps))) {
+    hit <- pt == maps$code[i]
+    if (any(hit)) {
+      log[[length(log) + 1]] <- data.frame(code = maps$code[i], action = "remapped",
+                                           target = maps$target[i], n = sum(hit),
+                                           stringsAsFactors = FALSE)
+      pt[hit] <- maps$target[i]
+    }
+  }
+
+  bad <- !pt %in% known
+  if (any(bad)) {
+    for (code in sort(unique(pt[bad]))) {
+      log[[length(log) + 1]] <- data.frame(code = code, action = "dropped",
+                                           target = NA_character_, n = sum(pt == code),
+                                           stringsAsFactors = FALSE)
+    }
+  }
+
+  df$pitch_type <- pt
+  df <- df[!bad, , drop = FALSE]
+
+  # The guarantee, asserted rather than assumed. If this ever fires, a code got
+  # past the rules and the fix belongs here, not in a downstream colour lookup.
+  stopifnot("reconcile_pitch_codes let an unknown code through" =
+              all(df$pitch_type %in% known))
+
+  empty <- data.frame(code = character(), action = character(),
+                      target = character(), n = integer(), stringsAsFactors = FALSE)
+  attr(df, "pitch_codes") <- if (length(log)) do.call(rbind, log) else empty
+  df
+}
+
+
+#' One-line summary of what reconcile_pitch_codes() did, or NULL
+#'
+#' NULL when nothing was touched, so callers can skip rendering entirely.
+pitch_code_note <- function(x) {
+  rep <- attr(x, "pitch_codes")
+  if (is.null(rep) || !nrow(rep)) return(NULL)
+  paste(ifelse(rep$action == "remapped",
+               sprintf("%d %s remapped to %s", rep$n, rep$code, rep$target),
+               sprintf("%d %s dropped", rep$n, rep$code)),
+        collapse = ". ")
+}
+
+
 #' Per-pitcher, per-window shaping
 #'
 #' Everything here depends on which rows are present, so none of it can be
@@ -61,12 +130,20 @@ add_pitch_features <- function(df) {
 #'
 #' Expects a frame already narrowed to one pitcher and one window.
 shape_arsenal <- function(df) {
+  df  <- df |> filter(!is.na(pitch_type), pitch_type != "")
+  df  <- reconcile_pitch_codes(df)
+  rep <- attr(df, "pitch_codes")
+
   pl <- df |>
-    filter(!is.na(pitch_type), pitch_type != "") |>
     add_count(pitch_type, name = "pt_n") |>
     filter(pt_n >= MIN_PITCH_COUNT)
   ord <- pl |> count(pitch_type, sort = TRUE) |> pull(pitch_type)
-  pl |> mutate(pitch_type = factor(pitch_type, levels = ord))
+  out <- pl |> mutate(pitch_type = factor(pitch_type, levels = ord))
+
+  # dplyr drops attributes, so the report has to be re-attached after the
+  # pipeline rather than surviving it.
+  attr(out, "pitch_codes") <- rep
+  out
 }
 
 

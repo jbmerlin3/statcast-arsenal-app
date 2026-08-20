@@ -216,8 +216,22 @@ a KDE needs a bigger per-panel sample than a usage table does.
 
 ## Pitch types and codes
 
-Savant codes only. FF, SI, FC, SL, ST, CU, KC, CH, FS, SV. Flag code mismatches
-between sources rather than mapping silently.
+Savant codes only. FF, SI, FC, SL, ST, CU, KC, CH, FS, SV, **KN**. Eleven, not
+ten: a knuckleball maps to nothing else, and dropping it would remove 30% of the
+one genuine knuckleballer's arsenal.
+
+Savant emits more codes than these. `PITCH_CODE_RULES` in `R/theme.R` is the
+single rule, applied by `reconcile_pitch_codes()` in `R/features.R`, which
+`shape_arsenal()` calls and nothing else does. CS maps to CU and FO maps to FS,
+both real pitches by real pitchers. EP, FA, PO and UN are dropped, being
+position-player artifacts and non-pitches. Anything unrecognised is dropped too,
+so a code Savant adds next season degrades to a visible note rather than
+crashing `pitch_colors[[pt]]`.
+
+Nothing is done silently: the reconciler attaches a report the app renders above
+the tabs, "39 CS remapped to CU". Flag code mismatches between sources rather
+than mapping silently still holds; this is that rule with the mapping written
+down.
 
 `pitch_colors` lives in `R/theme.R` and is the single source of truth. Copy it
 from `Learning_to_pull_stats.R`, which is what generated the existing reports.

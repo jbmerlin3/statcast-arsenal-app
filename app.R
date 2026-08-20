@@ -88,6 +88,9 @@ ui <- fluidPage(
     ),
     mainPanel(
       width = 9,
+      # Sits above the tabs so a remap or drop is visible on whichever tab is
+      # open, rather than only on the one that would have crashed.
+      uiOutput("pitch_code_note"),
       tabsetPanel(
         id = "tabs",
         tabPanel("Movement", plotOutput("movement", height = "620px")),
@@ -155,14 +158,34 @@ server <- function(input, output, session) {
     from <- as.character(input$dates[1])
     to   <- as.character(input$dates[2])
 
-    d <- app_data |>
-      filter(pitcher == id, game_date >= from, game_date <= to) |>
-      shape_arsenal()
+    raw <- app_data |> filter(pitcher == id, game_date >= from, game_date <= to)
 
     # An empty window is a normal thing for a user to select, not an error.
-    validate(need(nrow(d) > 0,
+    validate(need(nrow(raw) > 0,
                   "No pitches for this pitcher in the selected window."))
+
+    d <- shape_arsenal(raw)
+
+    # Three different reasons the frame can come back empty, and saying the
+    # wrong one is worse than saying nothing. A position player who threw only
+    # eephuses has pitches; none of them are a type this app charts.
+    validate(need(nrow(d) > 0, {
+      note <- pitch_code_note(d)
+      paste0(nrow(raw), " pitches in this window, but none chartable.",
+             if (!is.null(note)) paste0(" ", note, ".") else "",
+             if (is.null(note)) paste0(" No pitch type reached ", MIN_PITCH_COUNT,
+                                       " pitches.") else "")
+    }))
     d
+  })
+
+  output$pitch_code_note <- renderUI({
+    note <- pitch_code_note(pitcher_data())
+    if (is.null(note)) return(NULL)
+    # paste0 rather than passing three arguments to div(), which inserts
+    # whitespace between them and left a space before the full stop.
+    div(style = "color:#666; font-size:12px; margin-bottom:6px;",
+        paste0("Pitch codes: ", note, "."))
   })
 
   output$movement <- renderPlot({

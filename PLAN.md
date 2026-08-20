@@ -1,6 +1,6 @@
 # Build plan
 
-Seven phases. Each one ends with something Jonathan can run and verify before the
+Eight phases. Each one ends with something Jonathan can run and verify before the
 next one starts. Do not start a phase until the previous phase's checks pass.
 
 Stuff+ v4 is not in this plan. It goes in the backlog. Phase 1 keeps the seam
@@ -184,7 +184,30 @@ otherwise, the grain or the floor is wrong, not the pitcher.
 
 ---
 
-## Phase 6. Share and deploy
+## Phase 6. Results panel
+
+A header line like the one on the PDF reports: IP, WHIP, ERA, FIP, TBF, K-BB%,
+HH%, xwOBA.
+
+Not planned in detail yet. The one structural thing to settle first: the panel
+draws on two sources that do not support the same cuts.
+
+- **Derivable from `app_data`**: TBF, K%, BB%, HH%, xwOBA. These respect the date
+  range and the batter side selector, exactly like the rest of the app.
+- **Not derivable**: IP, and therefore ERA, WHIP and FIP. `events` is one row per
+  plate appearance, so a double play reads as one out. Needs a second source,
+  probably `mlb_pitcher_game_logs()` at game level so it still respects the date
+  range.
+
+**The game-log metrics cannot be split by batter handedness.** A game log has no
+platoon breakdown, so with the toggle on vs RHH the Statcast-derived figures
+would narrow and ERA, WHIP and FIP would silently stay full-season. The panel
+has to make that distinction visible rather than presenting one row of numbers
+that quietly mean two different things.
+
+---
+
+## Phase 7. Share and deploy
 
 - [ ] Trim `app_data.rds` to the minimum column set, check the file size
 - [ ] `renv::init()` so the environment reproduces on someone else's machine

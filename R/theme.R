@@ -13,19 +13,57 @@
 # "Learning to pull stats.R", which generated the existing PDF reports, so the
 # app and the reports stay visually consistent.
 #
-# The roster is the ten Savant codes CLAUDE.md lists. A pitch type outside it
-# fails loudly at pitch_colors[[pt]] in tables.R rather than rendering in a
-# default color, which is the intended behaviour for an unrecognized code.
+# Eleven codes: the ten CLAUDE.md lists plus KN, see below. A pitch type outside
+# this vector can no longer reach a plot at all, because reconcile_pitch_codes()
+# in features.R remaps or drops it first. It used to arrive here and throw
+# "subscript out of bounds", which is what PITCH_CODE_RULES exists to prevent.
 pitch_colors <- c(
   FF = "#FF0000", SI = "#FFA500", CU = "#8B008B", CH = "#228B22",
   SL = "#FFFF00", FS = "#00CED1", FC = "#8B4513", ST = "#DDB100",
-  KC = "#6A0DAD", SV = "#7CFC00")
+  KC = "#6A0DAD", SV = "#7CFC00",
+  # Eleventh code, beyond the ten CLAUDE.md lists. A knuckleball cannot be
+  # mapped to anything else, and one genuine knuckleballer throws 182 of them,
+  # about 30% of his arsenal. Dropping it would make his report wrong rather
+  # than incomplete.
+  KN = "#808080")
 
 # Slider and sweeper yellow is legible as a fill but not as text on white, so
 # table text uses a darkened gold for those two codes only. Every other code
 # reuses its fill color.
 pitch_text_colors <- pitch_colors
 pitch_text_colors[c("SL", "ST")] <- c("#B59410", "#B59410")
+
+
+# ---- Pitch code reconciliation ------------------------------------------------
+
+# Savant emits codes beyond the ones this app charts. pitch_colors[[pt]] throws
+# "subscript out of bounds" on any of them, which crashed the characteristics
+# and usage tables for anyone throwing a slow curve.
+#
+# What separates a map from a drop is the median season workload of the code's
+# throwers, measured over 2026:
+#
+#   EP  773 pitches, throwers average    31 pitches on the season -> position players
+#   FA  642 pitches, throwers average    43                       -> position players
+#   FO  389 pitches, throwers average   910  (Senga, Sasaki)      -> a real pitch
+#   CS  135 pitches, throwers average 1,668  (Lugo, Peralta)      -> a real pitch
+#
+# A code absent from this table AND from pitch_colors is dropped and reported,
+# so a code Savant adds next season degrades visibly instead of crashing.
+PITCH_CODE_RULES <- data.frame(
+  code   = c("CS",   "FO",   "EP",   "FA",   "PO",   "UN"),
+  action = c("map",  "map",  "drop", "drop", "drop", "drop"),
+  target = c("CU",   "FS",   NA,     NA,     NA,     NA),
+  reason = c(
+    "slow curve; Savant's own player page folds it into the curve",
+    "forkball, a splitter variant; FG_TO_SAVANT already folds FanGraphs FO into FS",
+    "eephus; 32 of its 35 throwers are position players mopping up",
+    "unclassified fastball; 30 of its 33 throwers are position players",
+    "pitchout, a play rather than a pitch type",
+    "unknown, a tracking failure"
+  ),
+  stringsAsFactors = FALSE
+)
 
 
 # ---- Batter side labels ------------------------------------------------------
