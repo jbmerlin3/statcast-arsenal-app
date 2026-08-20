@@ -14,7 +14,9 @@
 # That is cheap enough to pull everyone and skip a workload threshold entirely.
 
 library(dplyr)
-library(jsonlite)
+# Startup messages suppressed: jsonlite masks purrr::flatten, and the attach
+# notice is noise in a chain log whose whole point is that problems stand out.
+suppressPackageStartupMessages(library(jsonlite))
 
 GAME_LOG_URL <- "https://statsapi.mlb.com/api/v1/people/%s/stats?stats=gameLog&group=pitching&season=%s"
 
