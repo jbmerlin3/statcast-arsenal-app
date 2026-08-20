@@ -137,6 +137,38 @@ filter on every query. The same applies to the usage-ordered `pitch_type`
 factor. A stored season-wide `pt_n` would let a two-week window keep a pitch
 type that has 200 pitches on the season and one in the window.
 
+
+## game_logs.rds, and the IP trap
+
+**game_logs.rds.** Step 4 of the daily chain. One row per pitcher per game date,
+columns `pitcher`, `game_date`, `ip_outs`, `er`, `h`, `bb`, `so`, `tbf`, `hr`,
+`hbp`. The only source for IP, and therefore for ERA, WHIP and FIP: `events` in
+app_data is one row per plate appearance, so a double play reads as one out and
+IP derived from it is wrong.
+
+`baseballr` 2.0.0 has **no per-player game-log function**. `mlb_pitcher_game_logs()`
+does not exist under that name, `mlb_player_game_stats()` takes one `game_pk` at
+a time, and `mlb_stats()` has no `player_id` argument. `scripts/build_game_logs.R`
+calls the StatsAPI `gameLog` endpoint directly, one request per pitcher. Measured
+2026-08-20: 0.246 s each, 809 pitchers in 3m45s.
+
+It is the only input the app tolerates missing. Steps 1 to 3 are pure transforms
+of one store; this one depends on somebody else's uptime, so step 4 fails soft,
+leaves the previous file in place and warns. The panel prints the log's own max
+game date, the same way the arsenal table prints the FanGraphs export window, so
+staleness is visible on the page rather than silent.
+
+**IP is written in thirds, not decimals.** StatsAPI returns `"5.2"` meaning five
+innings and two outs, NOT five and two tenths. Read as a decimal it understates
+a `.1` and overstates a `.2`, and the error compounds across a season without
+ever looking wrong. `ip_to_outs()` in `R/results.R` parses it and everything
+downstream stores **outs**, so nothing else has to remember. `outs_to_ip()`
+formats it back for display. One parser, used by both the chain and the app.
+
+**cFIP is derived, not hardcoded.** FIP's constant is whatever makes league FIP
+equal league ERA, so it comes from the same population the panel's FIPs are
+computed against. `fip_constant()` computes it off the whole log file; on 2026
+it lands at 3.088, against the 3.10 that gets quoted from memory.
 ## Stuff+, and the one rule that keeps the swap cheap
 
 `arsenal_table(df, hand, stuff_all)` takes grades as an argument rather than

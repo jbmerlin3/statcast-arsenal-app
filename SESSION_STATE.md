@@ -183,3 +183,29 @@ on different rungs. The assertion caught it the first time the usage table ran
 full season. The dagger note now enumerates the cuts it used rather than naming
 one, still as a single line, because two lines under one marker leave the reader
 unable to tell which applies.
+
+## Phase 6 closed, 2026-08-20
+
+Results panel live: two rows, equal-weight headers, one over Statcast and one
+over MLB game logs. Verified by driving the running app. Toggling All to vs RHH
+moves the Statcast header and values and leaves the game-log row byte-identical.
+
+`results_gamelog()` takes no `hand` argument at all. That is the structural
+guarantee, not a convention, and `tests/phase6_results.R` asserts the formals
+stay that way, so adding one fails the check rather than silently narrowing.
+
+**Do not delete the absence branch as dead code.** Through the UI it is nearly
+unreachable: every pitcher in app_data has a game log, and a window with no games
+usually has no pitches either, at which point the app's existing "No pitches for
+this pitcher in the selected window" guard replaces the whole panel first. The
+branch exists for the case that actually matters, a **stale log file**: step 4
+fails, app_data advances past the logs, and recent windows have pitches but no
+lines. Verified directly against that path, absence message shown, no zeros, no
+blanks, Statcast row intact, log date printed. Clicking around will not find it.
+
+**Driving date inputs from a browser does not work.** `changeDate`, the
+datepicker API and direct typing all either revert or leave the widget and the
+server out of sync. Only the All/1H/2H presets, which go through
+`updateDateRangeInput()`, move `input$dates` reliably. Same round-trip problem
+already recorded above for the presets under testServer. Drive dates by preset,
+or test the functions the server calls.

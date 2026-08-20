@@ -234,6 +234,31 @@ that quietly mean two different things.
 
 ---
 
+- [x] Statcast half: TBF, K-BB%, HH%, xwOBA, from app_data. Respects the date
+      range and the batter side.
+- [x] Game-log half: IP, ERA, WHIP, FIP. Respects the date range only.
+- [x] Step 4 of the daily chain writes `data/game_logs.rds`, fails soft.
+- [x] The panel makes the two scopes visible rather than merging them.
+
+**Correction.** `mlb_pitcher_game_logs()` does not exist in baseballr 2.0.0.
+`mlb_player_game_stats()` takes one game_pk at a time and `mlb_stats()` has no
+player id, so step 4 calls the StatsAPI `gameLog` endpoint directly, one
+request per pitcher. 0.246 s each, 809 pitchers in 3m45s, so everyone is pulled
+and there is no workload threshold.
+
+Two labelled rows with equal-weight headers, rather than one row plus a
+caveat. The Statcast header names the window and the side; the game-log header
+names the window and says both sides. It tracks the dates and visibly does not
+move on a side change, and that non-response is the mechanism: a label that
+never moves stops being read.
+
+IP is parsed as thirds and stored as outs. cFIP is derived from the pulled
+logs, 3.088 on 2026, not hardcoded at 3.10.
+
+**Check.** Ran 2026-08-20, PASS. `tests/phase6_results.R`, plus the running
+app: All to vs RHH moves the Statcast row and leaves the game-log row
+byte-identical.
+
 ## Phase 7. Share and deploy
 
 - [ ] Trim `app_data.rds` to the minimum column set, check the file size
