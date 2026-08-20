@@ -31,6 +31,14 @@ app_data     <- load_app_data()
 # next to app_data, but the app never rebuilds it either. scripts/update_data.R
 # step 2 owns that, per the daily chain in CLAUDE.md.
 league_ref   <- load_league_ref()
+# Step 4 of the chain, and the only input the app tolerates missing: it depends
+# on somebody else's uptime. NULL degrades the results panel's game-log row to
+# an absence message rather than taking the app down.
+game_logs    <- load_game_logs()
+# One constant for the whole file, so every FIP on the page is on the same
+# scale. Computed here rather than per render: it is a property of the log file.
+FIP_CONST    <- if (is.null(game_logs)) NA_real_ else fip_constant(game_logs)
+LOG_THROUGH  <- if (is.null(game_logs)) NULL else max(game_logs$game_date)
 player_index <- build_player_index(app_data)
 HALVES       <- season_halves(app_data)
 
@@ -95,6 +103,10 @@ ui <- fluidPage(
       # Sits above the tabs so a remap or drop is visible on whichever tab is
       # open, rather than only on the one that would have crashed.
       uiOutput("pitch_code_note"),
+      # Above the tabs, like the pitch-code note: the results line describes the
+      # whole selection, not one tab's view of it.
+      shiny::tags$head(shiny::tags$style(shiny::HTML(RESULTS_PANEL_CSS))),
+      uiOutput("results_panel"),
       tabsetPanel(
         id = "tabs",
         tabPanel("Movement", plotOutput("movement", height = "620px")),
@@ -219,6 +231,21 @@ server <- function(input, output, session) {
 
   output$heatmap <- renderPlot({
     plot_heatmap(pitcher_data(), input$hand)
+  })
+
+  # Two sources, two rows, deliberately not merged. The Statcast half reads
+  # input$hand and narrows with it; the game-log half does not read it at all,
+  # so it cannot narrow, and its header says so. A game log has no platoon
+  # split, so a vs-RHH ERA does not exist rather than being merely unavailable.
+  output$results_panel <- renderUI({
+    d  <- pitcher_data()
+    sc <- results_statcast(d, input$hand)
+    gl <- if (is.null(game_logs)) {
+      list(have = FALSE, games = 0L, through = NA_character_)
+    } else {
+      results_gamelog(game_logs, input$pitcher, input$dates, FIP_CONST)
+    }
+    results_panel(sc, gl, input$dates, input$hand, LOG_THROUGH)
   })
 
   output$chars_table <- gt::render_gt({

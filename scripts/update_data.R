@@ -27,6 +27,7 @@ STORE_PATH <- Sys.getenv(
 )
 APP_DATA_PATH   <- "data/app_data.rds"
 LEAGUE_REF_PATH <- "data/league_ref.rds"
+GAME_LOGS_PATH  <- "data/game_logs.rds"
 
 
 #' Write via a temp file and rename
@@ -260,6 +261,26 @@ if (sys.nframe() == 0L) {
   save_rds_atomic(ref, LEAGUE_REF_PATH)
   message("Wrote ", LEAGUE_REF_PATH, ", ", format(nrow(ref), big.mark = ","), " reference cells, ",
           sum(ref$n_pitchers >= MIN_REF_PITCHERS), " above the pitcher floor")
+
+  message("\n== Step 4: game_logs.rds ==")
+  # Fails soft on purpose. Steps 1 to 3 are pure transforms of one store; this
+  # one depends on somebody else's uptime, so a bad night costs a stale results
+  # panel rather than the whole chain. The previous file is left in place and
+  # the panel prints the log's own max game date, so staleness shows on the page.
+  tryCatch({
+    source("scripts/build_game_logs.R")
+    gl <- build_game_logs(ad)
+    if (!nrow(gl)) stop("game-log pull returned no rows")
+    save_rds_atomic(gl, GAME_LOGS_PATH)
+    message("Wrote ", GAME_LOGS_PATH, ", ", format(nrow(gl), big.mark = ","),
+            " game lines for ", length(unique(gl$pitcher)), " pitchers, through ",
+            max(gl$game_date))
+  }, error = function(e) {
+    warning("Step 4 failed, keeping the existing ", GAME_LOGS_PATH, ": ",
+            conditionMessage(e), call. = FALSE)
+    message("Step 4 FAILED: ", conditionMessage(e))
+    message("  previous game_logs.rds left in place")
+  })
 
   message("\n== Step 3: app_data.rds ==")
   save_rds_atomic(ad, APP_DATA_PATH)

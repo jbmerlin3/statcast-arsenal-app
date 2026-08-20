@@ -42,6 +42,20 @@ load_league_ref <- function(path = "data/league_ref.rds") {
 }
 
 
+#' Game logs, step 4 of the daily chain
+#'
+#' Missing is survivable: the results panel drops its game-log row to an absence
+#' message rather than the app failing to start. Step 4 depends on somebody
+#' else's uptime, unlike steps 1 to 3.
+load_game_logs <- function(path = "data/game_logs.rds") {
+  if (!file.exists(path)) {
+    warning("No ", path, ". IP, ERA, WHIP and FIP will be unavailable.", call. = FALSE)
+    return(NULL)
+  }
+  readRDS(path)
+}
+
+
 #' Savant's "Last, First" to display order
 #'
 #' Leaves anything without a comma untouched, so a single-token name passes

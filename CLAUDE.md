@@ -317,9 +317,18 @@ from `Learning_to_pull_stats.R`, which is what generated the existing reports.
    got more permissive.
 
    Fixed by asserting the invariant each crash stood in for: every resolved fill
-   is a real hex, and every render returns a `gt_tbl`. Helpers that render inside
-   a check must catch and return a marker rather than letting the error stop the
-   file, or one dead render hides every check after it.
+   is a real hex, and every render returns a `gt_tbl`.
+
+   **Some invariants can only be violated by an error, and that is fine. The
+   check's job there is to OWN the error rather than die on it.** Removing a
+   function's early return leaves it holding a NULL where it needs a list; no
+   assertion can stop that from raising. What was wrong was not the error, it
+   was that the check reported an uncaught stack trace instead of a named
+   failure, and stopped the file before the remaining checks ran. So the rule is
+   not "make it not crash", it is "decide, in the check, what the crash means".
+   Any helper that renders, builds, or evaluates inside a check should catch and
+   return a marker value, so a dead call fails the comparison it belongs to and
+   everything after it still runs.
 ## gt mechanics that are not obvious
 
 Both of these were found by probing gt, not by reading it, and both produce a
