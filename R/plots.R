@@ -162,7 +162,7 @@ plot_heatmap <- function(df, hand) {
     stat_density_2d_filled(data = dense, contour_var = "ndensity", bins = 10, h = KDE_BW) +
     geom_point(data = sparse, color = "white", size = 1.8, alpha = 0.9) +
     geom_text(data = strips, aes(x = 0, y = 4.7, label = strip), inherit.aes = FALSE,
-              color = "white", fontface = "bold", size = 3.2) +
+              color = "white", fontface = "bold", size = 4.2) +
     geom_polygon(data = plate, aes(x, y), inherit.aes = FALSE, fill = "white", color = "black", linewidth = 0.4) +
     geom_rect(data = sz, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
               inherit.aes = FALSE, fill = NA, color = "black", linewidth = 0.6) +
@@ -170,7 +170,8 @@ plot_heatmap <- function(df, hand) {
     coord_fixed(xlim = c(-2.2, 2.2), ylim = c(0, 5)) +
     facet_grid(situation ~ pitch_type, switch = "y") +
     theme_void(base_size = 12) +
-    theme(strip.text.x = element_text(face = "bold", size = 13, margin = margin(b = 3)),
+    theme(plot.margin = margin(t = 14, r = 8, b = 8, l = 8),
+          strip.text.x = element_text(face = "bold", size = 13, margin = margin(b = 5)),
           strip.text.y.left = element_text(face = "bold", size = 13, angle = 90, margin = margin(r = 3)),
           panel.spacing = unit(0.6, "lines"),
           panel.background = element_rect(fill = "#440154", color = NA))

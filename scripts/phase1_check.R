@@ -43,8 +43,22 @@ EXPECTED_DIFFS <- c(
   plot_movement       = "set.seed(3) is a deliberate change from the original's 42, cosmetic subsample only",
   arsenal_gt_R        = "source note now reports the FanGraphs export window",
   arsenal_gt_L        = "source note now reports the FanGraphs export window",
-  arsenal_gt_footnote = "source note now reports the FanGraphs export window"
+  arsenal_gt_footnote = "source note now reports the FanGraphs export window",
+  plot_heatmap_R      = "strip annotation enlarged from size 3.2 to 4.2, deliberate presentation change",
+  plot_heatmap_L      = "strip annotation enlarged from size 3.2 to 4.2, deliberate presentation change"
 )
+
+# What this check does NOT see, verified rather than assumed. The heatmap also
+# gained a plot.margin and a larger strip.text bottom margin, to stop the column
+# labels clipping against the top edge. Reverting the annotation size alone
+# makes both plot_heatmap entries report "identical" and the whole check PASS,
+# with the margin edits still in place.
+#
+# The reason is that this compares ggplot_build()$data, which holds the built
+# layers: geometry, aesthetics, and geom parameters like size. Theme is not
+# layer data. So any purely thematic edit, margins, fonts, panel colours,
+# legend position, passes here silently. Comparing $plot$theme as well would
+# close it.
 
 
 # ---- Fixture -----------------------------------------------------------------
