@@ -319,6 +319,21 @@ Strip that one token and the render is deterministic. That is what
 `gt_spec()` in `tests/phase1_artifacts.R` does, and why it compares the rendered
 page rather than the internal spec.
 
+
+## The percentile answers a narrower question than it looks like
+
+`league_ref` is keyed by `pitch_type`, so every percentile in the arsenal table
+is a rank **against that pitch type**, not against pitches. A 35th-percentile
+sinker whiff% and a 35th-percentile slider whiff% render the same colour and do
+not mean the same thing: sinkers miss few bats by design, sliders are supposed
+to. The arithmetic is right, the fill is consistent, and the reading is wrong.
+
+Same class as hb not being arm-side normalised, and harder, because hb flips on
+one visible attribute while this varies continuously by pitch type and by role.
+Worse in one way too: hb is neutral violet, which hints the cell does not grade,
+while this renders on the diverging good-to-bad scale and asserts quality.
+
+Open. See SESSION_STATE.md.
 ## Style
 
 - R first, tidyverse, explicit `library()` calls at the top of each file

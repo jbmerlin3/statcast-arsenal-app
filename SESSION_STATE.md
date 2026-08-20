@@ -106,3 +106,48 @@ pitcher count behind them, 20 to 79 across the population, never in the grain.
 That is what lets a single `†` line name one grain unambiguously. It is asserted
 in `R/league.R` rather than assumed, and the assertion stops rather than picking
 one silently.
+
+## Part B step 3 landed, 2026-08-20
+
+`arsenal_gt(ref = NULL)` renders byte-identical to `9694276`, verified against a
+committed baseline in `tests/step3_null_identical.R`. Phase 5's first bullet is
+done; the movement-plot reference lines and the usage-table league rates are
+still open.
+
+**`phase1_check.R` cannot guard that invariant** and never could. All three
+`arsenal_gt` artifacts sit in `EXPECTED_DIFFS` for the source-note change, so
+they report "differs (expected)" whatever happens inside the function. Breaking
+the xwOBA format passes it at six diffs. Keep running it, it guards the rest of
+`tables.R`, but the `ref = NULL` guard is the baseline test.
+
+Two gt behaviours are written up in CLAUDE.md and both bite silently:
+`fmt()` does not compound, and the later `tab_style()` wins.
+
+## The reading-layer risk to watch
+
+Named 2026-08-20, before it has caused anything, so it is on the record.
+
+**A percentile is a rank against pitchers who throw that pitch, and the app
+presents it as a rank against pitchers.** The reference is keyed by
+`pitch_type`, so a sweeper's whiff% is ranked against sweepers only. That is the
+right denominator for "is this a good sweeper" and the wrong one for "is this a
+good pitch", and the table gives the reader no way to tell which question a
+number answers.
+
+Concrete: a 35th-percentile sinker whiff% and a 35th-percentile slider whiff%
+render the same colour, and they are not the same pitch. Sinkers miss few bats
+by design, so a 35th-percentile sinker is close to what a sinker is for, while
+a 35th-percentile slider is a slider that is not doing its job. The number is
+correct, the colour is consistent, and the reading is wrong.
+
+Same class as hb not being arm-side normalised: correct arithmetic, a reference
+whose meaning shifts under the reader, and nothing on the page announcing the
+shift. It is harder than hb, because hb flips on one visible attribute, pitcher
+hand, while this one varies continuously by pitch type and by what the pitch is
+being asked to do. It is also worse in one way. hb is directionless and reads as
+neutral violet, which is a hint that the cell does not grade. This one renders
+on the diverging good-to-bad scale, so it actively asserts quality.
+
+Not fixed, and not obviously fixable by a colour rule. The cheapest partial
+answer is per-pitch-type expectation in the label rather than in the fill, so
+the reader sees "35th among sinkers" and supplies the context themselves.
