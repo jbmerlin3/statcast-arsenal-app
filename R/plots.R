@@ -67,7 +67,7 @@ plot_usage <- function(df) {
 #' The value 3 is a deliberate choice, not a leftover. The source script used 42
 #' and it was changed on purpose, so do not tidy it back. Which seed does not
 #' matter, but changing it reshuffles every movement chart, so it stays put.
-plot_movement <- function(df) {
+plot_movement <- function(df, ref = NULL) {
   pitch_order <- levels(df$pitch_type)
   usage <- df |> count(pitch_type) |> mutate(k = pmax(1, round(n / sum(n) * 100)))
   set.seed(3)
@@ -82,11 +82,35 @@ plot_movement <- function(df) {
   # a lefty.
   hand_sign <- if (df$p_throws[1] == "R") 1 else -1
 
-  ggplot(mv, aes(hb, ivb, fill = pitch_type)) +
+  # League marks for the same pitch types and the same pitcher hand. Built from
+  # the precomputed reference, so nothing here scans app_data and this stays
+  # cheap inside a reactive.
+  #
+  # p_throws is passed through and never pooled. hb is not arm-side normalised,
+  # so a righty's and a lefty's sliders sit on opposite sides of zero and their
+  # pooled mean lands at a point neither hand throws.
+  lg <- if (is.null(ref)) NULL else movement_ref(ref, pitch_order, df$p_throws[1])
+
+  g <- ggplot(mv, aes(hb, ivb, fill = pitch_type)) +
     annotate("segment", x = hand_sign * 22, y = slope * 22, xend = 0, yend = 0,
              linetype = "dashed", color = "black", linewidth = 0.9) +
     geom_hline(yintercept = 0, linewidth = 0.6) +
-    geom_vline(xintercept = 0, linewidth = 0.6) +
+    geom_vline(xintercept = 0, linewidth = 0.6)
+
+  if (!is.null(lg)) {
+    # A cross rather than a filled dot, so a league mark can never be mistaken
+    # for one of the pitcher's own pitches, and the n rides beside it: a mark
+    # built on 22 pitchers and one built on 356 are not the same claim.
+    g <- g +
+      geom_point(data = lg, aes(hb, ivb, color = pitch_type), inherit.aes = FALSE,
+                 shape = 3, size = 4.5, stroke = 1.4) +
+      geom_text(data = lg, aes(hb, ivb, color = pitch_type, label = paste0("n=", n_pitchers)),
+                inherit.aes = FALSE, vjust = -1.1, size = 3, fontface = "bold",
+                show.legend = FALSE) +
+      scale_color_manual(values = pitch_colors, guide = "none")
+  }
+
+  g <- g +
     geom_point(shape = 21, color = "white", stroke = 0.5, size = 5) +
     scale_fill_manual(values = pitch_colors) +
     coord_cartesian(xlim = c(-22, 22), ylim = c(-22, 22), clip = "off") +

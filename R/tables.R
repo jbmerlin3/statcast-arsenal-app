@@ -217,8 +217,33 @@ count_usage_tbl <- function(df, hand) {
 }
 
 
+#' Pitches per pitch type per count bucket, the usage table's denominators
+#'
+#' Long rather than wide, keyed by bucket, because the league reference is keyed
+#' by count bucket too and resolve_usage() looks each column up by name.
+#'
+#' The buckets are read from COUNT_BUCKETS in theme.R rather than redeclared, so
+#' this cannot drift from count_usage_tbl().
+count_usage_denoms <- function(df, hand) {
+  if (hand != "All") df <- filter(df, stand == hand)
+  df <- df |> mutate(pitch_type = droplevels(pitch_type), cnt = paste(balls, strikes, sep = "-"))
+  map_dfr(names(COUNT_BUCKETS), function(nm) {
+    counts <- COUNT_BUCKETS[[nm]]
+    d <- if (is.null(counts)) df else filter(df, cnt %in% counts)
+    tidyr::complete(count(d, pitch_type, name = "pitches"),
+                    pitch_type = levels(df$pitch_type), fill = list(pitches = 0)) |>
+      mutate(count_bucket = nm, swings = 0, oz = 0, pa = 0)
+  })
+}
+
+
 #' Render the usage by count table
-count_usage_gt <- function(wide, hand, label = hand_label(hand)) {
+#'
+#' `ref` is the resolved context from resolve_usage(), not the raw league
+#' reference. NULL renders exactly what this rendered before Part B, which
+#' scripts/phase1_check.R does guard here: count_usage_gt is not in
+#' EXPECTED_DIFFS, unlike arsenal_gt.
+count_usage_gt <- function(wide, hand, label = hand_label(hand), ref = NULL) {
   g <- wide |> gt() |> cols_label(pitch_type = "PITCH") |>
     tab_header(title = paste("USAGE BY COUNT", label)) |> cols_align("center") |>
     fmt_number(columns = -pitch_type, decimals = 1, pattern = "{x}%") |>
@@ -227,11 +252,32 @@ count_usage_gt <- function(wide, hand, label = hand_label(hand)) {
               cells_column_labels()) |>
     tab_options(table.font.size = 13, heading.title.font.size = 15, heading.align = "left",
                 column_labels.font.weight = "bold", column_labels.background.color = "gray95")
-  reduce(as.character(wide$pitch_type), function(gt_tbl, pt) {
+  g <- reduce(as.character(wide$pitch_type), function(gt_tbl, pt) {
     gt_tbl |>
       tab_style(cell_fill(color = paste0(pitch_colors[[pt]], "20")),
                 cells_body(rows = pitch_type == pt)) |>
       tab_style(cell_text(color = pitch_text_colors[[pt]], weight = "bold"),
                 cells_body(columns = pitch_type, rows = pitch_type == pt))
   }, .init = g)
+
+  if (is.null(ref)) return(g)
+
+  # Identical shape to arsenal_gt: after the pitch-colour reduce, no
+  # conditionals, markers through text_transform rather than fmt.
+  g <- reduce(seq_len(nrow(ref$cells)), function(gt_tbl, i) {
+    ce <- ref$cells[i, ]
+    gt_tbl |>
+      tab_style(cell_fill(color = ce$fill), cells_body(columns = ce$column, rows = ce$row)) |>
+      tab_style(cell_text(color = ce$text_color, style = ce$font_style, weight = ce$font_weight),
+                cells_body(columns = ce$column, rows = ce$row))
+  }, .init = g)
+
+  mk <- ref$cells[nzchar(ref$cells$marker), , drop = FALSE]
+  g <- reduce(seq_len(nrow(mk)), function(gt_tbl, i) {
+    col <- mk$column[i]; rw <- mk$row[i]; m <- mk$marker[i]
+    gt_tbl |> text_transform(cells_body(columns = col, rows = rw),
+                             fn = function(x) paste0(x, m))
+  }, .init = g)
+
+  reduce(ref$notes, function(gt_tbl, n) tab_source_note(gt_tbl, n), .init = g)
 }

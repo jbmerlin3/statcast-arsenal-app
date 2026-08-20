@@ -302,6 +302,20 @@ resolve_table <- function(tbl, denoms, ref, p_throws, stand, count_bucket = "All
           out, stringsAsFactors = FALSE)
   }))
 
+  list(cells = cells, notes = state_notes(cells), col_notes = col_notes_for(cols))
+}
+
+
+#' The table's source-note lines, ordered and deduplicated
+#'
+#' Shared by the arsenal table and the usage table so the four states are
+#' described in one voice and, more to the point, decided in one place. A second
+#' copy of this is a second state machine.
+#'
+#' Order is fixed rather than incidental: the scope note, then dagger, then
+#' double dagger, then the grey line. A set that reordered between renders would
+#' make the byte-identity baselines flake.
+state_notes <- function(cells) {
   fb <- cells[cells$state == "fallback", , drop = FALSE]
 
   # Measured on 2026: no pitcher produces two distinct fallback grains, which is
@@ -348,10 +362,69 @@ resolve_table <- function(tbl, denoms, ref, p_throws, stand, count_bucket = "All
     "Percentiles rank this pitcher against other pitchers throwing the same ",
     "pitch type from the same side, not against all pitches."), notes)
 
+  notes
+}
+
+
+#' Column-label footnotes, for metrics whose reading needs a caveat
+col_notes_for <- function(cols) {
   cn <- vapply(unname(cols),
                function(m) if (m %in% names(METRIC_NOTES)) unname(METRIC_NOTES[[m]]) else NA_character_,
                character(1))
   names(cn) <- names(cols)
+  cn[!is.na(cn)]
+}
 
-  list(cells = cells, notes = notes, col_notes = cn[!is.na(cn)])
+
+#' League mean movement for each pitch type, for the reference marks
+#'
+#' stand is "All" because the movement chart pools both batter sides, and
+#' p_throws is passed through and never pooled: hb is not arm-side normalised,
+#' so a righty's and a lefty's sliders sit on opposite sides of zero and their
+#' mean is a point neither of them throws. See CLAUDE.md.
+#'
+#' Returns NULL rows for pitch types with no usable reference rather than
+#' inventing one, and carries n_pitchers so every mark can state what it is
+#' built from.
+movement_ref <- function(ref, pitch_types, p_throws) {
+  rows <- lapply(as.character(pitch_types), function(pt) {
+    hb  <- lg_cell(ref, "hb",  pt, p_throws, "All", "All Counts")
+    ivb <- lg_cell(ref, "ivb", pt, p_throws, "All", "All Counts")
+    if (is.null(hb) || is.null(ivb)) return(NULL)
+    data.frame(pitch_type = pt,
+               hb = hb$row$mean[[1]], ivb = ivb$row$mean[[1]],
+               # Both means come from the same grain and the same contributing
+               # pitchers, so one n describes the mark.
+               n_pitchers = min(hb$row$n_pitchers[[1]], ivb$row$n_pitchers[[1]]),
+               stringsAsFactors = FALSE)
+  })
+  rows <- rows[!vapply(rows, is.null, logical(1))]
+  if (!length(rows)) return(NULL)
+  do.call(rbind, rows)
+}
+
+
+#' Resolve the usage-by-count table
+#'
+#' Same four states, same floors, same fallback ladder as the arsenal table,
+#' through the same resolve_column(). The only difference is that the count
+#' bucket varies by COLUMN here rather than being fixed for the table, which is
+#' exactly what the reference is keyed by.
+#'
+#' `denoms` is one row per pitch type per bucket, with a `pitches` column.
+resolve_usage <- function(wide, denoms, ref, p_throws, stand) {
+  buckets <- setdiff(names(wide), "pitch_type")
+  pt <- as.character(wide$pitch_type)
+
+  cells <- do.call(rbind, lapply(buckets, function(b) {
+    dn <- as.data.frame(denoms[denoms$count_bucket == b, , drop = FALSE])
+    idx <- match(pt, dn$pitch_type)
+    stopifnot("every pitch type needs a denominator row per bucket" = !anyNA(idx))
+    out <- resolve_column(ref, wide[[b]], "usage_pct", pt, p_throws, stand, b,
+                          dn[idx, c("pitches", "swings", "oz", "pa"), drop = FALSE])
+    cbind(column = b, metric = "usage_pct", row = seq_along(pt), out,
+          stringsAsFactors = FALSE)
+  }))
+
+  list(cells = cells, notes = state_notes(cells), col_notes = character(0))
 }
