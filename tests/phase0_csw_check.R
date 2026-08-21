@@ -2,7 +2,7 @@
 # Proves the CSW definition on live data rather than by reading the source.
 suppressMessages(library(dplyr))
 
-STATCAST_RDS <- "~/Desktop/Baseball Questionnaires/03_ArsenalReports/statcast_clean_2026.rds"
+STATCAST_RDS <- "~/baseball-store/statcast_clean_2026.rds"
 MLB_ID <- 702070   # Cameron, the worked example in the original script
 
 swing_only <- c("swinging_strike","swinging_strike_blocked","foul","foul_tip","hit_into_play")

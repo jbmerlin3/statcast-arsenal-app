@@ -8,12 +8,16 @@
 # bash script on the machine access to the Desktop. With Rscript there, only R
 # gets it.
 #
-# The repo lives under ~/Desktop, which is TCC-protected: a launchd agent can
-# read ~ and ~/Library but not ~/Desktop, verified 2026-08-20 by probe. Without
-# the grant this exits 1 with a message naming the cause, rather than failing
-# with a bare "Operation not permitted".
+# The repo lives directly under ~ and NOT under ~/Desktop, deliberately. TCC
+# guards Desktop, Documents and Downloads; a launchd agent can read ~ and
+# ~/Library but not ~/Desktop, verified 2026-08-20 by probe. Moving the repo
+# sidesteps the permission entirely rather than granting Full Disk Access.
+#
+# Do not move it back under any of those three, and note that everything the
+# chain READS has to stay out of them too, which is why the season store lives
+# in ~/baseball-store rather than beside the source project.
 
-REPO <- "/Users/jonathanmerlin/Desktop/statcast-arsenal-app"
+REPO <- "/Users/jonathanmerlin/statcast-arsenal-app"
 LOG  <- file.path(REPO, "logs", "chain.log")
 
 banner <- function(con, text) {
@@ -26,9 +30,9 @@ if (!dir.exists(REPO)) {
   writeLines(c(
     paste("CHAIN FAILED", format(Sys.time(), "%Y-%m-%d %H:%M:%S")),
     paste0("Cannot reach ", REPO, "."),
-    "Almost certainly macOS Full Disk Access: a launchd agent cannot read",
-    "~/Desktop without it. Grant it to Rscript in System Settings, Privacy",
-    "and Security, Full Disk Access."), "/tmp/arsenal-chain/tcc-denied.log")
+    "If this path is under ~/Desktop, ~/Documents or ~/Downloads, that is why:",
+    "macOS TCC blocks launchd agents from those three. Move it back under ~."),
+    "/tmp/arsenal-chain/tcc-denied.log")
   quit(status = 1)
 }
 

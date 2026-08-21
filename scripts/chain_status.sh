@@ -1,7 +1,7 @@
 #!/bin/bash
 # chain_status.sh
 #
-#   ~/Desktop/statcast-arsenal-app/scripts/chain_status.sh
+#   ~/statcast-arsenal-app/scripts/chain_status.sh
 #
 # Answers one question: did last night's chain run, and did it work?
 #
@@ -9,7 +9,7 @@
 # are distinct from "RUN OK". A job that never fired because the laptop was off
 # leaves an old RUN OK behind, which reads as success unless the age is checked.
 
-REPO="/Users/jonathanmerlin/Desktop/statcast-arsenal-app"
+REPO="/Users/jonathanmerlin/statcast-arsenal-app"
 LOG="$REPO/logs/chain.log"
 
 [ -f "$LOG" ] && [ -s "$LOG" ] || { echo "NO LOG at $LOG. The job has never produced a run."; exit 2; }

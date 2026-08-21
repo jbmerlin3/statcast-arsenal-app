@@ -22,7 +22,7 @@ REPO <- local({
 stopifnot("cannot locate the repo root, run from the project directory" =
             dir.exists(file.path(REPO, "R")))
 
-STATCAST_RDS <- path.expand("~/Desktop/Baseball Questionnaires/03_ArsenalReports/statcast_clean_2026.rds")
+STATCAST_RDS <- path.expand("~/baseball-store/statcast_clean_2026.rds")
 ORIGINAL     <- path.expand("~/Desktop/Baseball Questionnaires/05_PlayerEval/scripts/Learning to pull stats.R")
 MLB_ID       <- 702070   # Cameron, the worked example in the original script
 

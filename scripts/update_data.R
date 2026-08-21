@@ -23,7 +23,7 @@ library(dplyr)
 
 STORE_PATH <- Sys.getenv(
   "STATCAST_STORE",
-  path.expand("~/Desktop/Baseball Questionnaires/03_ArsenalReports/statcast_clean_2026.rds")
+  path.expand("~/baseball-store/statcast_clean_2026.rds")
 )
 APP_DATA_PATH   <- "data/app_data.rds"
 LEAGUE_REF_PATH <- "data/league_ref.rds"
