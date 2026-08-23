@@ -228,10 +228,21 @@ refresh_store <- function(store_path = STORE_PATH, through = Sys.Date()) {
   last  <- max(sc$game_date)
   start <- as.Date(last) + 1
 
+  # in_zone is DERIVED, so it is recomputed over the whole store on every path
+  # out of this function, including the two that pull nothing. It used to be
+  # recomputed only where new rows were bound in, which meant a change to
+  # in_zone_flag() reached the store on the next day a game was played and not
+  # before, and on a quiet day the chain could finish green with the old
+  # geometry still in the file. Found 2026-08-23 when the vertical ball radius
+  # was added and a rerun changed nothing.
+  refresh_derived <- function(df) {
+    df |> mutate(in_zone = in_zone_flag(plate_x, plate_z, sz_bot, sz_top))
+  }
+
   message("Store holds ", format(nrow(sc), big.mark = ","), " rows through ", last)
   if (start > through) {
     message("Nothing to pull, already current through ", through)
-    return(sc)
+    return(refresh_derived(sc))
   }
   message("Pulling ", start, " to ", through)
 
@@ -253,7 +264,7 @@ refresh_store <- function(store_path = STORE_PATH, through = Sys.Date()) {
     }
     message("Pull returned no rows, and nothing finished before today, ",
             "store unchanged. Savant lags the schedule by hours.")
-    return(sc)
+    return(refresh_derived(sc))
   }
   new_clean <- clean_statcast(new_raw)
 
@@ -276,7 +287,7 @@ refresh_store <- function(store_path = STORE_PATH, through = Sys.Date()) {
   # Recomputed across the whole frame rather than only the new rows: the formula
   # is identical for existing rows, and this way the column can never be
   # half-populated.
-  out <- out |> mutate(in_zone = in_zone_flag(plate_x, plate_z, sz_bot, sz_top))
+  out <- refresh_derived(out)
 
   added <- nrow(out) - nrow(sc)
   # Rows can come back and still all be duplicates, which dedup silently drops.

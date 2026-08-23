@@ -18,5 +18,15 @@
 data/*
 !data/.gitkeep
 
+# The regression fixtures are TRACKED, both of them, 217 KB together.
+# tests/fixtures/pl_trim_702070.rds is the frozen input phase1_check.R compares
+# both sides against, and arsenal_gt_null_baseline.rds is a byte snapshot of the
+# table that fixture renders. Gitignored, they regenerated on every clone off a
+# season store that grows nightly: the fixture went 2,261 to 2,346 pitches
+# between 2026-08-19 and 2026-08-23, at which point the byte-identity baseline
+# compares two different tables and means nothing. Frozen files are only frozen
+# if they are committed.
+!tests/fixtures/*.rds
+
 # Chain run log, machine-local
 logs/

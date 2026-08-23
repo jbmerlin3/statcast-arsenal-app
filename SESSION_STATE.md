@@ -212,3 +212,332 @@ server out of sync. Only the All/1H/2H presets, which go through
 `updateDateRangeInput()`, move `input$dates` reliably. Same round-trip problem
 already recorded above for the presets under testServer. Drive dates by preset,
 or test the functions the server calls.
+
+## Phase 7, renv and README, 2026-08-21
+
+Six suites passed before anything was touched, and again after. Chain triggered
+through launchd, not reasoned about: RUN OK in 3m24s, all four steps.
+
+**renv is live.** `renv::init()` hydrated 83 packages out of the user library, so
+nothing downloaded. `baseballr` is correctly absent: the chain calls Savant's CSV
+endpoint and the StatsAPI `gameLog` endpoint directly, and nothing in the repo
+loads baseballr any more.
+
+The thing renv could break is the nightly chain, because the plist sets
+`WorkingDirectory` to the repo and `.Rprofile` now decides which library the job
+runs against. Triggered it rather than reading the plist. All four steps green,
+and every chain package resolves through the renv cache under
+`~/Library/Caches`, which is one of the two places a launchd agent can still
+read.
+
+**rsconnect is installed but not in the lock.** `renv::settings$ignored.packages`
+holds it out. This matters more than it looks: in an renv project rsconnect
+builds the deploy manifest from `renv.lock` and not from the bundled files, so
+anything in the lock gets installed on the server. Snapshotting rsconnect put 10
+packages, including packrat, onto the list of things shinyapps.io would install
+in order to run an app that never loads them.
+
+**appFiles narrows the bundle, not the manifest.** Measured both ways on
+2026-08-21: 83 manifest packages whether appFiles is the four app directories or
+everything. What appFiles does buy is that `scripts/` and `tests/` stay off a
+public server, and a 25.8 MB bundle.
+
+**Startup footprint, measured not estimated.** app_data 103.2 MB, league_ref
+3.6 MB, game_logs 0.7 MB, player_index 0.1 MB, and 191 MB on the R heap after
+the four globals load. The comment in app.R said 142 MB, which predated the
+column trim, and now says 103 with the date of the measurement.
+
+**Two things the screenshot pass turned up.**
+
+`titlePanel()` defaults `windowTitle` to the title itself, so passing a tag put
+raw HTML in the browser tab: the tab read `<div> Pitcher Arsenal <span style=
+...`. Caught by reading the rendered page, not by looking at the code, and fixed
+with an explicit `windowTitle`.
+
+`annotate("label", ..., label.size = 0.4)` warns "Ignoring unknown parameters"
+under ggplot2 4.0.3, twice on every movement render. The label borders are
+therefore not being drawn. Left alone: it is cosmetic, it fires in a function
+three artifacts in `EXPECTED_DIFFS` already sanction, and changing it moves the
+frozen comparison. Worth doing deliberately, not as a drive-by.
+
+**Not a bug, recorded so it is not re-found.** Resizing the headless viewport
+mid-session produces `invalid quartz() device size` from `startPNG` in the
+movement output. It is the container reporting a degenerate width while the
+viewport is torn down, and the next render replaces it. A plain load has no
+error and the plot comes back 1050x620, and a legitimate resize to 900px wide
+produces no error either. This is NOT the closed "figure margins too large"
+entry returning.
+
+Deploy is written and unrun. `scripts/deploy.R` bundles app.R, R/, data/ and
+fg_stuff/, prints the bundle size and the data date, and refuses to run without
+`app_data.rds` and `league_ref.rds`. It stops at `rsconnect::setAccountInfo()`,
+which needs a token off the shinyapps.io admin page and is Jonathan's to paste.
+
+## The masked margin, 2026-08-22
+
+Reported as "the movement plots and heatmaps broke". Both tabs showed
+`argument "observed" is missing, with no default`, the other two tabs were fine,
+and all six suites passed.
+
+`randomForest::margin(x, observed, ...)` masks `ggplot2::margin` when it is
+attached after ggplot2. `margin()` is called in exactly two places in the repo,
+`plot_movement` and `plot_heatmap`, which is the whole of the symptom.
+`library(ggplot2)` in app.R does not save you: on an already-attached package
+`library()` is a no-op and does not move it back to the front of the search
+path.
+
+How it was found, since the guessing took longer than it should have. The
+message named an argument that appears nowhere in the repo and in none of the
+122 installed packages' exported functions, which ruled out the obvious places
+and was still the wrong question. The right one was structural: which calls do
+the two broken plots share that the two working ones do not. `margin()` is the
+only one. `randomForest::margin` then reproduces the message exactly.
+
+Fixed with `ggplot2::margin()` at all four call sites, guarded by a masked
+`margin()` in `tests/step3_render.R`, verified by mutation both ways, and
+verified where the app stands: the app run from a session with randomForest
+attached now draws both tabs, 930x620 and 930x700, no error.
+
+CLAUDE.md entry 9 records the class. The exposure was measured across every
+installed package rather than guessed: the only ggplot2-side clash is this one,
+the rest are dplyr-side, `plyr` over mutate, arrange, count, summarise, rename,
+`MASS` over select, `stats` over filter.
+
+## HH% was counting fouls, 2026-08-22
+
+Reported: Kirby's HH% reads lower than FanGraphs on both sides. It did, and the
+app was wrong.
+
+`results_statcast()` took its hard-hit denominator as every row with a
+`launch_speed`. **Statcast measures fouls**, and fouls are weak, so the rate came
+out roughly halved with nothing to error on.
+
+Measured on Kirby 2026, before and after:
+
+| | app before | app after | FanGraphs |
+|---|---|---|---|
+| vs LHH | 28.3 over 435 | 45.4 over 229 | 45.4 over 229 events |
+| vs RHH | 24.2 over 393 | 39.0 over 205 | 39.0 over 205 events |
+
+The 206 extra rows vs LHH are fouls, every one of them, mean EV 78.1, 9.2% of
+them hard hit. The event counts now match FanGraphs exactly on both sides.
+
+Untracked batted balls stay in the denominator. FanGraphs counts them the same
+way: 80 of 205 is 39.0, while dropping the two rows with no EV gives 39.4 over
+203. Rejected because the panel exists to be cross-checked against a public
+source, and the alternative buys two rows of precision at the cost of never
+quite agreeing with anyone.
+
+`type == "X"` rather than `bb_type`, which says the same thing and is not in
+`app_data`: the Phase 7 trim dropped it as unread. That note in
+`APP_DATA_UNREAD` is now slightly wrong in spirit, since `type` carries the
+in-play flag the panel needs and is still there.
+
+Guarded in `tests/phase6_results.R` with a literal seven-row fixture, not a
+slice of app_data: the store grows nightly and a rate pinned off live data would
+need re-pinning daily. It discriminates three ways, verified by mutation:
+
+```
+correct, batted balls incl. untracked   2 of 4    50.0   PASS
+old bug, every tracked EV               4 of 5    80.0   FAIL, both assertions
+untracked dropped                       2 of 3    66.7   FAIL
+```
+
+No other metric was affected. `METRIC_SPEC` has no hard-hit entry, and its
+denominators are pitches, swings, out-of-zone and PA, so `launch_speed` backs
+nothing in the league reference. HH% lived only in the results panel.
+
+CLAUDE.md gains hard rule 6 and a line in the formula conventions.
+
+## Denominator audit, 2026-08-22
+
+Every rate the app renders, checked against its denominator after the HH% bug.
+Magnitudes measured on the 2026 store, 563,401 pitches.
+
+**Verified correct.** CSW% over all pitches. chase% over out-of-zone pitches,
+and `in_zone` has zero NAs in 563,401 rows, so the missing `na.rm` on
+`sum(in_zone == 0)` cannot silently NA a cell. zone% over all pitches. strike%
+over all pitches, with `type == "B"` accounting for exactly ball +
+blocked_ball + hit_by_pitch + pitchout, so HBP correctly is not a strike. usage%
+over the hand-filtered frame. Count usage over the bucket's pitches. K-BB% over
+TBF.
+
+**xwOBA is right, and the reason is worth writing down.** Savant populates
+`estimated_woba_using_speedangle` for non-batted-ball events: walk 0.698,
+hit_by_pitch 0.729, strikeout 0. So `sum(est * denom) / sum(denom)` is not
+quietly scoring walks as zero, which was the obvious way for it to be wrong.
+
+**Fixed: NaN reached the page.** 0/0 is NaN in R and it travelled. A pitch type
+nobody swung at rendered `NaN (0)` in the whiff column, and a pitch type that
+ended no plate appearance rendered NaN xwOBA. 1.1% of full-season table rows
+carry at least one empty denominator, 4.5% over a one-week window, which is the
+window a scout picks. `pct_or_na()` in tables.R, guarded in
+`tests/step3_render.R` with a literal 12-row fixture, mutation tested: the raw
+division fails all three assertions.
+
+**Open, measured, not fixed.**
+
+*Bunts are not counted as swings.* `swing_only` omits foul_bunt 1,221,
+missed_bunt 212, bunt_foul_tip 22 and swinging_pitchout 1, which is 0.53% of
+offers. League whiff% 22.93 against 22.89 with bunts included, chase% 32.54
+against 32.73. Worst pitcher-level whiff shift 0.9 points on three bunt rows.
+Structurally it is the HH% bug 20 times smaller: an out-of-zone bunt attempt
+sits in the chase denominator and cannot reach the numerator. Not fixed because
+it moves every whiff and chase number in the app and needs a league_ref rebuild,
+for under a tenth of a point at league level.
+
+*catcher_interf sits in the xwOBA denominator with no numerator.* 73 PA across
+66 pitchers, `woba_denom` 1 and `estimated_woba_using_speedangle` NA. Median
+shift 0.0011, worst 0.0126, one pitcher moving .4405 to .4531. wOBA's own
+denominator is AB + BB - IBB + SF + HBP, which excludes catcher's interference,
+so the fix is defensible and one line, in both tables.R and build_league_ref.R
+plus a chain rerun.
+
+*truncated_pa counts as a batter faced.* 267 rows. Median K-BB% shift 0.000,
+worst 0.38 points. Leave it.
+
+*An empty count bucket renders 0.0% for every pitch type* rather than saying the
+count never happened. Two Strikes is empty for 12 pitchers on the season,
+Pitcher Behind for 5, Pitcher Ahead for 2.
+
+**Not a defect.** 400 batted balls carry no `launch_speed` and no `woba_denom`,
+so Savant drops them from xwOBA while FanGraphs keeps them in the HH%
+denominator. The app now matches each source on its own terms.
+
+The league reference is immune to all of this: `summarise_cells()` filters
+`is.finite(value)` before taking quantiles, so a NaN pitcher-cell was never
+reaching a reference number.
+
+## Percentile scope, and two definitions that do not match Savant, 2026-08-22
+
+Question asked: is ranking within pitch type a problem, and what do FanGraphs and
+Savant do. Answering it meant pulling both sources, which turned up two live
+bugs.
+
+**What Savant does.** Read off Kirby's player page. The "MLB Percentile
+Rankings" panel is pitcher-level only: run value, xERA, xBA, fastball velo, exit
+velo, chase%, whiff%, K%, BB%, barrel%, hard-hit%, GB%, extension. One
+percentile per stat against qualified pitchers, and **no pitch-type percentile
+anywhere**. The closest they come is grouping run value into fastball, breaking
+and offspeed. Their pitch-type comparison lives on the movement profile as an
+MLB AVG marker beside the pitcher's own, not as a rank and not on a colour
+scale.
+
+**What FanGraphs does.** Measured off Jonathan's own export, pitchers with 20+
+IP. Stuff+ is NOT centred within pitch type: FC 92.5, CH 93.3, FA 97.4, SI 98.3,
+FS 101.7, CU 102.7, KC 103.1, SL 107.0. One common scale, 100 is an average
+pitch overall, and cross-pitch comparison is the intended reading. The price
+they pay is that a good cutter still prints below 100.
+
+**So the app's choice is the right one, and the note is honest.** Pooling is not
+an option. From our own league_ref, RHP, all counts:
+
+```
+whiff%   p10    p50    p90
+SI       6.1   10.7   17.1
+SL      19.9   32.3   41.9
+```
+
+The top decile of sinkers does not reach the bottom decile of sliders. The
+median slider sits above the sinker maximum and the median sinker below the
+slider minimum, so a pooled percentile would paint every sinker red and every
+slider green and carry no information about the pitcher.
+
+What is left is a rendering problem, not a ranking problem: a 90th-percentile
+sinker and a 90th-percentile slider get the same green while missing bats at 17%
+and 42%. Savant avoids it by never ranking within pitch type; FanGraphs avoids
+it by keeping one scale. Still open, still deferred.
+
+### Two definitions that do not match Savant
+
+Validated against Savant's custom leaderboard, 105 pitchers with 100+ PA,
+comparing our store to theirs on the same dates. MAE is mean absolute error per
+pitcher, in points.
+
+```
+whiff%   misses / swings                    MAE 2.10   bias -2.10
+whiff%   (misses + foul_tip) / swings       MAE 0.09   bias +0.05   68 of 105 exact to 0.1
+HH%      denominator type == "X"            MAE 0.04                  (the fix from earlier today)
+zone%    our zone                           MAE 4.65   bias -4.79
+zone%    vertical pad 0.125 ft              MAE 0.14
+chase%   our zone                           MAE 2.25
+chase%   vertical pad 0.125 ft              MAE 0.24
+```
+
+**Foul tips are whiffs to Savant.** Ours understates whiff% by 2.10 points on
+average and by 3.4 at worst. Foul tips are 2.1% of swings. `whiff_desc` also
+feeds `csw_pct`, so both move together if this changes.
+
+**Our strike zone is missing the ball radius vertically.** The horizontal bound
+already has it: 0.8291 ft is the 8.5 inch plate half-width plus a 1.45 inch ball
+radius. The vertical bound is bare `sz_bot` to `sz_top`. A grid search over half
+width and vertical pad against Savant lands on 0.825 and 0.125 ft, which is that
+same ball radius, and drops zone% error from 4.79 points to 0.14. Our zone% is
+systematically 4.8 points too low, which moves zone%, chase% on both ends of its
+ratio, the heatmap IZ% strip, and both metrics in league_ref.
+
+Neither is fixed. Both change every affected number in the app and need a
+league_ref rebuild, so they are one deliberate change, not a drive-by.
+
+## Both definitions fixed and the chain rerun, 2026-08-23
+
+Approved and done: foul tips count as whiffs, and the strike zone carries the
+ball radius vertically. Chain rerun so the store, `league_ref.rds` and
+`app_data.rds` all sit on the new definitions.
+
+**Against Savant, 105 pitchers with 100+ PA, before and after.**
+
+```
+             before   after
+whiff%   MAE   2.10   0.087      bias +0.050, worst 0.39
+chase%   MAE   2.19   0.192      bias -0.175, worst 0.62
+zone%    MAE   4.65   0.105      bias +0.098, worst 0.29
+HH%      MAE   0.04   0.037      (fixed the day before)
+```
+
+`ZONE_HALF_FT` is now written as `PLATE_HALF_FT + BALL_RADIUS_FT` so the two
+axes share one constant and cannot drift apart again. The vertical pad is the
+same 0.1208 ft, not a fitted number: a grid search over half width and pad
+independently lands on it.
+
+**The chain had a second bug, found by this change.** `refresh_store()`
+recomputed `in_zone` only on the path where new rows were bound in. Both
+early returns, "nothing to pull" and "pull returned no rows", handed back the
+store untouched, so a formula change reached the file on the next day a game was
+played and not before. On a quiet day the chain finished green with the old
+geometry still in place. `refresh_derived()` now runs on every path out.
+
+**phase1_check now sanctions at COLUMN granularity.** `whiff_pct` and `csw_pct`
+in `arsenal_table_R` and `arsenal_table_L` are the deliberate divergence from
+the original script; every other column in those frames is still compared byte
+for byte, and each sanctioned column is asserted to ACTUALLY differ. Reverting
+`whiff_desc` now FAILS the check with "sanctioned as changed but matches the
+original", verified by mutation. That closes species 3 in CLAUDE.md for these
+two artifacts: the sanction records which difference is allowed, not merely that
+one is.
+
+The fixture rebuild inside `phase1_check.R` compares everything except
+`in_zone`, since the original script cannot agree with a zone it does not have,
+and then checks the divergence for direction: the new zone must CONTAIN the old
+one and be strictly wider. It reports "in_zone widened by 111 pitches as
+intended".
+
+**The frozen fixtures are now tracked, and this is the important part.** Both
+were gitignored under `*.rds`, so they regenerated on every clone from a season
+store that grows nightly: the fixture went 2,261 pitches on 2026-08-19 to 2,346
+on 2026-08-23. A byte-identity baseline captured against one fixture and
+compared against another is not a check, and nothing would have said so. 217 KB
+committed. Frozen files are only frozen if they are committed.
+
+`arsenal_gt_null_baseline.rds` was recaptured twice, deliberately, and the first
+time only after diffing by column: 10 of 84 body cells moved, 5 `whiff_pct` and
+5 `csw_pct`, one per pitch type, nothing else. The second recapture was for the
+rebuilt fixture. Recapturing is the move that hides regressions, so the rule is
+in the test header now: diff the cells by column BEFORE reaching for `--write`.
+
+Guards added to `tests/step2_states.R`, both mutation tested. Zone geometry is
+pinned with literal coordinates, 0.82 in and 0.84 out horizontally, 0.10 in and
+0.15 out past both vertical edges, never through `ZONE_HALF_FT`. The foul-tip
+fixture is 8 swings with 2 misses and 1 foul tip, so the right answer is 37.5,
+the old code gives 25.0, and dropping the foul tip from the denominator would
+give 28.6.

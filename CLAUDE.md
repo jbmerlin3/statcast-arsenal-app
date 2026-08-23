@@ -218,6 +218,19 @@ These each cause a silently wrong number rather than an error.
    panels below `KDE_MIN_N` fall back to a white-dot scatter rather than a KDE
    built on nothing.
 
+6. **Hard hit is off BATTED BALLS, not off rows with an exit velocity.**
+   Statcast measures fouls, and fouls are weak, so `!is.na(launch_speed)` as a
+   denominator roughly halves the rate and nothing errors. Kirby 2026 vs LHH:
+   435 rows carry an EV, 206 of them fouls at a mean 78.1 mph, and HH% read 28.3
+   against FanGraphs' 45.4. On `type == "X"` it is 104 of 229, 45.4, and the
+   event counts match FanGraphs exactly on both sides.
+
+   Untracked batted balls stay in the denominator, which is what FanGraphs does:
+   80 of 205 vs RHH reads 39.0, not the 39.4 you get over the 203 with an EV.
+
+   `bb_type` says the same thing and is NOT in `app_data`, dropped by the Phase 7
+   trim as unread. `type` is the in-play flag and is there.
+
 ## Checks that did not discriminate
 
 Every entry here is a check that ran green while the thing it existed to protect
@@ -281,10 +294,19 @@ correct code?** Both halves. Entry 4 is the second half failing.
 
 ## Formula conventions
 
-- whiff% is off swings, not off total pitches
+- whiff% is off swings, not off total pitches, and **a foul tip counts as a
+  whiff**. Savant counts it that way and the numbers say so: misses / swings ran
+  2.10 points under Savant's whiff% across 105 pitchers, adding foul_tip lands at
+  0.09 MAE. `whiff_desc` is also the whiff half of CSW%, so both move together
+- hard hit% is off batted balls, `type == "X"`, not off rows carrying a
+  launch_speed. Statcast tracks fouls. See hard rule 6
 - chase% is off out-of-zone pitches
 - CSW% is `(called_strike + whiffs) / total pitches`
-- in_zone is `plate_x` within +/- 0.8291 and `plate_z` between `sz_bot` and `sz_top`
+- in_zone carries a ball radius on BOTH axes, because a pitch is a strike if any
+  part of the ball crosses the zone. `plate_x` within +/- 0.8291, which is the
+  8.5 inch plate half-width plus the 0.1208 ft ball radius, and `plate_z` within
+  `sz_bot - 0.1208` to `sz_top + 0.1208`. The vertical radius was missing until
+  2026-08-23, which put zone% 4.6 points under Savant's and chase% 2.2 over
 - IVB is `pfx_z * 12`, HB is `-pfx_x * 12`. **Arm side reads positive for a RHP
   only.** HB is not handedness-normalized, so median HB has the opposite sign
   for lefties: SI is +15.5 for RHP and -15.6 for LHP, ST is -13.8 and +14.0.
@@ -295,6 +317,32 @@ correct code?** Both halves. Entry 4 is the second half failing.
   which never drops `p_throws` for this reason.
 - IP is not derivable from pitch-level data. `events` is one row per PA, so a
   double play reads as one out. Pull IP from FanGraphs or `mlb_pitcher_game_logs()`.
+
+## Validating a rate against Savant
+
+Savant's custom leaderboard serves CSV, which is how the foul-tip and zone
+findings were settled in one pass rather than argued. It is the same kind of
+request the chain already makes.
+
+```r
+u <- paste0("https://baseballsavant.mlb.com/leaderboard/custom?year=2026&type=pitcher",
+            "&filter=&min=100&selections=player_id,pa,whiff_percent,oz_swing_percent,",
+            "hard_hit_percent,in_zone_percent,swing_percent&csv=true")
+sv <- readr::read_csv(u)   # the player_id column arrives twice, hence player_id...2
+```
+
+Compare per pitcher and read the MEAN ABSOLUTE ERROR, not one player: a single
+match can be luck. As of 2026-08-23, over 105 pitchers with 100+ PA:
+
+```
+HH%      denominator type == "X"           MAE 0.037
+whiff%   (misses + foul_tip) / swings      MAE 0.087
+zone%    ball radius on both axes          MAE 0.105
+chase%   same zone                         MAE 0.192
+```
+
+Anything above about 0.3 is a definition difference and not noise. The versions
+that were live before this pass sat at 2.10, 4.65 and 2.19.
 
 ## Count buckets
 
@@ -377,6 +425,32 @@ from `Learning_to_pull_stats.R`, which is what generated the existing reports.
    was auto-printing; elsewhere it could be lazy evaluation, a different
    environment, or a device. `tests/step3_render.R` now asserts visibility for
    all four plot functions, verified by mutation.
+
+9. **A clean session is not where the app stands.** All six suites passed while
+   the movement chart and the heat maps were dead in Jonathan's RStudio session,
+   with `argument "observed" is missing, with no default` on those two tabs and
+   nothing wrong on the other two.
+
+   `randomForest` exports `margin(x, observed, ...)`. Attached after ggplot2 in
+   a console that has been open for days, it masks `ggplot2::margin`, and the
+   only two plots that set a plot margin are the movement chart and the heat
+   maps. `library(ggplot2)` at the top of app.R does NOT fix the order: on an
+   already-attached package `library()` is a no-op and leaves the later
+   attachment in front.
+
+   Every suite runs under a fresh `Rscript`, where the search path holds exactly
+   what the file attaches, so no suite could ever see this. Same species as
+   entry 8, one level up: entry 8 was a consumer difference, auto-printing, and
+   this is an environment difference, the search path.
+
+   Fixed by writing `ggplot2::margin()` out in full, and guarded in
+   `tests/step3_render.R` by defining a masking `margin()` and asserting both
+   plots still draw. Verified by mutation: bare `margin()` fails it, qualified
+   passes. The general exposure was measured rather than guessed. The only
+   ggplot2-side clash across every installed package is this one; the rest are
+   dplyr-side, `plyr` over mutate, arrange, count, summarise and rename, `MASS`
+   over select, `stats` over filter.
+
 ## gt mechanics that are not obvious
 
 Both of these were found by probing gt, not by reading it, and both produce a

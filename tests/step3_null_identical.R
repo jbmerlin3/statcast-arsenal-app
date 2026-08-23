@@ -15,6 +15,14 @@
 # So the comparison here is against a committed snapshot of TODAY, not against
 # the original script. Baseline captured at 9694276, the commit before
 # resolve_table() and the ref argument landed.
+#
+# RECAPTURED 2026-08-23, once, for the foul_tip change to whiff_desc. Recapturing
+# is the move that can hide a regression, so it was done only after checking WHAT
+# moved: 10 of 84 body cells on the R side, 5 whiff_pct and 5 csw_pct, one per
+# pitch type, and no other column touched. The zone change landed in the same
+# pass and does NOT appear here, because the fixture carries a frozen in_zone
+# column computed before it. If this test ever fails again, diff the cells by
+# column BEFORE reaching for --write.
 
 suppressMessages({library(dplyr); library(tidyr); library(purrr); library(forcats)
                   library(ggplot2); library(gt); library(readr)})

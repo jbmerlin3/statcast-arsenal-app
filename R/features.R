@@ -8,19 +8,40 @@
 library(dplyr)
 
 
+# The zone a pitch is called in, in feet. A pitch is a strike if ANY part of the
+# ball crosses the zone, so both bounds carry a ball radius. Half of a 17 inch
+# plate is 0.7083 ft and the ball's radius is 0.1208 ft, which is where 0.8291
+# comes from.
+#
+# The vertical bound carried no radius until 2026-08-23, and that was the bug:
+# the same allowance was in one axis and not the other. Measured against
+# Savant's own zone% and chase% over 105 pitchers with 100+ PA:
+#
+#   vertical pad   zone% MAE   zone% bias   chase% MAE
+#   0 ft (before)      4.646       -4.646        2.193
+#   0.1208 ft          0.105       +0.098        0.192
+#
+# A grid search over half width and pad lands on the same 0.12, so this is the
+# ball radius and not a fitted fudge factor.
+PLATE_HALF_FT  <- 0.7083
+BALL_RADIUS_FT <- 0.1208
+ZONE_HALF_FT   <- PLATE_HALF_FT + BALL_RADIUS_FT   # 0.8291
+
+
 #' Strike zone membership, as a 0/1 integer
 #'
-#' The half-width is the rulebook plate plus a ball radius, in feet. Vertical
-#' bounds are the batter-specific zone Savant reports per pitch, not a constant.
+#' Vertical bounds are the batter-specific zone Savant reports per pitch, not a
+#' constant, widened by the ball radius the same way the half-width is.
 #'
 #' Its own function because the season store carries `in_zone` too and
-#' `scripts/update_data.R` has to recompute it for newly scraped rows. Two
-#' copies of 0.8291 in two files is exactly how a rate stat drifts from itself.
-#' The drawn zone box in plot_heatmap() is deliberately NOT this: that one is a
-#' rendering coordinate and must not move a rate.
+#' `scripts/update_data.R` has to recompute it. Two copies of this geometry in
+#' two files is exactly how a rate stat drifts from itself. The drawn zone box in
+#' plot_heatmap() is deliberately NOT this: that one is a rendering coordinate
+#' and must not move a rate.
 in_zone_flag <- function(plate_x, plate_z, sz_bot, sz_top) {
-  as.integer(plate_x >= -0.8291 & plate_x <= 0.8291 &
-               plate_z >= sz_bot & plate_z <= sz_top)
+  as.integer(plate_x >= -ZONE_HALF_FT & plate_x <= ZONE_HALF_FT &
+               plate_z >= (sz_bot - BALL_RADIUS_FT) &
+               plate_z <= (sz_top + BALL_RADIUS_FT))
 }
 
 

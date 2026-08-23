@@ -214,6 +214,52 @@ scalar <- vapply(seq_along(vals), function(i)
 expect("column equals scalar", col$state, scalar)
 expect("column keeps one row per pitch type", nrow(col), length(vals))
 
+cat("\n=== the strike zone carries a ball radius on BOTH axes ===\n")
+# Literal coordinates, never ZONE_HALF_FT or BALL_RADIUS_FT. A fixture written
+# in terms of the constant it pins slides with the constant and pins nothing.
+# See CLAUDE.md entry 5.
+#
+# A pitch is a strike if any part of the ball crosses the zone, so the bound is
+# the nominal edge plus 0.1208 ft. The vertical bound carried no radius until
+# 2026-08-23, which put zone% 4.6 points below Savant's.
+zbot <- 1.60; ztop <- 3.40
+iz <- function(x, z) in_zone_flag(x, z, zbot, ztop)
+expect("dead centre is in",                     iz(0,     2.5),  1L)
+expect("0.82 ft off centre is still in",        iz(0.82,  2.5),  1L)
+expect("0.84 ft off centre is out",             iz(0.84,  2.5),  0L)
+expect("0.10 ft above the top is in",           iz(0,     3.50), 1L)
+expect("0.15 ft above the top is out",          iz(0,     3.55), 0L)
+expect("0.10 ft below the bottom is in",        iz(0,     1.50), 1L)
+expect("0.15 ft below the bottom is out",       iz(0,     1.45), 0L)
+expect("the radius applies to the low bound too, not just the high",
+       c(iz(0, 1.50), iz(0, 1.45)), c(1L, 0L))
+
+cat("\n=== a foul tip is a whiff and a swing ===\n")
+# Savant counts a foul tip as a whiff, verified against their leaderboard over
+# 105 pitchers: misses / swings ran 2.10 points light, adding foul_tip lands at
+# 0.09 MAE. It has to stay in swing_only as well, since it is a swing whichever
+# way the numerator goes, and it is the whiff half of csw_pct too.
+expect("foul_tip counts as a whiff", "foul_tip" %in% whiff_desc, TRUE)
+expect("foul_tip is still a swing",  "foul_tip" %in% swing_only, TRUE)
+ft_frame <- tibble::tibble(
+  pitch_type   = factor("SL", levels = "SL"), stand = "R", p_throws = "R",
+  # 2 misses and 1 foul tip in 8 swings. 3 of 8 is 37.5, 2 of 8 is 25.0, and a
+  # foul tip wrongly dropped from the denominator would give 2 of 7, 28.6.
+  description  = c("swinging_strike", "swinging_strike", "foul_tip",
+                   rep("foul", 3), rep("hit_into_play", 2), rep("ball", 4)),
+  type         = c(rep("S", 6), rep("X", 2), rep("B", 4)),
+  in_zone      = c(rep(1, 6), 1, 1, rep(0, 4)),
+  release_speed = 85, ivb = 2, hb = 3, release_spin_rate = 2400,
+  woba_denom   = c(rep(NA, 6), 1, 1, rep(NA, 4)),
+  estimated_woba_using_speedangle = c(rep(NA, 6), 0.3, 0.2, rep(NA, 4)))
+ft_tb <- arsenal_table(ft_frame, "All",
+                       tibble::tibble(pitch_type = character(), stuff_plus = numeric(),
+                                      fg_exact = logical()))
+cat(sprintf("  8 swings, 2 misses and a foul tip: whiff%% %.1f, CSW%% %.1f\n",
+            ft_tb$whiff_pct, ft_tb$csw_pct))
+expect("whiff% is 3 of 8, the foul tip counted", ft_tb$whiff_pct, 37.5)
+expect("csw% counts the foul tip too", ft_tb$csw_pct, 25.0)
+
 cat("\n", strrep("-", 60), "\n", sep = "")
 if (length(fails)) { cat("FAILURES:\n"); for (f in fails) cat("  ", f, "\n") }
 cat("STEP 2: ", if (length(fails)) "FAIL" else "PASS", "\n", sep = "")

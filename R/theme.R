@@ -292,4 +292,14 @@ COUNT_BUCKETS <- list(
 # Denominator for whiff%, which is off swings and not off total pitches.
 swing_only <- c("swinging_strike","swinging_strike_blocked","foul","foul_tip","hit_into_play")
 
-whiff_desc <- c("swinging_strike","swinging_strike_blocked")
+# foul_tip belongs here, verified against Savant rather than argued. A foul tip
+# is a swing the bat barely reached that the catcher caught, and Savant counts it
+# as a whiff. Over 105 pitchers with 100+ PA, misses / swings sat 2.10 points
+# below Savant's whiff% on average and 3.4 at worst; adding foul_tip to the
+# numerator lands at 0.09 MAE, exact to a tenth for 68 of them. Foul tips are
+# 2.1% of swings.
+#
+# It is in swing_only as well, and has to be: a foul tip is a swing whichever way
+# the numerator goes. This set is also the whiff half of csw_pct, so CSW% moves
+# with it by design rather than by accident.
+whiff_desc <- c("swinging_strike","swinging_strike_blocked","foul_tip")
