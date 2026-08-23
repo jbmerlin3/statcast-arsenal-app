@@ -16,9 +16,10 @@ library(ggplot2)
 # ---- Global scope ------------------------------------------------------------
 #
 # Everything here runs ONCE when the process starts, not per session. app_data
-# is roughly 142 MB in memory, so loading it inside server() would mean one copy
-# per connected user and the free tier ceiling would not survive two of them.
-# Loaded here, every session shares the one copy.
+# is 103 MB in memory, measured 2026-08-21 after the column trim, and the three
+# startup objects put 191 MB on the R heap between them. Loading them inside
+# server() would mean one copy per connected user, which the free tier ceiling
+# would not survive twice. Loaded here, every session shares the one copy.
 #
 # R/ is NOT sourced here. Shiny auto-sources every .R file in R/ into the app's
 # own environment before this file runs. Calling source() explicitly would put
@@ -81,7 +82,17 @@ preset_buttons <- if (is.null(HALVES$first)) {
 
 
 ui <- fluidPage(
-  titlePanel("Pitcher Arsenal"),
+  # The deploy bundles the rds files rather than fetching them at startup, so
+  # the page has to say how current they are. Read off app_data itself and not
+  # a build-time constant: a redeploy that ships stale data then shows the
+  # stale date rather than the date of the deploy.
+  titlePanel(div("Pitcher Arsenal",
+                 span(paste("Data through", DATE_MAX),
+                      style = "font-size:14px; color:#666; margin-left:12px;")),
+             # Explicit, because titlePanel defaults windowTitle to the title
+             # itself, and with a tag there that puts raw markup in the browser
+             # tab. Verified on the rendered page, not assumed.
+             windowTitle = "Pitcher Arsenal"),
   sidebarLayout(
     sidebarPanel(
       width = 3,

@@ -261,10 +261,21 @@ byte-identical.
 
 ## Phase 7. Share and deploy
 
-- [ ] Trim `app_data.rds` to the minimum column set, check the file size
-- [ ] `renv::init()` so the environment reproduces on someone else's machine
-- [ ] Deploy, confirm it loads inside the memory ceiling
-- [ ] README with a screenshot and the methodology in three paragraphs
+- [x] Trim `app_data.rds` to the minimum column set, check the file size.
+      37 to 27 columns, 49.2 to 22.4 MB on disk, 103 MB in memory
+- [x] `renv::init()` so the environment reproduces on someone else's machine.
+      83 packages against R 4.5.2. rsconnect is installed but held out of the
+      lock through `renv::settings$ignored.packages`, so the deploy tool is not
+      installed on the thing it deploys to
+- [x] Schedule the daily chain. launchd at 06:15, verified by triggering it
+      again after renv landed, since `.Rprofile` now decides which library the
+      job runs against. RUN OK in 3m24s, all four steps
+- [ ] Deploy, confirm it loads inside the memory ceiling. `scripts/deploy.R` is
+      written and the bundle is measured at 25.8 MB over 83 manifest packages.
+      Blocked on one manual step only: `rsconnect::setAccountInfo()` with a
+      token, which is Jonathan's to paste
+- [x] README with a screenshot and the methodology in three paragraphs.
+      Two screenshots in `docs/`, captured off the running app
 
 ---
 
