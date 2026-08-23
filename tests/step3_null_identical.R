@@ -16,7 +16,10 @@
 # the original script. Baseline captured at 9694276, the commit before
 # resolve_table() and the ref argument landed.
 #
-# RECAPTURED 2026-08-23, once, for the foul_tip change to whiff_desc. Recapturing
+# RECAPTURED 2026-08-23, twice: once for the foul_tip change to whiff_desc and
+# again when bunt attempts joined the swing set. The second diff moved 15 cells,
+# whiff_pct, csw_pct and chase_pct, one each per pitch type, nothing else.
+# Recapturing
 # is the move that can hide a regression, so it was done only after checking WHAT
 # moved: 10 of 84 body cells on the R side, 5 whiff_pct and 5 csw_pct, one per
 # pitch type, and no other column touched. The zone change landed in the same

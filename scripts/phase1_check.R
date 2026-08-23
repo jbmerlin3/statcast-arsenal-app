@@ -45,10 +45,14 @@ WORKER   <- file.path(REPO, "tests/phase1_artifacts.R")
 # fails the check instead of quietly satisfying it. That is the one limitation
 # recorded below, closed for these two.
 EXPECTED_COL_DIFFS <- list(
-  arsenal_table_R = c(whiff_pct = "foul_tip is a whiff, verified against Savant at 0.09 MAE over 105 pitchers",
-                      csw_pct   = "same set: whiff_desc is the whiff half of CSW%"),
-  arsenal_table_L = c(whiff_pct = "foul_tip is a whiff, verified against Savant at 0.09 MAE over 105 pitchers",
-                      csw_pct   = "same set: whiff_desc is the whiff half of CSW%")
+  arsenal_table_R = c(
+                      whiff_pct = "foul_tip and missed_bunt are whiffs, bunt attempts are swings. Savant, 0.032 MAE over 105 pitchers",
+                      csw_pct   = "same numerator: whiff_desc is the whiff half of CSW%",
+                      chase_pct = "same swing set: a bunt attempt out of the zone is a chase. Savant, 0.060 MAE"),
+  arsenal_table_L = c(
+                      whiff_pct = "foul_tip and missed_bunt are whiffs, bunt attempts are swings. Savant, 0.032 MAE over 105 pitchers",
+                      csw_pct   = "same numerator: whiff_desc is the whiff half of CSW%",
+                      chase_pct = "same swing set: a bunt attempt out of the zone is a chase. Savant, 0.060 MAE")
 )
 
 EXPECTED_DIFFS <- c(
@@ -185,7 +189,8 @@ if (length(unexpected)) {
   cat("Unexpected differences, the split changed behaviour:\n")
   for (nm in unexpected) {
     cat("  ", nm, "\n")
-    cat(paste0("      ", utils::head(all.equal(new[[nm]], old[[nm]]), 5)), sep = "\n")
+    cat(paste0("      ", utils::head(all.equal(drop_sanctioned(nm, new[[nm]]),
+                                                drop_sanctioned(nm, old[[nm]])), 5)), sep = "\n")
   }
   cat("\n")
 }

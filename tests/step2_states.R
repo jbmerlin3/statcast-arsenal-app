@@ -243,22 +243,29 @@ expect("foul_tip counts as a whiff", "foul_tip" %in% whiff_desc, TRUE)
 expect("foul_tip is still a swing",  "foul_tip" %in% swing_only, TRUE)
 ft_frame <- tibble::tibble(
   pitch_type   = factor("SL", levels = "SL"), stand = "R", p_throws = "R",
-  # 2 misses and 1 foul tip in 8 swings. 3 of 8 is 37.5, 2 of 8 is 25.0, and a
-  # foul tip wrongly dropped from the denominator would give 2 of 7, 28.6.
+  # 10 swings: 2 misses, 1 foul tip, 1 missed bunt and 1 foul bunt among them.
+  # Whiffs are the 2 misses, the foul tip and the missed bunt, so 4 of 10 is
+  # 40.0. The set that shipped this morning gives 2 of 8, 25.0. Counting bunts
+  # as swings but never as whiffs gives 3 of 10, 30.0. Dropping the foul tip
+  # from the denominator gives 3 of 9, 33.3.
   description  = c("swinging_strike", "swinging_strike", "foul_tip",
+                   "missed_bunt", "foul_bunt",
                    rep("foul", 3), rep("hit_into_play", 2), rep("ball", 4)),
-  type         = c(rep("S", 6), rep("X", 2), rep("B", 4)),
-  in_zone      = c(rep(1, 6), 1, 1, rep(0, 4)),
+  type         = c(rep("S", 8), rep("X", 2), rep("B", 4)),
+  in_zone      = c(rep(1, 8), 1, 1, rep(0, 4)),
   release_speed = 85, ivb = 2, hb = 3, release_spin_rate = 2400,
-  woba_denom   = c(rep(NA, 6), 1, 1, rep(NA, 4)),
-  estimated_woba_using_speedangle = c(rep(NA, 6), 0.3, 0.2, rep(NA, 4)))
+  woba_denom   = c(rep(NA, 8), 1, 1, rep(NA, 4)),
+  estimated_woba_using_speedangle = c(rep(NA, 8), 0.3, 0.2, rep(NA, 4)))
 ft_tb <- arsenal_table(ft_frame, "All",
                        tibble::tibble(pitch_type = character(), stuff_plus = numeric(),
                                       fg_exact = logical()))
-cat(sprintf("  8 swings, 2 misses and a foul tip: whiff%% %.1f, CSW%% %.1f\n",
+cat(sprintf("  10 swings, 2 misses, a foul tip and a missed bunt: whiff%% %.1f, CSW%% %.1f\n",
             ft_tb$whiff_pct, ft_tb$csw_pct))
-expect("whiff% is 3 of 8, the foul tip counted", ft_tb$whiff_pct, 37.5)
-expect("csw% counts the foul tip too", ft_tb$csw_pct, 25.0)
+expect("whiff% is 4 of 10: foul tip and missed bunt both count", ft_tb$whiff_pct, 40.0)
+expect("csw% counts them too", ft_tb$csw_pct, round(4/14*100, 1))
+expect("a bunt attempt is a swing", all(c("foul_bunt", "missed_bunt", "bunt_foul_tip") %in% swing_only), TRUE)
+expect("a missed bunt is a whiff",  "missed_bunt" %in% whiff_desc, TRUE)
+expect("a foul bunt is NOT a whiff", "foul_bunt" %in% whiff_desc, FALSE)
 
 cat("\n", strrep("-", 60), "\n", sep = "")
 if (length(fails)) { cat("FAILURES:\n"); for (f in fails) cat("  ", f, "\n") }

@@ -290,7 +290,25 @@ COUNT_BUCKETS <- list(
 # put a wrong CSW% into a finished report.
 
 # Denominator for whiff%, which is off swings and not off total pitches.
-swing_only <- c("swinging_strike","swinging_strike_blocked","foul","foul_tip","hit_into_play")
+#
+# Bunt attempts are swings. The batter offered, so an out-of-zone bunt attempt
+# is a chase and a missed bunt is a swing and a miss. Verified against Savant
+# rather than argued, over 105 pitchers with 100+ PA:
+#
+#   swing set                                  whiff MAE   chase MAE
+#   no bunts anywhere                              0.087       0.192
+#   bunts are swings, missed_bunt a whiff          0.036       0.060
+#   + bunt_foul_tip a whiff too                    0.032       0.060
+#
+# An earlier pass measured this with foul_tip missing from the whiff numerator
+# and read it as a wash, because the two errors ran in opposite directions. One
+# change at a time, against the source, or a confounded measurement talks you
+# out of a real fix.
+#
+# swinging_pitchout is left out: 1 row in the whole season, and the measurement
+# cannot tell either way.
+swing_only <- c("swinging_strike","swinging_strike_blocked","foul","foul_tip","hit_into_play",
+                "foul_bunt","missed_bunt","bunt_foul_tip")
 
 # foul_tip belongs here, verified against Savant rather than argued. A foul tip
 # is a swing the bat barely reached that the catcher caught, and Savant counts it
@@ -302,4 +320,5 @@ swing_only <- c("swinging_strike","swinging_strike_blocked","foul","foul_tip","h
 # It is in swing_only as well, and has to be: a foul tip is a swing whichever way
 # the numerator goes. This set is also the whiff half of csw_pct, so CSW% moves
 # with it by design rather than by accident.
-whiff_desc <- c("swinging_strike","swinging_strike_blocked","foul_tip")
+whiff_desc <- c("swinging_strike","swinging_strike_blocked","foul_tip",
+                "missed_bunt","bunt_foul_tip")

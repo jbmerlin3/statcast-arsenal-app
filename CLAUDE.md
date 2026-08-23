@@ -294,10 +294,17 @@ correct code?** Both halves. Entry 4 is the second half failing.
 
 ## Formula conventions
 
-- whiff% is off swings, not off total pitches, and **a foul tip counts as a
-  whiff**. Savant counts it that way and the numbers say so: misses / swings ran
-  2.10 points under Savant's whiff% across 105 pitchers, adding foul_tip lands at
-  0.09 MAE. `whiff_desc` is also the whiff half of CSW%, so both move together
+- whiff% is off swings, not off total pitches. **A foul tip is a whiff, a bunt
+  attempt is a swing, and a missed bunt is both.** Savant counts them that way
+  and the numbers say so, over 105 pitchers: misses / swings ran 2.10 points
+  under Savant's whiff%, foul_tip took it to 0.087, and the bunts took it to
+  0.032 with chase% going 0.192 to 0.060. `whiff_desc` is also the whiff half of
+  CSW%, so both move together. `swinging_pitchout` is left out: 1 row all season
+- **Measure one change at a time against the source.** An earlier pass tested
+  the bunts while foul_tip was still missing from the numerator, read the result
+  as a wash, and recommended leaving it. The two errors ran in opposite
+  directions and cancelled. A confounded measurement is worse than none: it
+  talks you out of a real fix with a number attached
 - hard hit% is off batted balls, `type == "X"`, not off rows carrying a
   launch_speed. Statcast tracks fouls. See hard rule 6
 - chase% is off out-of-zone pitches
@@ -336,13 +343,18 @@ match can be luck. As of 2026-08-23, over 105 pitchers with 100+ PA:
 
 ```
 HH%      denominator type == "X"           MAE 0.037
-whiff%   (misses + foul_tip) / swings      MAE 0.087
+whiff%   foul tips and bunts counted       MAE 0.032
+chase%   same swing set, same zone         MAE 0.060
 zone%    ball radius on both axes          MAE 0.105
-chase%   same zone                         MAE 0.192
 ```
 
 Anything above about 0.3 is a definition difference and not noise. The versions
 that were live before this pass sat at 2.10, 4.65 and 2.19.
+
+`03_ArsenalReports/engine` carries the same four definitions and was aligned on
+2026-08-23. Its three files spelled the swing set out nine times between them,
+three different ways inside one file. If you change a definition in one repo,
+change it in the other: they produce numbers that get compared side by side.
 
 ## Count buckets
 

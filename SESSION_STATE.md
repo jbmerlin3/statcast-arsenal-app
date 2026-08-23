@@ -541,3 +541,49 @@ pinned with literal coordinates, 0.82 in and 0.84 out horizontally, 0.10 in and
 fixture is 8 swings with 2 misses and 1 foul tip, so the right answer is 37.5,
 the old code gives 25.0, and dropping the foul tip from the denominator would
 give 28.6.
+
+## Bunts are swings, and the report engine is aligned, 2026-08-23
+
+Asked to make the app, the report engine and Savant agree. Doing it turned up
+that my own recommendation from earlier today was wrong.
+
+**The bunt measurement was confounded.** The audit tested "count bunts as
+swings" while `foul_tip` was still missing from the whiff numerator. The two
+errors run in opposite directions, they partly cancelled, the result looked like
+a wash and I recommended leaving it. With the numerator correct:
+
+```
+swing set                                  whiff MAE   chase MAE
+no bunts anywhere (this morning's commit)      0.087       0.192
+bunts are swings, missed_bunt a whiff          0.036       0.060
++ bunt_foul_tip a whiff too                    0.032       0.060
+```
+
+One change at a time against the source. A confounded measurement is worse than
+no measurement, because it talks you out of a real fix with a number attached.
+
+Final state, app against Savant over 105 pitchers: whiff 0.032, chase 0.060,
+zone 0.105, HH 0.037, every bias inside 0.10 point.
+
+**The report engine had the same HH% bug the app did.** `04_arsenal_pdf.R` took
+`bbe = sum(!is.na(launch_speed))`, so every hard-hit rate in every PDF was
+computed over fouls as well as batted balls, the same roughly-halving error.
+Now `sum(type == "X")`.
+
+**The engine spelled the swing set out nine times across three files, three
+different ways inside `04_arsenal_pdf.R` alone**: the whiff denominator carried
+foul_bunt and missed_bunt, the chase numerator carried foul_bunt only, and the
+splits block carried neither. All nine now match `R/theme.R`, verified by
+parsing every `c("swinging_strike", ...)` literal out of the three files and
+comparing the sets rather than by reading them.
+
+Aligned: `engine/statcast API.R`, `engine/04_arsenal_pdf.R`,
+`engine/advance-scouting-report/scripts/arsenal_report.R`. NOT touched:
+`reports/lodolo.R` and `reports/David Peterson.R`, which carry their own inlined
+copies. They are finished reports for specific pitchers, and silently changing
+what they would re-render is not mine to decide.
+
+Zone needed no work over there: all three engine files have carried the ball
+radius on both axes all along. The app was the one that lost it in the Phase 1
+split, which is worth remembering, since Savant was treated as the only
+reference for a day when the answer was sitting in the next directory.
