@@ -80,6 +80,32 @@ cat("\n=== the FIP constant is derived, not hardcoded ===\n")
 cat("  cFIP:", round(cf, 3), "\n")
 expect("cFIP is in the plausible band", cf > 2.5 && cf < 3.7, TRUE)
 
+cat("\n=== HH% counts batted balls, not every tracked exit velocity ===\n")
+# Statcast measures fouls, and fouls are weak, so a denominator of "rows with an
+# exit velocity" halves the rate. Kirby 2026 vs LHH read 28.3 against
+# FanGraphs' 45.4 until the denominator became type == "X".
+#
+# A literal fixture rather than a slice of app_data. The season store grows
+# every night, so a rate pinned off live data would have to be re-pinned daily,
+# and a fixture that moves with the data cannot pin anything. See CLAUDE.md
+# entry 5.
+#
+# The numbers discriminate three ways. Two of the four batted balls are hard
+# hit, so the answer is 50. Counting every tracked EV gives 4 of 5, 80. Dropping
+# the untracked batted ball gives 2 of 3, 66.7.
+hh_frame <- tibble::tibble(
+  stand        = "R",
+  type         = c("X", "X", "X", "X", "S", "S", "S"),
+  description  = c(rep("hit_into_play", 4), "foul", "foul", "swinging_strike"),
+  launch_speed = c(100, 96, 94, NA, 105, 99, NA),
+  events       = c("single", "field_out", "field_out", "field_out", "", "", ""),
+  woba_denom   = c(1, 1, 1, 1, 0, 0, 0),
+  estimated_woba_using_speedangle = c(0.9, 0.3, 0.2, 0.1, NA, NA, NA))
+hh <- results_statcast(hh_frame, "All")
+cat(sprintf("  batted balls %d, hard hit 2, HH%% %.1f\n", hh$n_bip, hh$hh))
+expect("HH% denominator is batted balls, not tracked EVs", hh$n_bip, 4L)
+expect("a 105 mph foul does not count as hard hit", round(hh$hh, 1), 50)
+
 cat("\n", strrep("-", 58), "\n", sep = "")
 if (length(fails)) { cat("FAILURES:\n"); for (f in fails) cat("  ", f, "\n") }
 cat("PHASE 6 RESULTS: ", if (length(fails)) "FAIL" else "PASS", "\n", sep = "")

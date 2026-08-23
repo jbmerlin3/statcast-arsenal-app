@@ -51,7 +51,16 @@ results_statcast <- function(df, hand) {
   # PA-ending rows only. events is empty string on non-terminal pitches, not NA.
   # See CLAUDE.md hard rule 3.
   pa <- filter(df, events != "" & !is.na(events))
-  bip <- filter(df, !is.na(launch_speed))
+  # Batted balls, not every row carrying an exit velocity. Statcast measures
+  # FOULS too, and they are weak, so a tracked-EV denominator silently halves
+  # the rate. Measured on Kirby 2026 vs LHH: 435 rows have an EV, 206 of them
+  # fouls at a mean 78.1 mph, and HH% reads 28.3 against FanGraphs' 45.4. On
+  # type == "X" it is 104 of 229, 45.4, matching FanGraphs' event count exactly
+  # on both sides.
+  #
+  # bb_type would say the same thing and is NOT in app_data, having been dropped
+  # by the Phase 7 column trim as unread. type is the in-play flag and is there.
+  bip <- filter(df, type == "X")
 
   tbf <- nrow(pa)
   k   <- sum(pa$events == "strikeout", na.rm = TRUE)
@@ -60,7 +69,13 @@ results_statcast <- function(df, hand) {
   list(
     tbf     = tbf,
     k_bb    = if (tbf > 0) (k - bb) / tbf * 100 else NA_real_,
-    hh      = if (nrow(bip) > 0) mean(bip$launch_speed >= HARD_HIT_MPH) * 100 else NA_real_,
+    # Untracked batted balls stay in the denominator. FanGraphs counts them the
+    # same way, 80 of 205 vs RHH reading 39.0 rather than 39.4 over the 203 with
+    # an EV, and a number people cross-check against a public source is worth
+    # more than the two rows of precision that dropping them would buy.
+    hh      = if (nrow(bip) > 0)
+                sum(bip$launch_speed >= HARD_HIT_MPH, na.rm = TRUE) / nrow(bip) * 100
+              else NA_real_,
     # Weighted by woba_denom, PA-ending rows only. CLAUDE.md hard rule 2.
     xwoba   = { d <- sum(df$woba_denom, na.rm = TRUE)
                 if (d > 0) sum(df$estimated_woba_using_speedangle * df$woba_denom,

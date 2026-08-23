@@ -14,6 +14,17 @@ library(purrr)
 library(gt)
 
 
+#' A rate, or NA when nothing was measured
+#'
+#' 0/0 is NaN in R, and NaN travels all the way to the page: a pitch type nobody
+#' swung at rendered the literal text "NaN (0)" in the whiff column. The cell is
+#' below floor either way, so the only thing at stake is whether the reader sees
+#' an empty sample or a computer error. Measured 2026-08-22: 1.1% of full-season
+#' table rows carry at least one empty denominator, 4.5% over a one-week window,
+#' which is exactly the window a scout picks.
+pct_or_na <- function(num, den) if (den > 0) num / den * 100 else NA_real_
+
+
 #' Pitch characteristics for one batter side
 #'
 #' stuff_all arrives as an argument and is never read from disk here. That is
@@ -40,11 +51,17 @@ arsenal_table <- function(df, hand, stuff_all) {
       hb = round(mean(hb, na.rm = TRUE), 1),
       spin = round(mean(release_spin_rate, na.rm = TRUE), 0),
       strike_pct = round(mean(type %in% c("S", "X"), na.rm = TRUE) * 100, 1),
-      whiff_pct = round(sum(description %in% whiff_desc) / sum(description %in% swing_only) * 100, 1),
+      whiff_pct = round(pct_or_na(sum(description %in% whiff_desc),
+                                  sum(description %in% swing_only)), 1),
       csw_pct = round(mean(description %in% c("called_strike", whiff_desc))*100,1),
       zone_pct = round(mean(in_zone, na.rm = TRUE) * 100, 1),
-      chase_pct = round(sum(in_zone == 0 & description %in% swing_only) / sum(in_zone == 0) * 100, 1),
-      xwoba = round(sum(estimated_woba_using_speedangle * woba_denom, na.rm = TRUE) / sum(woba_denom, na.rm = TRUE), 3),
+      chase_pct = round(pct_or_na(sum(in_zone == 0 & description %in% swing_only),
+                                  sum(in_zone == 0)), 1),
+      # Written out rather than through pct_or_na, which is a percentage. Same
+      # guard: no PA ended on this pitch type means no xwOBA, not NaN.
+      xwoba = { d <- sum(woba_denom, na.rm = TRUE)
+                if (d > 0) round(sum(estimated_woba_using_speedangle * woba_denom,
+                                     na.rm = TRUE) / d, 3) else NA_real_ },
       .groups = "drop"
     ) |>
     arrange(desc(pitch_pct)) |>

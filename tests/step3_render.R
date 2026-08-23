@@ -177,6 +177,39 @@ expect("plot_movement draws with margin() masked", draws(plot_movement(pd, ref =
 expect("plot_heatmap draws with margin() masked", draws(plot_heatmap(pd, "R")), TRUE)
 rm(margin)
 
+cat("\n=== an empty denominator reaches the page as NA, never NaN ===\n")
+# 0/0 is NaN in R and NaN travels: a pitch type nobody swung at rendered the
+# literal "NaN (0)" in the whiff column. The cell is below floor either way, so
+# what is at stake is whether the reader sees an empty sample or a computer
+# error. Measured 2026-08-22: 1.1% of full-season rows carry an empty
+# denominator, 4.5% over a one-week window, which is the window a scout picks.
+#
+# A literal fixture, not a pitcher who happens to have a zero-swing pitch type
+# today. That pitcher gets a swing tomorrow and the check quietly stops
+# exercising anything. See CLAUDE.md entry 5.
+nan_frame <- tibble::tibble(
+  pitch_type   = factor(c(rep("FF", 6), rep("CU", 6)), levels = c("FF", "CU")),
+  stand        = "R", p_throws = "R",
+  # CU is taken every time: no swing, so no whiff denominator, and no pitch ends
+  # a plate appearance, so no xwOBA denominator either.
+  description  = c("swinging_strike", "foul", "hit_into_play", "ball", "ball", "called_strike",
+                   rep("called_strike", 3), rep("ball", 3)),
+  type         = c("S", "S", "X", "B", "B", "S", rep("S", 3), rep("B", 3)),
+  in_zone      = c(1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 0),
+  release_speed = 93, ivb = 15, hb = 8, release_spin_rate = 2300,
+  woba_denom   = c(NA, NA, 1, NA, NA, NA, rep(NA, 6)),
+  estimated_woba_using_speedangle = c(NA, NA, 0.3, NA, NA, NA, rep(NA, 6)))
+nan_tb <- arsenal_table(nan_frame, "All",
+                        tibble(pitch_type = character(), stuff_plus = numeric(), fg_exact = logical()))
+cu <- nan_tb[as.character(nan_tb$pitch_type) == "CU", ]
+cat(sprintf("  CU: %d pitches, whiff %s, chase %s, xwOBA %s\n", cu$count,
+            format(cu$whiff_pct), format(cu$chase_pct), format(cu$xwoba)))
+expect("no swings gives NA whiff, not NaN", is.na(cu$whiff_pct) && !is.nan(cu$whiff_pct), TRUE)
+expect("no PA gives NA xwOBA, not NaN",     is.na(cu$xwoba)     && !is.nan(cu$xwoba),     TRUE)
+expect("out-of-zone pitches with no swing still give a chase rate", cu$chase_pct, 0)
+expect("the rendered page carries no NaN",
+       grepl("NaN", as.character(gt::as_raw_html(arsenal_gt(nan_tb, "All")))), FALSE)
+
 cat("\n", strrep("-", 58), "\n", sep = "")
 if (length(fails)) { cat("FAILURES:\n"); for (f in fails) cat("  ", f, "\n") }
 cat("STEP 3 RENDER: ", if (length(fails)) "FAIL" else "PASS", "\n", sep = "")
