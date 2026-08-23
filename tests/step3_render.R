@@ -150,6 +150,33 @@ expect("plot_movement returns visibly with a ref too",
 expect("plot_heatmap returns visibly",
        withVisible(plot_heatmap(pd, "R"))$visible, TRUE)
 
+cat("\n=== both plots survive a masked margin() ===\n")
+# randomForest exports margin(x, observed, ...). Attach it after ggplot2 in a
+# console session and ggplot2::margin is masked, at which point the two plots
+# that set a plot margin die with `argument "observed" is missing, with no
+# default` and the other two render fine. Reported 2026-08-22 as "the movement
+# plots and heatmaps broke", which points nowhere near margin.
+#
+# Masked here rather than by attaching randomForest, which is not in the project
+# library. The lookup path is the same either way: these functions are sourced
+# into the global environment, so a global margin() shadows the package one
+# exactly as a later-attached package does, and so does the app, whose R/
+# environment has the global environment as its parent.
+#
+# This fails on a bare margin() call and passes on ggplot2::margin(), which is
+# the whole point of writing the namespace out.
+margin <- function(x, observed, ...) stop("the masked margin() was called")
+draws <- function(p) tryCatch({
+  f <- tempfile(fileext = ".png")
+  grDevices::png(f, width = 900, height = 600)
+  on.exit({ grDevices::dev.off(); unlink(f) }, add = TRUE)
+  print(p)
+  TRUE
+}, error = function(e) paste("ERROR:", conditionMessage(e)))
+expect("plot_movement draws with margin() masked", draws(plot_movement(pd, ref = ref)), TRUE)
+expect("plot_heatmap draws with margin() masked", draws(plot_heatmap(pd, "R")), TRUE)
+rm(margin)
+
 cat("\n", strrep("-", 58), "\n", sep = "")
 if (length(fails)) { cat("FAILURES:\n"); for (f in fails) cat("  ", f, "\n") }
 cat("STEP 3 RENDER: ", if (length(fails)) "FAIL" else "PASS", "\n", sep = "")

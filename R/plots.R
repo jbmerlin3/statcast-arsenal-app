@@ -6,6 +6,14 @@
 #
 # Requires theme.R for pitch_colors, KDE_BW, and KDE_MIN_N.
 #
+# margin() is called as ggplot2::margin() everywhere below, deliberately.
+# randomForest exports margin(x, observed, ...), and attaching it after ggplot2
+# in a long-lived console session masks the ggplot2 one. That killed exactly the
+# two plots that set a plot margin, with `argument "observed" is missing, with
+# no default`, while the other two rendered fine. app.R calling library(ggplot2)
+# does not protect against it: library() on an already-attached package does not
+# re-order the search path. Verified 2026-08-22 by masking margin in a test.
+#
 # Handedness note. plot_usage, plot_movement, and plot_velo take no `hand`
 # argument. plot_usage splits on `stand` internally to build its two-sided bars,
 # and the other two ignore `stand` entirely. Only plot_heatmap filters to one
@@ -121,7 +129,7 @@ plot_movement <- function(df, ref = NULL) {
     labs(x = "Horizontal Break (in)", y = "Induced Vertical Break (in)") +
     theme_minimal(base_size = 13) +
     theme(legend.position = "none", panel.grid.major = element_line(color = "gray90"),
-          aspect.ratio = 1, plot.margin = margin(t = 20, r = 5, b = 5, l = 5))
+          aspect.ratio = 1, plot.margin = ggplot2::margin(t = 20, r = 5, b = 5, l = 5))
 
   # A bare `g`, not the assignment above. A function ending in an assignment
   # returns INVISIBLY, and renderPlot() relies on auto-printing, so an invisible
@@ -201,9 +209,9 @@ plot_heatmap <- function(df, hand) {
     coord_fixed(xlim = c(-2.2, 2.2), ylim = c(0, 5)) +
     facet_grid(situation ~ pitch_type, switch = "y") +
     theme_void(base_size = 12) +
-    theme(plot.margin = margin(t = 14, r = 8, b = 8, l = 8),
-          strip.text.x = element_text(face = "bold", size = 13, margin = margin(b = 5)),
-          strip.text.y.left = element_text(face = "bold", size = 13, angle = 90, margin = margin(r = 3)),
+    theme(plot.margin = ggplot2::margin(t = 14, r = 8, b = 8, l = 8),
+          strip.text.x = element_text(face = "bold", size = 13, margin = ggplot2::margin(b = 5)),
+          strip.text.y.left = element_text(face = "bold", size = 13, angle = 90, margin = ggplot2::margin(r = 3)),
           panel.spacing = unit(0.6, "lines"),
           panel.background = element_rect(fill = "#440154", color = NA))
 }
