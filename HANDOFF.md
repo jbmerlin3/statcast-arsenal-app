@@ -19,35 +19,25 @@ before renv, before the search tab, and before a week of metric fixes.
 3. **`SESSION_STATE.md`.** Running log. The last six entries are this week.
 4. This file.
 
-## THE FIRST THING: there is a large uncommitted change set
+## The tree is clean, and what just landed
 
-Eleven modified files besides this one, roughly 775 insertions, all of it green
-and all of it verified in the browser. It is the arsenal-table visual overhaul
-plus the results-panel league highlighting. **Ask Jonathan whether to commit it
-before you touch anything**, because a `git checkout` to undo an experiment will
-take all of it with you.
+Everything is committed as of `06e89bf`. The last four commits are one arc, and
+if you are picking this up cold they are the fastest way to understand the
+current shape of the app:
 
-Note that `tests/fixtures/arsenal_gt_null_baseline.rds` is among them. It was
-recaptured twice on 2026-08-24, each time after diffing what moved. Do not
-regenerate it casually.
-
-```bash
-cd ~/statcast-arsenal-app && git status --short && git diff --stat
+```
+06e89bf  Colour IVB and HB by distance from the league, not by rank
+8204b8e  Rewrite the handoff for the next agent
+ff13c17  Grade the panel against the league, and the arsenal table by pitch shape
+a684ca6  Add a pitch trait search tab
 ```
 
-What is in it, in one line each:
-
-- The results panel gained league context: seven of its eight numbers fill red
-  or blue against the league **over the same window and batter side**, with a
-  floor that scales with the window.
-- The Characteristics table went white-rowed, with the pitch code holding the
-  only pitch colour, percentile fills on the metrics, and Stuff+ shading itself
-  off 100.
-- HB is arm-side normalised on the comparison surfaces and raw on the movement
-  chart.
-- IVB and HB grade by pitch type: ride is good for a four-seam, drop is good for
-  a changeup.
-- The search table lost its fills.
+In one line each: the results panel grades seven of its eight numbers against
+the league over the same window and batter side; the Characteristics table went
+white-rowed with the pitch code holding the only pitch colour; HB is arm-side
+normalised on the comparison surfaces and raw on the movement chart; IVB and HB
+grade by pitch type and colour by inches off the league rather than by rank; the
+search table has no fills.
 
 ## Run this before you touch anything
 
@@ -164,6 +154,13 @@ arm side is good for FF SI CH FS, glove side for the rest. All eleven codes are
 written out with no default: an unlisted code stops the render. Never read
 `METRIC_SPEC$direction` for `ivb` or `hb`; use `metric_direction()`.
 
+**IVB and HB colour by MAGNITUDE, everything else by rank.** Those two are the
+distance from the league average for that pitch type, in inches, saturating at
+`SHAPE_DELTA_SPAN` of 6. A rank is not comparable across rows, which was the
+complaint: 90th percentile is one inch in a cutter's IVB spread and four in a
+curveball's. `pctile` still reports the true rank, so a cell can read 90th and
+look pale. Do not "fix" that.
+
 **The neutral palette is symmetric grey, not a rank ramp.** Average is `#F0F0F0`,
 the same stop the diverging scale uses, and both ends darken. `usage_pct` is the
 only metric still on it.
@@ -190,10 +187,6 @@ Anything above about 0.3 is a definition difference and not noise.
   within pitch type and hand. Now that the fill also encodes what each pitch
   WANTS, this is less wrong than it was, but a 35th-percentile sinker and a
   35th-percentile slider still render alike.
-- **IVB and HB colour by rank, not by magnitude.** Savant says "9.0 inches more
-  drop"; this says "top decile of drop for a changeup". A pitch six inches past
-  the league reads the same as one three inches past if both are in the same
-  decile. Jonathan has been offered the magnitude version and has not asked yet.
 - **catcher_interf sits in the xwOBA denominator with no numerator.** 73 PA, 66
   pitchers, median shift 0.001, worst 0.013.
 - **`truncated_pa` counts as a batter faced.** 267 rows, median K-BB% shift 0.000.
