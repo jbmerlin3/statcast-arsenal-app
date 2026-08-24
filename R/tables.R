@@ -48,7 +48,10 @@ arsenal_table <- function(df, hand, stuff_all) {
       pitch_pct = round(n() / nrow(df) * 100, 1),
       velocity = round(mean(release_speed, na.rm = TRUE), 1),
       ivb = round(mean(ivb, na.rm = TRUE), 1),
-      hb = round(mean(hb, na.rm = TRUE), 1),
+      # Arm-side normalised, so a positive number means arm-side run whichever
+      # hand threw it. The movement chart keeps the raw sign, because there the
+      # direction is the picture. See arm_side_sign() in theme.R.
+      hb = round(mean(hb, na.rm = TRUE) * arm_side_sign(p_throws[1]), 1),
       spin = round(mean(release_spin_rate, na.rm = TRUE), 0),
       strike_pct = round(mean(type %in% c("S", "X"), na.rm = TRUE) * 100, 1),
       whiff_pct = round(pct_or_na(sum(description %in% whiff_desc),
@@ -154,20 +157,42 @@ arsenal_gt <- function(tbl, hand, fg_window = NULL, label = hand_label(hand),
     )
   }
 
-  # Row fill at 20 alpha, with the pitch code itself in the full color. gt has
-  # no vectorised way to key fill off a value, so each pitch type is folded in
-  # as its own tab_style.
+  # The pitch code carries the colour and nothing else does. The row used to be
+  # washed at 20 alpha as well, which made the whole table a patchwork the moment
+  # percentile fills landed on top of it: two colour systems on one surface, one
+  # saying WHICH pitch and one saying HOW GOOD, and the eye cannot separate them.
+  # White rows leave the percentile fill as the only thing that varies, and the
+  # identity survives in the code itself.
   g <- reduce(as.character(tbl$pitch_type), function(gt_tbl, pt) {
     gt_tbl |>
-      tab_style(cell_fill(color = paste0(pitch_colors[[pt]], "20")), cells_body(rows = pitch_type == pt)) |>
-      tab_style(cell_text(color = pitch_text_colors[[pt]], weight = "bold"), cells_body(columns = pitch_type, rows = pitch_type == pt))
+      tab_style(cell_text(color = pitch_text_colors[[pt]], weight = "bold"),
+                cells_body(columns = pitch_type, rows = pitch_type == pt))
   }, .init = g)
+
+  # Stuff+ shades itself, on the same ramp as every other cell but with no
+  # league lookup: 100 is average by construction, so the anchor lives in the
+  # scale rather than in league_ref, which carries no Stuff+ metric. Above 100
+  # reddens, below 100 blues, clamped at STUFF_PLUS_SPAN either side.
+  #
+  # Before the ref early-return, so a table rendered with no league context
+  # still gets it. No batching: this is one cell per pitch type, at most eleven.
+  if ("stuff_plus" %in% names(tbl)) {
+    sp <- tbl$stuff_plus
+    g <- reduce(which(is.finite(sp)), function(gt_tbl, i) {
+      p <- 50 + 50 * max(-1, min(1, (sp[i] - 100) / STUFF_PLUS_SPAN))
+      gt_tbl |> tab_style(cell_fill(color = pctile_fill(p, "high")),
+                          cells_body(columns = "stuff_plus", rows = i))
+    }, .init = g)
+  }
 
   if (is.null(ref)) return(g)
 
-  # AFTER the pitch-colour reduce, never before. The later tab_style wins in gt,
-  # so applying these first would let the row fill silently overwrite every
-  # percentile and render the context strip as the identity block.
+  # Still after the pitch-code reduce, though the reason has changed. It used to
+  # be that a row fill applied later would silently overwrite every percentile,
+  # since the later tab_style wins in gt. There is no row fill any more, so what
+  # the ordering protects now is narrower: the pitch code's own cell must keep
+  # its colour and weight, and a percentile fill landing on that column later
+  # would not touch the text but would tint the identity cell.
   #
   # No conditionals below. Every cell carries a concrete fill, colour, style,
   # weight and marker, with white for the unfilled states and "" for no marker,

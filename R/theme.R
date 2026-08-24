@@ -156,8 +156,20 @@ METRIC_SPEC <- data.frame(
   floor  = c(rep(25, 5),
              rep(50, 4),
              50, 50, 50),
-  direction = c("high", "neutral", "neutral", "high", "high",
-                "high", "high", "neutral", "neutral",
+  # NOTE: the direction here is NOT used for ivb or hb. Those two are looked up
+  # per pitch type in PITCH_SHAPE_DIRECTION, because more ride is the point of a
+  # four-seam and the death of a sinker. The entries below are kept so the frame
+  # stays rectangular and so METRIC_SPEC remains the one list of metrics, and
+  # metric_direction() is the only thing that should ever be asked for a
+  # direction. Reading spec$direction for ivb or hb is a bug.
+  #
+  # zone_pct is treated as high-is-good outright, which is a simplification: a
+  # pitcher can live in the zone and get hit.
+  #
+  # usage_pct stays neutral, and is now the only metric that is. A pitch type's
+  # share of an arsenal has no good end at all.
+  direction = c("high", "high", "high", "high", "high",
+                "high", "high", "high", "neutral",
                 "high", "high", "low"),
   stringsAsFactors = FALSE
 )
@@ -166,15 +178,22 @@ METRIC_SPEC <- data.frame(
 # Rendered as a footnote on that column, keyed by metric so tables.R asks
 # "does this metric have a note" rather than testing for hb by name.
 #
-# hb is the only entry and is worse than directionless. IVB is pfx_z * 12 and HB
-# is -pfx_x * 12, so arm side reads positive for a RHP only: median SI HB is
-# +15.5 for a righty and -15.6 for a lefty. The percentile is right, because the
-# reference keeps p_throws in the grain and never drops it, but "84th percentile
-# HB" means arm-side run for one hand and glove-side for the other. See
-# CLAUDE.md, formula conventions.
+# hb is the only entry, and the note changed on 2026-08-24 because the thing it
+# warned about was fixed rather than documented.
+#
+# It used to read "HB is not arm-side normalized, so a high value is arm-side run
+# for a RHP and glove-side for a LHP", which was true and unhelpful: it told the
+# reader the column meant two different things and left them to do the flip. Once
+# the cell carried a COLOUR as well as a number that stopped being tenable, since
+# a righty and a lefty with identical arm-side run were rendering red and blue.
+#
+# The table and league_ref now both store HB arm-side positive, so the note says
+# what the number is rather than apologising for what it is not. The raw signed
+# value still lives in app_data and still drives the movement chart.
 METRIC_NOTES <- c(
-  hb = paste("HB is not arm-side normalized, so a high value is arm-side run",
-             "for a RHP and glove-side for a LHP. Percentiles are within hand.")
+  hb = paste("HB is arm-side normalized: positive is arm-side run for both",
+             "hands, so a lefty and a righty with the same shape read the same.",
+             "The movement chart keeps the true direction instead.")
 )
 
 # Arsenal table column name to METRIC_SPEC metric name. Only `velocity` actually
@@ -184,6 +203,65 @@ METRIC_NOTES <- c(
 # The ten keys here are exactly the columns that take percentile fill. PITCH,
 # COUNT and PITCH% keep the pitch-colour row fill so the left of the table stays
 # the identity block, and Stuff+ has no league reference to sit against.
+# Shape direction, BY PITCH TYPE. The one place baseball knowledge enters the
+# colour system.
+#
+# IVB and HB have no direction as metrics, only as pitch shapes. More ride is the
+# point of a four-seam and the death of a sinker; more arm-side run is what a
+# changeup wants and the opposite of what a sweeper wants. Grading them globally
+# gets it backwards for half the arsenal: Logan Webb's changeup sits 5 inches
+# under the league on IVB, which Savant paints red and calls "9.0 MORE DROP",
+# and a global high-is-good rule painted it blue.
+#
+# So direction is looked up per (metric, pitch type) and every one of the eleven
+# codes is written out. No default: a code that reaches here unlisted should stop
+# the render rather than quietly inherit somebody's guess about what a good
+# knuckleball looks like.
+#
+#   ivb  high  the pitch wants to RIDE       FF FC
+#        low   the pitch wants to DROP       SI CH FS SL ST CU KC SV
+#   hb   high  the pitch wants ARM SIDE      FF SI CH FS
+#        low   the pitch wants GLOVE SIDE    FC SL ST CU KC SV
+#
+# KN is neutral on both. A knuckleball has no intended shape, which is the whole
+# idea, so it keeps the symmetric grey.
+PITCH_SHAPE_DIRECTION <- list(
+  ivb = c(FF = "high", FC = "high",
+          SI = "low",  CH = "low", FS = "low", SL = "low",
+          ST = "low",  CU = "low", KC = "low", SV = "low",
+          KN = "neutral"),
+  hb  = c(FF = "high", SI = "high", CH = "high", FS = "high",
+          FC = "low",  SL = "low",  ST = "low",  CU = "low",
+          KC = "low",  SV = "low",
+          KN = "neutral")
+)
+
+
+#' The direction a metric runs for one pitch type
+#'
+#' Most metrics have one direction whatever the pitch: a whiff is a whiff. IVB
+#' and HB do not, so they carry a per-pitch-type table and everything else falls
+#' through to METRIC_SPEC.
+#'
+#' Stops on an unknown pitch type rather than defaulting, for the same reason
+#' pctile_fill() stops on an unknown direction: the failure it prevents is a cell
+#' that renders confidently in the wrong colour.
+metric_direction <- function(metric, pitch_type) {
+  tbl <- PITCH_SHAPE_DIRECTION[[metric]]
+  if (is.null(tbl)) {
+    spec <- METRIC_SPEC[METRIC_SPEC$metric == metric, ]
+    if (nrow(spec) != 1) stop("unknown metric: ", metric, call. = FALSE)
+    return(spec$direction)
+  }
+  pt <- as.character(pitch_type)
+  if (!pt %in% names(tbl)) {
+    stop("no shape direction for ", metric, " on pitch type ", pt,
+         ". Add it to PITCH_SHAPE_DIRECTION.", call. = FALSE)
+  }
+  unname(tbl[[pt]])
+}
+
+
 ARSENAL_METRIC_COLS <- c(
   velocity   = "velo",
   ivb        = "ivb",
@@ -196,6 +274,50 @@ ARSENAL_METRIC_COLS <- c(
   chase_pct  = "chase_pct",
   xwoba      = "xwoba"
 )
+
+
+# ---- Results panel league context --------------------------------------------
+
+# The seven panel numbers that take a league fill, as data rather than as
+# conditionals inside results_panel(). TBF is deliberately absent: it is the
+# sample the other three are measured over, not a result, and colouring it would
+# say a busy reliever is better than a good one.
+#
+# `direction` is read by pctile_fill() and is never inferred from the metric
+# name. Getting one of these backwards renders a .420 xwOBA deep red and is the
+# single least visible bug this feature can have, which is why it is a column
+# here and an assertion in the tests.
+#
+# `denom` names the count that decides whether a value is worth ranking, and
+# `min_denom` is the absolute backstop under the scaled floor. `scales` is FALSE
+# for IP alone: its denominator is games pitched, which is very nearly the thing
+# IP measures, so scaling that floor with the window would grey out exactly the
+# pitchers whose low IP is the finding.
+RESULTS_METRIC_SPEC <- data.frame(
+  metric    = c("k_bb",  "hh",    "xwoba", "ip",    "era",  "whip", "fip"),
+  label     = c("K-BB%", "HH%",   "xwOBA", "IP",    "ERA",  "WHIP", "FIP"),
+  source    = c("sc",    "sc",    "sc",    "gl",    "gl",   "gl",   "gl"),
+  denom     = c("tbf",   "bbe",   "pa",    "games", "ip",   "ip",   "ip"),
+  min_denom = c(10,      8,       10,      1,       2,      2,      2),
+  scales    = c(TRUE,    TRUE,    TRUE,    FALSE,   TRUE,   TRUE,   TRUE),
+  direction = c("high",  "low",   "low",   "high",  "low",  "low",  "low"),
+  stringsAsFactors = FALSE
+)
+
+# The scaled floor is half the median denominator among pitchers who appeared in
+# the selected window. Measured across window lengths, that keeps two thirds to
+# five sixths of the league in the comparison at every length, where a fixed 50
+# TBF leaves 16% of it over two weeks:
+#
+#   window        TBF floor   clears
+#   full season      65        66%
+#   30 days          23        78%
+#   14 days          12        86%
+#
+# Half is a choice and not a derivation. It reads as "at least half the work a
+# typical pitcher did in this window", and it is one constant rather than a
+# table of window lengths nobody would maintain.
+RESULTS_FLOOR_FRACTION <- 0.5
 
 
 # ---- Pitch trait search ------------------------------------------------------
@@ -251,21 +373,64 @@ SEARCH_METRIC_COLS <- c(
 # stop stays above roughly 7:1 against black. A saturated Savant pill needs white
 # text and would force a second text rule.
 #
-# Monochrome, for direction "neutral". A single low-chroma hue reads as rank
-# rather than as quality. Violet on purpose: it avoids the diverging scale's blue
-# and red, and it avoids grey, which the below-floor state already owns.
+# Neutral, for direction "neutral": IVB, HB, zone% and usage%. These have no
+# good end. More IVB is a plus on a four-seam and a minus on a curveball, and HB
+# flips sign with the pitcher's hand, so painting them red and blue would assert
+# a quality the app cannot support.
+#
+# SYMMETRIC GREY, sharing the diverging scale's middle stop exactly. Average is
+# the same light grey in both scales, and a cell darkens as it moves away from
+# average in EITHER direction, so it reads as "unusual" rather than as "good".
+# One colour system on the page instead of two.
+#
+# This replaced a violet ramp on 2026-08-24. The violet was chosen to avoid grey,
+# on the reasoning that the below-floor state owns grey; that turned out to be
+# the wrong worry, because below floor is an UNFILLED cell with grey italic text
+# and these are filled cells with black text, which is a difference in two
+# channels. What the violet actually did was put a second hue on a table whose
+# whole point was one.
 PCTILE_PAL_DIVERGING <- c("#7FA8D6", "#BFD3E8", "#F0F0F0", "#EFC0AE", "#DC8163")
-PCTILE_PAL_NEUTRAL   <- c("#F6F2F9", "#E3D9EC", "#D0C0DE", "#BDA7D1", "#AA8EC3")
+PCTILE_PAL_NEUTRAL   <- c("#C4C4C4", "#DEDEDE", "#F0F0F0", "#DEDEDE", "#C4C4C4")
 
 # Below floor and no reference both render unfilled with grey italic text. Grey
 # is reserved for them: half the cells in a two-week window land here, so it has
 # to read as calm and normal rather than as a warning.
 PCTILE_GREY <- "#767676"
 
-# The unfilled states paint white explicitly rather than painting nothing. The
-# pitch-colour row fill runs across every body cell, so "no fill" would show the
-# pitch colour through and read as a fill. White is what makes the right of the
-# table a context strip and the left an identity block.
+# Arm-side normalisation for HB, and the one place the sign is decided.
+#
+# HB is stored as -pfx_x * 12, which is arm side POSITIVE for a righty and arm
+# side NEGATIVE for a lefty. That is right for the movement chart, where the
+# actual direction of the break is the whole point, and wrong everywhere a value
+# is compared: measured on league_ref, RHP sinkers average +14.9 and LHP sinkers
+# -15.1, so two pitchers with identical arm-side run sat at opposite ends of the
+# scale and coloured red and blue.
+#
+# So the COMPARISON surfaces store and show HB arm-side normalised, positive
+# means arm side for both hands, and the movement chart converts back with the
+# same function before it draws. One helper, used in three places, rather than a
+# sign flip written out four times and eventually written out wrong.
+arm_side_sign <- function(p_throws) ifelse(p_throws == "R", 1, -1)
+
+
+# How far from 100 Stuff+ has to sit to reach the end of the ramp.
+#
+# Stuff+ needs no league reference: it is centred on 100 by construction, so the
+# anchor is already in the scale. What it does need is a span, and 25 is where
+# the real distribution ends. Measured on the 2026 export, 2,202 pitch grades at
+# 20+ IP: the 2nd and 98th percentiles are 75.3 and 131.1, and 94.2% of grades
+# sit within 100 +/- 25. Beyond it the fill clamps rather than running off.
+STUFF_PLUS_SPAN <- 25
+
+# The unfilled states paint white explicitly rather than painting nothing.
+#
+# That was originally because a pitch-colour row fill ran under every body cell,
+# so "no fill" would have shown the pitch colour through and read as a fill. The
+# row fill is gone as of 2026-08-24 and the rows are white anyway, so this is now
+# belt and braces rather than load-bearing. It stays explicit because
+# resolve_cell() promises every cell a concrete fill, and a state that returned
+# NULL would put a conditional back into tables.R that this table exists to keep
+# out of it.
 PCTILE_UNFILLED <- "#FFFFFF"
 
 # How each of the four cell states renders, as data rather than as conditionals

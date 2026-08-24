@@ -587,3 +587,79 @@ Zone needed no work over there: all three engine files have carried the ball
 radius on both axes all along. The app was the one that lost it in the Phase 1
 split, which is worth remembering, since Savant was treated as the only
 reference for a day when the answer was sitting in the next directory.
+
+## The colour moved, then got the direction right, 2026-08-24
+
+Three rounds of UI work, each one Jonathan's call and each one measured before
+it was built.
+
+**The colour moved off the arsenal table and onto the results panel, then came
+back with different rules.** The table had been carrying two colour systems at
+once, a pitch-colour row wash saying WHICH pitch and a percentile fill saying HOW
+GOOD, and the eye cannot separate them. The wash is gone, the pitch code keeps
+the colour, and the fill is the only thing that varies across a row.
+
+**The results panel now grades seven of its eight numbers against the league
+over the same window and batter side.** Window-matching was forced by IP: it is
+a counting stat, and the league median IP over two weeks is 5.7 against 29.7
+across the season, so a season reference paints every pitcher deep blue in any
+short window. TBF takes no fill, being the sample rather than a result.
+
+The floor scales with the window, `max(absolute_minimum, median denominator / 2)`,
+because a fixed floor cannot serve both jobs it was being asked to do:
+reliability wants an absolute count and participation wants a relative one. A
+fixed 50 TBF left 16% of pitchers coloured over two weeks. The scaled version
+keeps two thirds to five sixths at every window length. Measured:
+
+```
+window        TBF floor   clears
+full season      65        66%
+30 days          23        78%
+14 days          12        86%
+```
+
+**HB is arm-side normalised on the comparison surfaces and raw on the movement
+chart.** Once the cell carried a colour, the old convention stopped being
+tenable: RHP sinkers averaged +14.9 and LHP sinkers -15.1, so two pitchers with
+identical arm-side run rendered red and blue. `arsenal_table()` and
+`build_league_ref.R` now both apply `arm_side_sign()`, `movement_ref()` converts
+back so the league cross lands on a lefty's actual pitches, and `app_data` keeps
+the raw signed value. The footnote says what the number IS rather than
+apologising for what it is not.
+
+**Direction turned out to belong to the pitch, not to the metric.** Grading IVB
+globally high-is-good painted Logan Webb's changeup blue, when Savant paints that
+same pitch red and calls it "9.0 MORE DROP". `PITCH_SHAPE_DIRECTION` now says
+ride is good for FF and FC, drop for everything else, arm side for FF SI CH FS,
+glove side for the rest. All eleven codes written out, no default: an unlisted
+code stops the render. Webb now reads SI drop red, SI tail red, CH drop red, ST
+sweep red, FF ride blue.
+
+**Stuff+ shades itself off 100** with no league lookup, since 100 is average by
+construction. Span 25, from the export: 2,202 grades at 20+ IP, 2nd and 98th
+percentiles at 75.3 and 131.1, 94.2% inside the span.
+
+**The neutral palette went from violet to symmetric grey**, sharing the diverging
+scale's exact middle stop, so average is the same light grey everywhere. It lost
+direction in exchange: dark now means unusual rather than high. `usage_pct` is
+the only metric still on it.
+
+### What the checks got wrong this round, twice
+
+Both in tests written the same afternoon they cited the rules they broke.
+
+`expect("hb neutral fill", hb$fill, pctile_fill(hb$pctile, "neutral"))` compared
+a fill to the function that produced it, so it passed under any palette. And the
+first Stuff+ block recomputed the ramp locally from `STUFF_PLUS_SPAN`, so
+doubling the span moved the fixture with the constant, and centring the ramp on 0
+instead of 100 passed because the check never touched `arsenal_gt`. Entry 5 and
+entry 8 together. Both now read out of the rendered table against literal hexes.
+
+Two assertions that pinned HB to the neutral scale were rewritten to assert the
+opposite rather than deleted, because a check that stops describing the code
+should not just go quiet.
+
+`arsenal_gt_null_baseline.rds` was recaptured twice, each time only after
+diffing what moved. The row-wash removal is the case worth remembering: it moved
+zero cell text and 84 background declarations, so a text-level diff saw nothing
+and the check had to be done on style.

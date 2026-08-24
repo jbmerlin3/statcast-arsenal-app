@@ -213,7 +213,12 @@ resolve_cell <- function(ref, value, metric, pitch_type, p_throws, stand,
 
   list(
     state       = state,
-    fill        = if (sty$filled) pctile_fill(hit$pctile, spec$direction) else PCTILE_UNFILLED,
+    # metric_direction(), not spec$direction. IVB and HB run one way for a
+    # four-seam and the other for a changeup, so the direction is a property of
+    # the pitch shape rather than of the metric. Everything else falls through to
+    # METRIC_SPEC unchanged.
+    fill        = if (sty$filled) pctile_fill(hit$pctile, metric_direction(metric, pitch_type))
+                  else PCTILE_UNFILLED,
     text_color  = sty$text_color,
     font_style  = sty$font_style,
     font_weight = sty$font_weight,
@@ -406,7 +411,16 @@ movement_ref <- function(ref, pitch_types, p_throws) {
     ivb <- lg_cell(ref, "ivb", pt, p_throws, "All", "All Counts")
     if (is.null(hb) || is.null(ivb)) return(NULL)
     data.frame(pitch_type = pt,
-               hb = hb$row$mean[[1]], ivb = ivb$row$mean[[1]],
+               # Converted BACK out of arm-side normalisation. league_ref stores
+               # HB arm-side positive for both hands, because that is the only
+               # way a percentile means the same thing for a righty and a lefty.
+               # The movement chart is the one consumer that wants the true
+               # direction: a lefty's slider really does sweep the other way,
+               # and the league cross has to land where his pitches are. Without
+               # this the mark would sit mirrored across the vertical axis for
+               # every left-hander.
+               hb = hb$row$mean[[1]] * arm_side_sign(p_throws),
+               ivb = ivb$row$mean[[1]],
                # Both means come from the same grain and the same contributing
                # pitchers, so one n describes the mark.
                n_pitchers = min(hb$row$n_pitchers[[1]], ivb$row$n_pitchers[[1]]),

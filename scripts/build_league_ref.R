@@ -38,7 +38,11 @@ pitcher_cells <- function(d, by_stand) {
 
       velo = mean(release_speed, na.rm = TRUE),
       ivb  = mean(ivb, na.rm = TRUE),
-      hb   = mean(hb, na.rm = TRUE),
+      # Arm-side normalised, matching arsenal_table(). The reference and the
+      # value it contextualises have to be on the same scale or the percentile
+      # is meaningless, and this is the surface where HB gets compared. The
+      # movement chart converts back before it draws. See arm_side_sign().
+      hb   = mean(hb, na.rm = TRUE) * arm_side_sign(p_throws[1]),
       spin = mean(release_spin_rate, na.rm = TRUE),
       ext  = mean(release_extension, na.rm = TRUE),
 

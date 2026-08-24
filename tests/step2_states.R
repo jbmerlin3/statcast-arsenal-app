@@ -95,7 +95,7 @@ xw <- cell_for(669358, "KC", "R", "xwoba", c("2026-08-04", "2026-08-17"))
 # case: 29 swings against a 50 floor, and no KN reference either way.
 nr <- cell_for(663362, "KN", "R", "velo");   show("no reference Waldron KN velo", nr)
 pr <- cell_for(663362, "KN", "R", "whiff_pct"); show("precedence   Waldron KN whiff%", pr)
-hb <- cell_for(669358, "FF", "R", "hb");     show("neutral      Baz FF hb vs RHH", hb)
+hb <- cell_for(669358, "FF", "R", "hb");     show("directional  Baz FF hb vs RHH", hb)
 cat("  below floor note: ", bf$state_note, "\n", sep = "")
 cat("  no reference note: ", nr$state_note, "\n", sep = "")
 
@@ -125,8 +125,184 @@ expect("precedence keeps the diagnostic",  pr$has_ref, FALSE)
 expect("xwoba both-thin resolves below floor", xw$state, "below_floor")
 expect("xwoba both-thin keeps the diagnostic", xw$has_ref, FALSE)
 
-expect("hb neutral fill", hb$fill, pctile_fill(hb$pctile, "neutral"))
-expect("hb is not on the diverging scale", hb$fill == pctile_fill(hb$pctile, "high"), FALSE)
+# hb was on the neutral scale until 2026-08-24 and these two assertions pinned
+# it there. It is directional now, so they assert the opposite rather than being
+# deleted: a check that no longer describes the code has to move, not go quiet.
+expect("hb is on the diverging scale now", hb$fill, pctile_fill(hb$pctile, "high"))
+expect("and not on the neutral one", hb$fill == pctile_fill(hb$pctile, "neutral"), FALSE)
+
+cat("\n=== shape direction is a property of the PITCH, not of the metric ===\n")
+# The bug: IVB and HB were graded globally high-is-good, so Logan Webb's changeup
+# sat 5 inches under the league on IVB and rendered BLUE. Savant paints that same
+# pitch red and labels it "9.0 MORE DROP", because drop is what a changeup is
+# for. More ride is the point of a four-seam and the death of a sinker.
+#
+# Written out per pitch type as literals. There is no default on purpose: a code
+# that arrives unlisted must stop the render rather than inherit a guess.
+expect("a four-seam wants ride",        metric_direction("ivb", "FF"), "high")
+expect("a cutter wants ride",           metric_direction("ivb", "FC"), "high")
+expect("a sinker wants drop",           metric_direction("ivb", "SI"), "low")
+expect("a changeup wants drop",         metric_direction("ivb", "CH"), "low")
+expect("a curveball wants drop",        metric_direction("ivb", "CU"), "low")
+expect("a four-seam wants arm side",    metric_direction("hb",  "FF"), "high")
+expect("a sinker wants arm side",       metric_direction("hb",  "SI"), "high")
+expect("a changeup wants arm side",     metric_direction("hb",  "CH"), "high")
+expect("a cutter wants glove side",     metric_direction("hb",  "FC"), "low")
+expect("a sweeper wants glove side",    metric_direction("hb",  "ST"), "low")
+expect("a curveball wants glove side",  metric_direction("hb",  "CU"), "low")
+# A knuckleball has no intended shape, which is the whole idea.
+expect("a knuckleball keeps the neutral grey on ivb", metric_direction("ivb", "KN"), "neutral")
+expect("and on hb",                                   metric_direction("hb",  "KN"), "neutral")
+# Everything that is not a shape still comes from METRIC_SPEC.
+expect("whiff% is unaffected by pitch type", metric_direction("whiff_pct", "CH"), "high")
+expect("xwOBA is still low-is-good",         metric_direction("xwoba", "FF"), "low")
+# An unlisted code stops rather than defaulting. Caught and named so a dead call
+# fails the comparison it belongs to instead of killing the file. Entry 7.
+bad <- tryCatch(metric_direction("ivb", "ZZ"), error = function(e) "stopped")
+expect("an unknown pitch type stops rather than guessing", bad, "stopped")
+
+cat("\n=== the case that reported the bug: Logan Webb ===\n")
+webb <- build_pitch_level(ad, 657277L)
+w_tb <- arsenal_table(webb, "All", tibble::tibble(pitch_type = character(),
+                                                  stuff_plus = numeric(), fg_exact = logical()))
+w_ctx <- resolve_table(w_tb, arsenal_denoms(webb, "All"), ref, webb$p_throws[1], "All")
+hue <- function(col, pt) {
+  i <- which(as.character(w_tb$pitch_type) == pt)
+  f <- w_ctx$cells[w_ctx$cells$column == col & w_ctx$cells$row == i, ]$fill
+  r <- grDevices::col2rgb(f); if (r[1] > r[3]) "red" else if (r[3] > r[1]) "blue" else "grey"
+}
+cat(sprintf("  changeup IVB %.1f -> %s   sinker HB %.1f -> %s   sweeper HB %.1f -> %s\n",
+            w_tb$ivb[w_tb$pitch_type == "CH"], hue("ivb", "CH"),
+            w_tb$hb[w_tb$pitch_type == "SI"],  hue("hb", "SI"),
+            w_tb$hb[w_tb$pitch_type == "ST"],  hue("hb", "ST")))
+expect("his changeup's extra drop reads RED, as Savant has it", hue("ivb", "CH"), "red")
+expect("his sinker's arm-side tail reads red",                  hue("hb",  "SI"), "red")
+expect("his sweeper's glove-side sweep reads red",              hue("hb",  "ST"), "red")
+expect("and his four-seam, which does not ride, reads blue",    hue("ivb", "FF"), "blue")
+
+cat("\n=== HB is arm-side normalised on the comparison surfaces, raw on the chart ===\n")
+# The bug this closes: HB is stored as -pfx_x * 12, arm side positive for a
+# righty and negative for a lefty, so once the cell carried a COLOUR two pitchers
+# with identical arm-side run rendered red and blue. Measured before the fix:
+# RHP sinkers averaged +14.9 and LHP sinkers -15.1.
+#
+# Three surfaces, and they must not all agree. The TABLE and LEAGUE_REF are
+# normalised, because a percentile has to mean one thing. The MOVEMENT CHART is
+# not, because a lefty's slider really does sweep the other way and the league
+# cross has to land on his pitches.
+expect("a righty is unchanged by normalisation", arm_side_sign("R"), 1)
+expect("a lefty is flipped",                     arm_side_sign("L"), -1)
+
+si_r <- lg_cell(ref, "hb", "SI", "R", "All", "All Counts")$row$mean[[1]]
+si_l <- lg_cell(ref, "hb", "SI", "L", "All", "All Counts")$row$mean[[1]]
+cat(sprintf("  league_ref sinker HB: RHP %+.1f, LHP %+.1f\n", si_r, si_l))
+# Both positive is the whole point. Before the fix these were +14.9 and -15.1.
+expect("both hands' sinkers now read arm-side POSITIVE in league_ref",
+       si_r > 0 && si_l > 0, TRUE)
+expect("and a slider reads glove-side negative for both",
+       lg_cell(ref, "hb", "SL", "R", "All", "All Counts")$row$mean[[1]] < 0 &&
+       lg_cell(ref, "hb", "SL", "L", "All", "All Counts")$row$mean[[1]] < 0, TRUE)
+
+# The chart converts back. Without this the lefty cross sits mirrored across the
+# vertical axis, nowhere near the pitches it is meant to describe.
+mv_r <- movement_ref(ref, c("SI"), "R")$hb[1]
+mv_l <- movement_ref(ref, c("SI"), "L")$hb[1]
+cat(sprintf("  movement chart sinker cross: RHP %+.1f, LHP %+.1f\n", mv_r, mv_l))
+expect("the chart puts the righty cross arm side, positive",  mv_r > 0, TRUE)
+expect("and the lefty cross arm side, which is NEGATIVE there", mv_l < 0, TRUE)
+expect("the round trip is exact for a lefty", mv_l, -si_l)
+
+# The table agrees with league_ref, not with the chart. A lefty's sinker must
+# come out positive here or the percentile is being read off the wrong scale.
+lhp_si <- arsenal_table(filter(build_pitch_level(ad, 702070), pitch_type == "SI"),
+                        "All", tibble::tibble(pitch_type = character(),
+                                              stuff_plus = numeric(), fg_exact = logical()))
+cat(sprintf("  a LHP sinker in the table reads HB %+.1f\n", lhp_si$hb[1]))
+expect("the table shows a lefty's sinker as arm-side POSITIVE", lhp_si$hb[1] > 0, TRUE)
+
+cat("\n=== which metrics claim a direction, and which refuse ===\n")
+# Pinned as literals because direction is the least visible thing in this whole
+# system: getting one backwards renders a .420 xwOBA deep red and nothing errors.
+# ivb, hb and zone_pct became directional on 2026-08-24 by request, and what
+# their red now means is "more than average", not "better than average".
+expect("xwOBA is the only low-is-good metric",
+       METRIC_SPEC$metric[METRIC_SPEC$direction == "low"], "xwoba")
+expect("usage% is the only metric that still refuses a direction",
+       METRIC_SPEC$metric[METRIC_SPEC$direction == "neutral"], "usage_pct")
+expect("ivb, hb and zone% are directional now",
+       all(METRIC_SPEC$direction[METRIC_SPEC$metric %in% c("ivb", "hb", "zone_pct")] == "high"),
+       TRUE)
+# HB is not arm-side normalised, so "high is red" means red is a more POSITIVE
+# value: arm side for a RHP, glove side for a LHP. Measured on league_ref, RHP
+# sinkers mean +14.9 and LHP sinkers -15.1. The table footnote says so, and this
+# asserts the footnote is still there to say it.
+expect("hb still carries the note explaining what its high end is",
+       grepl("arm-side", col_notes_for(c(hb = "hb"))[["hb"]]), TRUE)
+
+cat("\n=== Stuff+ shades off 100, with no league lookup ===\n")
+# Read out of the RENDERED table, not from a local reimplementation of the
+# formula. The first version of this block recomputed the ramp here, which meant
+# it agreed with itself no matter what arsenal_gt() actually did: centring the
+# ramp on 0 instead of 100 passed it. CLAUDE.md entry 8, testing where the app
+# does not stand.
+#
+# The expected hexes are LITERAL. The first version wrote them through
+# STUFF_PLUS_SPAN, so doubling the span moved the fixture with the constant and
+# passed. Entry 5, in a test written the same afternoon it was cited.
+stuff_tbl <- tibble::tibble(
+  pitch_type = factor(c("FF", "SL", "CH", "CU", "SI"),
+                      levels = c("FF", "SL", "CH", "CU", "SI")),
+  count = 100L, pitch_pct = 20, velocity = 93, ivb = 15, hb = 5, spin = 2300,
+  strike_pct = 60, whiff_pct = 25, csw_pct = 28, zone_pct = 50, chase_pct = 30,
+  xwoba = 0.310,
+  # 75 and 125 are the ends of the span; 40 and 160 are outside it and must
+  # clamp to the same two colours rather than running off or wrapping.
+  stuff_plus = c(100, 85, 115, 40, 160),
+  fg_exact = TRUE)
+sh <- as.character(gt::as_raw_html(arsenal_gt(stuff_tbl, "All")))
+stuff_bg <- regmatches(sh, gregexpr('<td headers="stuff_plus"[^>]*>', sh))[[1]]
+hex_of <- function(td) toupper(sub('.*background-color: (#[0-9A-Fa-f]{6}).*', "\\1", td))
+got <- vapply(stuff_bg, hex_of, character(1), USE.NAMES = FALSE)
+cat(sprintf("  100 %s | 85 %s | 115 %s | 40 %s | 160 %s\n",
+            got[1], got[2], got[3], got[4], got[5]))
+expect("Stuff+ 100 is the same average grey as every other average cell",
+       got[1], "#F0F0F0")
+expect("85 is blue",  got[2], "#B2CAE4")
+expect("115 is red",  got[3], "#EBB39F")
+expect("40 clamps to the blue end", got[4], "#7FA8D6")
+expect("160 clamps to the red end", got[5], "#DC8163")
+
+cat("\n=== the neutral scale is symmetric grey, not a rank ramp ===\n")
+# The line above compares the fill to the same function that produced it, so it
+# passes whatever the palette is. That is CLAUDE.md entry 5 in the test file
+# itself: a fixture written in terms of the thing it checks. These pin the
+# DESIGN with literals instead.
+#
+# Neutral metrics have no good end: more IVB is a plus on a four-seam and a
+# minus on a curveball, and HB flips sign with the pitcher's hand. So the scale
+# says how UNUSUAL a value is and refuses to say whether that is good, which
+# means it must be symmetric about the middle and must share the diverging
+# scale's middle stop so average looks the same in both.
+cat(sprintf("  p10 %s   p50 %s   p90 %s\n", pctile_fill(10, "neutral"),
+            pctile_fill(50, "neutral"), pctile_fill(90, "neutral")))
+expect("average is the same light grey as the diverging scale's average",
+       pctile_fill(50, "neutral"), "#F0F0F0")
+expect("and that is the diverging middle stop too",
+       pctile_fill(50, "high"), "#F0F0F0")
+expect("the two ends match, so the fill cannot imply a direction",
+       pctile_fill(10, "neutral"), pctile_fill(90, "neutral"))
+expect("the extremes are darker than the middle",
+       pctile_fill(0, "neutral") < pctile_fill(50, "neutral"), TRUE)
+expect("no hue: the neutral scale is pure grey",
+       all(vapply(c(0, 25, 50, 75, 100), function(p) {
+         r <- grDevices::col2rgb(pctile_fill(p, "neutral")); r[1] == r[2] && r[2] == r[3]
+       }, logical(1))), TRUE)
+# Below floor is an unfilled cell with grey ITALIC text; these are filled cells
+# with black text. Two channels apart, which is what makes grey safe to use here
+# at all.
+expect("no neutral fill collides with the below-floor text grey",
+       PCTILE_GREY %in% vapply(0:100, function(p) pctile_fill(p, "neutral"), character(1)),
+       FALSE)
 expect("hb carries its note", is.character(hb$metric_note), TRUE)
 expect("velo carries no note", ex$metric_note, NA_character_)
 

@@ -16,6 +16,19 @@
 # the original script. Baseline captured at 9694276, the commit before
 # resolve_table() and the ref argument landed.
 #
+# RECAPTURED 2026-08-24 a second time, for Stuff+ shading. That shading sits
+# BEFORE the ref early-return on purpose, so a table rendered with no league
+# context still gets it, which means it lands in this baseline too. Diffed by
+# column first: the only cells that moved were stuff_plus, and only in the
+# fixture variant that supplies real grades. The ref = NULL variant, which has
+# no grades at all, was unchanged at 0 cells.
+#
+# RECAPTURED 2026-08-24 for the row-wash removal. Verified by style rather than
+# by text before rewriting it, since this change touches no value: all six
+# pitch-colour row fills, rgba(...,0.13) across 84 body cells, disappeared; the
+# six coloured pitch codes stayed; and every cell's text was byte-identical.
+# A text-level diff sees nothing here, which is exactly why it was not the check.
+#
 # RECAPTURED 2026-08-23, twice: once for the foul_tip change to whiff_desc and
 # again when bunt attempts joined the swing set. The second diff moved 15 cells,
 # whiff_pct, csw_pct and chase_pct, one each per pitch type, nothing else.

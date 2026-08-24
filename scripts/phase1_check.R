@@ -48,11 +48,13 @@ EXPECTED_COL_DIFFS <- list(
   arsenal_table_R = c(
                       whiff_pct = "foul_tip and missed_bunt are whiffs, bunt attempts are swings. Savant, 0.032 MAE over 105 pitchers",
                       csw_pct   = "same numerator: whiff_desc is the whiff half of CSW%",
-                      chase_pct = "same swing set: a bunt attempt out of the zone is a chase. Savant, 0.060 MAE"),
+                      chase_pct = "same swing set: a bunt attempt out of the zone is a chase. Savant, 0.060 MAE",
+                      hb        = "arm-side normalised, so positive is arm side for both hands. The fixture pitcher is a LHP, so every hb flips sign against the original"),
   arsenal_table_L = c(
                       whiff_pct = "foul_tip and missed_bunt are whiffs, bunt attempts are swings. Savant, 0.032 MAE over 105 pitchers",
                       csw_pct   = "same numerator: whiff_desc is the whiff half of CSW%",
-                      chase_pct = "same swing set: a bunt attempt out of the zone is a chase. Savant, 0.060 MAE")
+                      chase_pct = "same swing set: a bunt attempt out of the zone is a chase. Savant, 0.060 MAE",
+                      hb        = "arm-side normalised, so positive is arm side for both hands. The fixture pitcher is a LHP, so every hb flips sign against the original")
 )
 
 EXPECTED_DIFFS <- c(

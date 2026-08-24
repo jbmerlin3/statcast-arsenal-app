@@ -111,17 +111,22 @@ ui <- fluidPage(
                    choices  = c("All" = "All", "vs LHH" = "L", "vs RHH" = "R"),
                    selected = "All", inline = TRUE),
       helpText("Pitch types under ", MIN_PITCH_COUNT,
-               " pitches in the selected window are dropped.")
+               " pitches in the selected window are dropped."),
+      # Under the controls rather than over the tabs. The panel describes the
+      # whole selection, which is what this column already is, and moving it
+      # here fills the dead space below the inputs and lets the tabs start at
+      # the top of the main area.
+      shiny::tags$head(shiny::tags$style(shiny::HTML(RESULTS_PANEL_CSS))),
+      shiny::tags$hr(style = "margin:14px 0 12px 0; border-color:#e0e0e0;"),
+      uiOutput("results_panel")
     ),
     mainPanel(
       width = 9,
       # Sits above the tabs so a remap or drop is visible on whichever tab is
-      # open, rather than only on the one that would have crashed.
+      # open, rather than only on the one that would have crashed. It stays here
+      # and does not follow the results panel into the sidebar: it describes
+      # what the CHARTS dropped, not how the pitcher performed.
       uiOutput("pitch_code_note"),
-      # Above the tabs, like the pitch-code note: the results line describes the
-      # whole selection, not one tab's view of it.
-      shiny::tags$head(shiny::tags$style(shiny::HTML(RESULTS_PANEL_CSS))),
-      uiOutput("results_panel"),
       tabsetPanel(
         id = "tabs",
         tabPanel("Movement", plotOutput("movement", height = "620px")),
@@ -361,12 +366,12 @@ server <- function(input, output, session) {
       input$s_pitch, " with ", input$s_min, "+ pitches in this window.")))
     validate(need(nrow(res) > 0,
                   "No pitcher matches. Widen a slider, or lower the minimum pitch count."))
-    # Capped BEFORE the context is resolved, not after. resolve_search() is the
-    # expensive half, one cell per column per row, so capping only at render
-    # time would leave the cost in place and save nothing.
+    # ref = NULL: no percentile fill here. This table is already 50 rows of one
+    # pitch type, so a fill on every cell reads as a wall rather than as
+    # context, and the column you sorted on is the comparison you actually
+    # asked for. It also drops the resolve pass, which was the expensive half.
     shown <- head(res, SEARCH_MAX_ROWS)
-    ctx   <- resolve_search(shown, league_ref, input$s_throws, input$hand, input$s_pitch)
-    search_gt(shown, input$s_pitch, input$s_throws, input$hand, ref = ctx,
+    search_gt(shown, input$s_pitch, input$s_throws, input$hand, ref = NULL,
               n_total = nrow(res), sort_by = sort_state$col, desc = sort_state$desc)
   })
 
@@ -416,6 +421,16 @@ server <- function(input, output, session) {
   # input$hand and narrows with it; the game-log half does not read it at all,
   # so it cannot narrow, and its header says so. A game log has no platoon
   # split, so a vs-RHH ERA does not exist rather than being merely unavailable.
+  # The league over the SAME window and batter side the panel is showing, which
+  # is what makes IP gradeable at all: it is a counting stat, and the league
+  # median IP over two weeks is 5.7 against 29.7 across the season. Keyed on
+  # dates and side only, so it survives a change of pitcher and a tab switch and
+  # costs 0.40 s when the window actually moves.
+  results_ref <- reactive({
+    req(input$dates)
+    results_league(app_data, game_logs, input$dates, input$hand, FIP_CONST)
+  })
+
   output$results_panel <- renderUI({
     d  <- pitcher_data()
     sc <- results_statcast(d, input$hand)
@@ -424,14 +439,27 @@ server <- function(input, output, session) {
     } else {
       results_gamelog(game_logs, input$pitcher, input$dates, FIP_CONST)
     }
-    results_panel(sc, gl, input$dates, input$hand, LOG_THROUGH)
+    results_panel(sc, gl, input$dates, input$hand, LOG_THROUGH,
+                  ctx = results_context(sc, gl, results_ref()))
   })
 
+  # League context, on white rows. What made this table a patchwork was carrying
+  # two colour systems at once: a pitch-colour wash saying WHICH pitch and a
+  # percentile fill saying HOW GOOD. The wash is gone, the pitch code keeps the
+  # colour, and the fill is the only thing that varies across the row.
+  #
+  # The reference is `league_ref`, which is season-wide and precomputed, rather
+  # than the window-matched reference the results panel builds. Deliberate: the
+  # panel had to match the window because IP is a counting stat, while every
+  # cell here is a rate or a shape whose league value barely moves between a
+  # two-week and a season measurement. league_ref also costs nothing at runtime
+  # and carries the fallback ladder, which a per-window rebuild would lose.
+  #
+  # resolve_table() reads league_ref and the table, never app_data, so this
+  # stays cheap enough to run on every input change.
   output$chars_table <- gt::render_gt({
     d   <- pitcher_data()
     tbl <- arsenal_table(d, input$hand, stuff_all())
-    # resolve_table() reads league_ref and the table, never app_data, so this
-    # stays cheap enough to run on every input change.
     ctx <- resolve_table(tbl, arsenal_denoms(d, input$hand), league_ref,
                          d$p_throws[1], input$hand)
     arsenal_gt(tbl, input$hand,
