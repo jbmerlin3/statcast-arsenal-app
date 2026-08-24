@@ -413,6 +413,38 @@ PCTILE_GREY <- "#767676"
 arm_side_sign <- function(p_throws) ifelse(p_throws == "R", 1, -1)
 
 
+# The two shape metrics are coloured by MAGNITUDE, not by rank.
+#
+# Every other cell in the table is a percentile: where this pitcher sits in the
+# league for that pitch type. That is the right question for a rate, and the
+# wrong one for a shape, because it is not comparable across rows. A rank of 90
+# means something different in a cutter's tight IVB distribution than in a
+# curveball's wide one, so two cells with the same colour can be one inch and
+# four inches off the league.
+#
+# Magnitude fixes that: the fill is the distance from the league average for that
+# pitch type, in inches, on one scale for the whole table. Six inches off
+# saturates. Savant reads the same way, "9.0 MORE DROP" rather than "94th
+# percentile of drop".
+#
+# Six is measured, not chosen. Across 2,271 pitcher-and-pitch-type cells with 50+
+# pitches, |delta| runs:
+#
+#             median   p90   p95   within 6 in
+#   IVB          2.1   5.4   6.6      92.6%
+#   HB           1.8   4.8   6.0      94.9%
+#
+# Close enough between the two metrics to share one constant, and far enough out
+# that the ramp is spent on real differences rather than on noise. Beyond it the
+# fill clamps.
+#
+# The RANK is still computed and still reported in `pctile`. Only the colour
+# changed. A cell can now read 90th percentile and look pale, which is correct:
+# it means this pitch leads its group by very little.
+MAGNITUDE_METRICS <- c("ivb", "hb")
+SHAPE_DELTA_SPAN  <- 6
+
+
 # How far from 100 Stuff+ has to sit to reach the end of the ramp.
 #
 # Stuff+ needs no league reference: it is centred on 100 by construction, so the

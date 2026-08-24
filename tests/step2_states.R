@@ -125,11 +125,48 @@ expect("precedence keeps the diagnostic",  pr$has_ref, FALSE)
 expect("xwoba both-thin resolves below floor", xw$state, "below_floor")
 expect("xwoba both-thin keeps the diagnostic", xw$has_ref, FALSE)
 
-# hb was on the neutral scale until 2026-08-24 and these two assertions pinned
-# it there. It is directional now, so they assert the opposite rather than being
-# deleted: a check that no longer describes the code has to move, not go quiet.
-expect("hb is on the diverging scale now", hb$fill, pctile_fill(hb$pctile, "high"))
-expect("and not on the neutral one", hb$fill == pctile_fill(hb$pctile, "neutral"), FALSE)
+# hb has moved twice on 2026-08-24 and this assertion moved with it both times,
+# which is the point: a check that stops describing the code has to move, not go
+# quiet. First it left the neutral scale for the diverging one. Then it stopped
+# being coloured by RANK at all and started being coloured by distance from the
+# league average, so comparing its fill to pctile_fill(hb$pctile, ...) is now
+# wrong by construction.
+# Asserted as a PROPERTY rather than by rebuilding the value here. The first
+# attempt re-derived the league mean with lg_cell(..., "All", ...) and got a
+# different cell than resolve_cell uses, because the ladder picks the cell and
+# the batter side is part of the grain. Reimplementing a lookup inside a check
+# is how a check ends up testing its own arithmetic.
+expect("hb is not on the neutral scale", hb$fill == pctile_fill(hb$pctile, "neutral"), FALSE)
+expect("and is NOT the rank-based diverging fill either, because it is magnitude now",
+       hb$fill == pctile_fill(hb$pctile, metric_direction("hb", "FF")), FALSE)
+expect("its reported percentile is still the true RANK", hb$pctile >= 0 && hb$pctile <= 100, TRUE)
+
+cat("\n=== IVB and HB colour by DISTANCE from the league, not by rank ===\n")
+# A rank is not comparable across rows: 90th percentile is one inch in a
+# cutter's tight IVB spread and four in a curveball's wide one, so two cells the
+# same colour meant different things. The fill is now inches off the league
+# average for that pitch type, on one scale for the whole table, saturating at
+# SHAPE_DELTA_SPAN. Savant reads the same way: "9.0 MORE DROP", not "94th".
+#
+# Literal spans, never written through the constant, per CLAUDE.md entry 5.
+expect("sitting on the league average is the middle of the ramp",
+       shape_delta_pctile(10, 10), 50)
+expect("six inches above saturates the top",   shape_delta_pctile(16, 10), 100)
+expect("six inches below saturates the bottom", shape_delta_pctile(4, 10), 0)
+expect("three inches above is halfway up",     shape_delta_pctile(13, 10), 75)
+expect("and it clamps rather than running off", shape_delta_pctile(40, 10), 100)
+expect("a missing league mean gives no fill",   is.na(shape_delta_pctile(10, NA_real_)), TRUE)
+
+# The point of the change, stated as the thing rank could not do: two pitches at
+# the SAME distance from their own league average get the same colour, even
+# though their ranks differ because their pitch types have different spreads.
+same_delta <- pctile_fill(shape_delta_pctile(10, 6), "high") ==
+              pctile_fill(shape_delta_pctile(-2, -6), "high")
+expect("equal deltas render equal, whatever the rank would have said", same_delta, TRUE)
+# And direction still applies on top: for a pitch that wants the low end, being
+# BELOW the league is what reddens.
+drop_is_red <- grDevices::col2rgb(pctile_fill(shape_delta_pctile(4, 10), "low"))
+expect("a drop pitch four inches under the league fills red", drop_is_red[1] > drop_is_red[3], TRUE)
 
 cat("\n=== shape direction is a property of the PITCH, not of the metric ===\n")
 # The bug: IVB and HB were graded globally high-is-good, so Logan Webb's changeup

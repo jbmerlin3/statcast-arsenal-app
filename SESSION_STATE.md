@@ -663,3 +663,40 @@ should not just go quiet.
 diffing what moved. The row-wash removal is the case worth remembering: it moved
 zero cell text and 84 background declarations, so a text-level diff saw nothing
 and the check had to be done on style.
+
+### IVB and HB moved from rank to magnitude, later the same day
+
+The fill on those two is now the distance from the league average for that pitch
+type, in inches, on one scale for the whole table. Everything else stays on
+rank.
+
+Rank was not comparable across rows, which is the whole complaint: 90th
+percentile is one inch in a cutter's tight IVB spread and four in a curveball's
+wide one, so two cells the same colour meant different things. Savant reads the
+way this now does, "9.0 MORE DROP" rather than "94th percentile of drop".
+
+`SHAPE_DELTA_SPAN` is 6 inches, measured rather than picked. Across 2,271
+pitcher-and-pitch-type cells with 50+ pitches:
+
+```
+        median   p90   p95   within 6 in
+IVB        2.1   5.4   6.6      92.6%
+HB         1.8   4.8   6.0      94.9%
+```
+
+Close enough between the two to share one constant. Beyond it the ramp clamps.
+
+`pctile` still reports the true rank and the notes still use it. Only the colour
+changed, so a cell can now read 90th percentile and look pale, which is the
+honest reading of leading a tight group by very little.
+
+`lg_pctile()` returns the league mean alongside the rank, taken from the cell the
+LADDER selected rather than from a second lookup, or the fill would be measured
+against a different population than the percentile beside it.
+
+**A check I wrote wrong twice in one sitting.** The HB assertion had to move
+again, and my first attempt rebuilt the league mean with `lg_cell(..., "All",
+...)`, which is a different cell than `resolve_cell` uses, because the batter
+side is part of the ladder's grain. Reimplementing a lookup inside a check is how
+a check ends up testing its own arithmetic. It asserts a property now: the fill
+must NOT equal the rank-based fill.

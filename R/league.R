@@ -77,7 +77,12 @@ lg_mean <- function(ref, metric, pitch_type, p_throws, stand, count_bucket = "Al
 #' sample is a separate question, handled by lg_eligible() below.
 lg_pctile <- function(ref, value, metric, pitch_type, p_throws, stand,
                       count_bucket = "All Counts") {
-  miss <- list(pctile = NA_real_, n_pitchers = NA_integer_, grain = NA_character_, exact = NA)
+  # `mean` rides along because the shape metrics colour by distance from it
+  # rather than by rank. It comes from the cell the LADDER selected, not from a
+  # second lookup, or the fill could end up measured against a different
+  # population than the percentile beside it.
+  miss <- list(pctile = NA_real_, n_pitchers = NA_integer_, grain = NA_character_,
+               exact = NA, mean = NA_real_)
   if (!is.finite(value)) return(miss)
 
   hit <- lg_cell(ref, metric, pitch_type, p_throws, stand, count_bucket)
@@ -92,7 +97,25 @@ lg_pctile <- function(ref, value, metric, pitch_type, p_throws, stand,
   list(pctile     = p,
        n_pitchers = hit$row$n_pitchers[[1]],
        grain      = hit$grain,
-       exact      = identical(hit$grain, LADDER[[1]]$grain))
+       exact      = identical(hit$grain, LADDER[[1]]$grain),
+       mean       = hit$row$mean[[1]])
+}
+
+
+#' Where a shape sits, as a distance rather than as a rank
+#'
+#' Returns a pseudo-percentile so the rest of the pipeline is unchanged: 50 is
+#' the league average for that pitch type, 0 and 100 are a full span below and
+#' above it. pctile_fill() then inverts for a pitch that wants the low end, so a
+#' changeup with extra drop reddens exactly as a four-seam with extra ride does.
+#'
+#' Clamped rather than allowed to run off: 5% of real cells sit beyond the span,
+#' and they should read as extreme rather than as an error.
+shape_delta_pctile <- function(value, league_mean, span = SHAPE_DELTA_SPAN) {
+  if (!is.finite(value) || !is.finite(league_mean) || !is.finite(span) || span <= 0) {
+    return(NA_real_)
+  }
+  50 + 50 * max(-1, min(1, (value - league_mean) / span))
 }
 
 
@@ -213,12 +236,23 @@ resolve_cell <- function(ref, value, metric, pitch_type, p_throws, stand,
 
   list(
     state       = state,
-    # metric_direction(), not spec$direction. IVB and HB run one way for a
-    # four-seam and the other for a changeup, so the direction is a property of
-    # the pitch shape rather than of the metric. Everything else falls through to
-    # METRIC_SPEC unchanged.
-    fill        = if (sty$filled) pctile_fill(hit$pctile, metric_direction(metric, pitch_type))
-                  else PCTILE_UNFILLED,
+    # Two things differ from a plain percentile fill here.
+    #
+    # metric_direction(), not spec$direction: IVB and HB run one way for a
+    # four-seam and the other for a changeup, so direction is a property of the
+    # pitch shape rather than of the metric.
+    #
+    # And those same two colour by DISTANCE from the league average rather than
+    # by rank, because a rank is not comparable across rows: 90th percentile is
+    # one inch in a cutter's tight IVB spread and four in a curveball's. `pctile`
+    # below still reports the true rank, so a cell can read 90th and look pale,
+    # which is the honest reading of leading a tight group by very little.
+    fill        = if (!sty$filled) PCTILE_UNFILLED else {
+                    p_fill <- if (metric %in% MAGNITUDE_METRICS) {
+                      shape_delta_pctile(value, hit$mean)
+                    } else hit$pctile
+                    pctile_fill(p_fill, metric_direction(metric, pitch_type))
+                  },
     text_color  = sty$text_color,
     font_style  = sty$font_style,
     font_weight = sty$font_weight,
