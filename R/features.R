@@ -54,12 +54,28 @@ in_zone_flag <- function(plate_x, plate_z, sz_bot, sz_top) {
 #' Savant reports break in feet from the catcher's view. The sign flip on pfx_x
 #' is what makes arm side read positive, per CLAUDE.md.
 add_pitch_features <- function(df) {
-  df |>
+  df <- df |>
     mutate(
       hb = -pfx_x * 12,
       ivb = pfx_z * 12,
       in_zone = in_zone_flag(plate_x, plate_z, sz_bot, sz_top)
     )
+
+  # The pitching team, derived rather than looked up. Top of the inning means
+  # the away team is batting, so the HOME team is on the mound. Resolves every
+  # row of the 2026 store, 572,181 of them, across 30 teams.
+  #
+  # Conditional, and that is not laziness. The three source columns live in the
+  # season store and NOT in app_data: shipping home_team, away_team and
+  # inning_topbot to keep one derived column would be three columns to save one.
+  # So this computes where the sources exist and leaves an already-derived
+  # column alone everywhere else, which keeps add_pitch_features() idempotent on
+  # app_data the way it already is for in_zone. in_zone gets away with
+  # recomputing because ITS sources are in app_data; this one cannot.
+  if (all(c("inning_topbot", "home_team", "away_team") %in% names(df))) {
+    df$pitch_team <- ifelse(df$inning_topbot == "Top", df$home_team, df$away_team)
+  }
+  df
 }
 
 
@@ -200,7 +216,7 @@ build_pitch_level <- function(df, mlb_id) {
 #' 27.0 MB of the 49.2 MB file and 42.4 MB of the 144.3 MB resident footprint,
 #' and nothing in R/, scripts/ or app.R reads any of them. See APP_DATA_COLS.
 PL_TRIM_COLS <- c(
-  "pitcher", "player_name", "game_date", "pitch_type", "pt_n",
+  "pitcher", "player_name", "game_date", "pitch_type", "pt_n", "pitch_team",
   "stand", "p_throws", "balls", "strikes",
   "release_speed", "release_extension", "release_spin_rate", "pfx_x", "pfx_z", "arm_angle",
   "release_pos_x", "release_pos_z",

@@ -75,6 +75,56 @@ backlog renders the same table for two windows, which is exactly what
 namespacing exists for. And the first tab that grows its own control, such as a
 FanGraphs export selector on the characteristics tab.
 
+**The second trigger fired on 2026-08-23 and the answer was still no.** The
+Search tab owns seven inputs of its own, so the encapsulation argument is real
+for the first time. It stays inline anyway, for a reason the trigger did not
+anticipate: the tab has to WRITE to a shared input. Clicking a result calls
+`updateSelectizeInput()` on the global pitcher selector. As a module it would
+have to return that pick as a reactive and `app.R` would own the wiring anyway,
+so `NS()` would buy indirection and nothing else. File separation, the one real
+benefit, comes from `R/search.R`, which holds every function the tab calls.
+
+Revisit again if a second tab needs to write to the selector, or if the
+comparison pane lands.
+
+## pitch_team is derived, and the team filter does not group by it
+
+`pitch_team` is not a Savant column. It is derived in `add_pitch_features()`:
+top of the inning means the away team bats, so the HOME team is pitching.
+Resolves every row of the 2026 store, 30 teams, and costs 0.6 MB on disk.
+
+The derivation is conditional on `inning_topbot`, `home_team` and `away_team`
+being present, because those three live in the season store and NOT in
+`app_data`: shipping three columns to keep one derived column is backwards.
+`in_zone` gets to recompute unconditionally because its sources are in
+`app_data`; this one cannot, and an unconditional version errors the moment
+anything calls `add_pitch_features()` on the app's own frame.
+
+**The team filter narrows before the aggregate and never joins the group_by.**
+96 pitchers threw for more than one club in 2026, 89 for two and 7 for three or
+more, several with 2,400+ pitches. Grouping by team would split every one of
+them into two rows even with the filter off, quietly changing the default view
+and pushing both halves toward the sample floor. Filtering first means a club
+query reads as the shape he threw while he was there, and All teams is what the
+tab did before the filter existed. Under All teams the label reads NYM/TB, which
+is the honest name for a row that averages both stints.
+
+## The search tab takes one pitch type, and that is load-bearing
+
+The pitch type dropdown has no "All" and must not grow one. Every fill in that
+table is a percentile against the league for that pitch type, so with mixed
+pitch types in one table the colours would assert cross-pitch quality, which is
+the open problem recorded further down under the arsenal table. With every row
+the same pitch type and the same pitcher hand, the fill finally means what it
+looks like. That is worth keeping by construction rather than by a note.
+
+Two other things there are not free to change. The gt styles are BATCHED by
+distinct look per column rather than applied per cell the way `arsenal_gt()`
+does: measured on 457 righty four-seams, per-cell took 44.7 s and batched takes
+5.5 s. And the table is capped at `SEARCH_MAX_ROWS`, applied BEFORE
+`resolve_search()`, since resolving context is the expensive half and capping
+only at render time would save nothing.
+
 ## The daily chain
 
 `scripts/update_data.R` runs these in order and nothing else touches the data.

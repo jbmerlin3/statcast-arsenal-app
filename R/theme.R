@@ -198,6 +198,48 @@ ARSENAL_METRIC_COLS <- c(
 )
 
 
+# ---- Pitch trait search ------------------------------------------------------
+
+# The five traits the search tab puts a slider on, with the label, the rounding
+# the slider steps in, and the number of decimals the table shows.
+#
+# Traits, not outcomes. A slider on whiff% would let you ask for pitches that
+# already worked, which is a different and much less useful question than asking
+# for a shape and then seeing whether it worked. The outcome columns are shown
+# and coloured, never filtered on.
+SEARCH_TRAITS <- data.frame(
+  trait  = c("velo",  "ivb",  "hb",   "spin",  "ext"),
+  label  = c("Velocity (mph)", "IVB (in)", "HB (in)", "Spin (rpm)", "Extension (ft)"),
+  step   = c(0.1,     0.5,    0.5,    25,      0.1),
+  digits = c(1L,      1L,     1L,     0L,      1L),
+  stringsAsFactors = FALSE
+)
+
+# Search table column to METRIC_SPEC metric, the same map ARSENAL_METRIC_COLS is
+# for the arsenal table. Extension takes a fill here and does not there, because
+# the arsenal table has no extension column.
+#
+# There is no strike_pct, csw_pct or zone_pct here on purpose: the search table
+# is already wide, and those three answer a question about a pitcher rather than
+# about a pitch shape.
+# How many matches the table draws, whatever the query returns. Measured on 457
+# righty four-seams, which is what an unfiltered search returns: 5.5 s to render
+# and 2.7 MB of HTML, against 1.0 s and 309 KB at 50 rows. The count line above
+# the table always reports the true total, so the cap hides rows and never hides
+# the answer to "how many".
+SEARCH_MAX_ROWS <- 50L
+
+SEARCH_METRIC_COLS <- c(
+  velo      = "velo",
+  ivb       = "ivb",
+  hb        = "hb",
+  spin      = "spin",
+  ext       = "ext",
+  whiff_pct = "whiff_pct",
+  chase_pct = "chase_pct",
+  xwoba     = "xwoba"
+)
+
 # ---- Percentile fill palettes ------------------------------------------------
 
 # Two scales, because a directional metric and a directionless one are answering

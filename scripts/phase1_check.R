@@ -107,10 +107,23 @@ if (!file.exists(FIXTURE)) {
   # Everything else must still match, and the divergence is checked for its
   # direction rather than waved through, since widening a zone can only turn
   # balls into strikes and never the reverse.
+  #
+  # pitch_team is a deliberate ADDITION as of 2026-08-23, for the search tab's
+  # team filter. The original script has no such column, so it is excluded by
+  # name rather than by taking whatever intersection happens to exist: an
+  # intersection would also swallow a column the split dropped by accident,
+  # which is the failure this check exists to catch.
+  ADDED <- "pitch_team"
   nz <- as.data.frame(new_fix); oz <- as.data.frame(old_fix)
+  stopifnot("the fixture grew a column that is not sanctioned here" =
+              setequal(setdiff(names(nz), names(oz)), ADDED))
+  stopifnot("the fixture LOST a column, which is never sanctioned" =
+              length(setdiff(names(oz), names(nz))) == 0)
+  stopifnot("every pitch resolves to a team" = !anyNA(nz$pitch_team))
+  drop <- c("in_zone", ADDED)
   stopifnot("fixture disagrees with the original build and trim, outside in_zone" =
-              isTRUE(all.equal(nz[, setdiff(names(nz), "in_zone")],
-                               oz[, setdiff(names(oz), "in_zone")])))
+              isTRUE(all.equal(nz[, setdiff(names(nz), drop)],
+                               oz[, setdiff(names(oz), drop)])))
   stopifnot("the new zone must contain the old one" = all(nz$in_zone >= oz$in_zone))
   stopifnot("the new zone must be strictly wider on this fixture" = sum(nz$in_zone) > sum(oz$in_zone))
   message("  fixture matches the original build and trim, in_zone widened by ",

@@ -41,6 +41,10 @@ game_logs    <- load_game_logs()
 FIP_CONST    <- if (is.null(game_logs)) NA_real_ else fip_constant(game_logs)
 LOG_THROUGH  <- if (is.null(game_logs)) NULL else max(game_logs$game_date)
 player_index <- build_player_index(app_data)
+# Read off the data, not hardcoded, for the same reason player_index is: a list
+# of 30 written out here would go stale on a relocation and would silently drop
+# a team the store does have. Sorted so the dropdown is alphabetical.
+TEAM_CODES   <- sort(unique(app_data$pitch_team))
 HALVES       <- season_halves(app_data)
 
 # game_date is stored as character. Keep the bounds as Date for the input widget
@@ -139,7 +143,40 @@ ui <- fluidPage(
                           "table. A density estimate needs a larger per-panel ",
                           "sample than a usage percentage does. Panels under ",
                           KDE_MIN_N, " pitches show the raw locations ",
-                          "as white dots instead of a smoothed surface."))
+                          "as white dots instead of a smoothed surface.")),
+        # Last, deliberately. The first four tabs are all views of the one
+        # pitcher in the selector and read left to right as a report; this one
+        # searches the league and writes BACK to that selector, so it sits after
+        # them rather than interrupting them.
+        tabPanel("Search",
+                 # The one tab that owns its own inputs. The pitcher selector,
+                 # the dates and the batter side stay global and still apply:
+                 # the dates and the side narrow the population searched, and
+                 # the pitcher selector is where a result LANDS.
+                 div(style = "margin-top:10px;",
+                   fluidRow(
+                     column(2, selectInput("s_throws", "Pitcher hand",
+                                           choices = c("RHP" = "R", "LHP" = "L"))),
+                     column(2, selectInput("s_pitch", "Pitch type",
+                                           choices = names(pitch_colors), selected = "FF")),
+                     # Teams come from the data rather than a hardcoded list of
+                     # 30, so a relocation or an expansion club needs no edit
+                     # here and cannot silently go missing from the dropdown.
+                     column(2, selectInput("s_team", "Team",
+                                           choices = c("All teams" = "All", TEAM_CODES))),
+                     column(3, numericInput("s_min", "Min pitches", value = 25,
+                                            min = 1, step = 5)),
+                     column(3, div(style = "margin-top:25px;",
+                                   actionButton("s_reset", "Reset sliders", class = "btn-sm")))
+                   ),
+                   # Seeded from the data on every change of hand, pitch type,
+                   # window or batter side, so each slider ends where that group
+                   # actually ends. A typed threshold is how you ask for a shape
+                   # nobody has: 95 mph with 18 IVB and 12 HB is zero righties.
+                   uiOutput("search_sliders"),
+                   uiOutput("search_count"),
+                   gt::gt_output("search_table")
+                 ))
       )
     )
   )
@@ -213,6 +250,135 @@ server <- function(input, output, session) {
     # whitespace between them and left a space before the full stop.
     div(style = "color:#666; font-size:12px; margin-bottom:6px;",
         paste0("Pitch codes: ", note, "."))
+  })
+
+  # ---- Pitch trait search ----------------------------------------------------
+  #
+  # Three stages, cheapest last. search_pool() reads input$dates and input$hand
+  # and nothing else, so dragging a slider never re-runs the 0.78 s aggregate
+  # over all 818 pitchers. The sliders are seeded off that pool. The filter runs
+  # on the 3,665-row result in 6 ms, which is what makes dragging feel live.
+  #
+  # Deliberately NOT built on pitcher_data(), which is one pitcher. Reusing it
+  # would mean running it once per pitcher in the league.
+  search_pool <- reactive({
+    req(input$dates, input$s_team)
+    from <- as.character(input$dates[1])
+    to   <- as.character(input$dates[2])
+    search_aggregate(filter(app_data, game_date >= from, game_date <= to),
+                     input$hand, input$s_team)
+  })
+
+  search_bounds <- reactive({
+    req(input$s_throws, input$s_pitch, input$s_min)
+    search_ranges(search_pool(), input$s_throws, input$s_pitch, input$s_min)
+  })
+
+  # Rebuilt rather than updated, so switching pitch type resets the sliders onto
+  # the new population instead of leaving a righty four-seam's range in place
+  # while a lefty curveball is selected. The reset button re-triggers it.
+  output$search_sliders <- renderUI({
+    rg <- search_bounds()
+    input$s_reset
+    cols <- lapply(seq_len(nrow(rg)), function(i) {
+      spec <- SEARCH_TRAITS[SEARCH_TRAITS$trait == rg$trait[i], ]
+      # ticks = FALSE, deliberately. ionRangeSlider draws its grid at a
+      # prettified interval and then ALWAYS labels the max, so whenever the
+      # span is not a multiple of that interval the last tick and the max
+      # overlap: RHP four-seams span 13.6 mph with ticks every 1.4, which
+      # printed 100.6 and 101.6 on top of each other. Shiny's sliderInput
+      # exposes no control over the grid count, so the grid goes.
+      #
+      # The range the grid was carrying moves into the label, where it reads
+      # better anyway: it names the population rather than the axis.
+      column(4, sliderInput(paste0("s_", rg$trait[i]),
+                            paste0(spec$label, ": ", fmt_bound(rg$lo[i], spec$digits),
+                                   " to ", fmt_bound(rg$hi[i], spec$digits)),
+                            min = rg$lo[i], max = rg$hi[i], ticks = FALSE,
+                            value = c(rg$lo[i], rg$hi[i]), step = spec$step))
+    })
+    tagList(fluidRow(cols[1:3]), fluidRow(cols[4:5]))
+  })
+
+  # Sort state, owned here rather than in the table, because a click has to know
+  # what the last click did. Same column flips the direction, a new column starts
+  # at descending: for every column in this table the interesting end is the top,
+  # whether that is the hardest thrower or the most pitches.
+  sort_state <- reactiveValues(col = "pitches", desc = TRUE)
+  observeEvent(input$search_sort, {
+    cl <- input$search_sort
+    req(cl %in% c("player_name", "team", "pitches", SEARCH_TRAITS$trait,
+                  "whiff_pct", "chase_pct", "xwoba"))
+    if (identical(cl, sort_state$col)) {
+      sort_state$desc <- !sort_state$desc
+    } else {
+      sort_state$col  <- cl
+      sort_state$desc <- TRUE
+    }
+  })
+
+  search_results <- reactive({
+    rg <- search_bounds()
+    bounds <- lapply(rg$trait, function(tr) input[[paste0("s_", tr)]])
+    names(bounds) <- rg$trait
+    # renderUI builds the sliders, so on the first pass they do not exist yet and
+    # every bound is NULL. search_filter() reads a missing bound as no filter,
+    # which is the right reading of a partial query in any case.
+    search_filter(search_pool(), input$s_throws, input$s_pitch, bounds, input$s_min,
+                  sort_by = sort_state$col, desc = sort_state$desc)
+  })
+
+  output$search_count <- renderUI({
+    res <- search_results()
+    # paste0 rather than separate arguments to div(), which inserts whitespace
+    # between them. The same slip put a space before a full stop in the
+    # pitch-code note once already.
+    # A trait with no reading cannot satisfy a range, so those pitchers are
+    # dropped even with every slider at full width. Named rather than swallowed,
+    # since otherwise the count silently disagrees with the population.
+    miss <- search_missing(search_pool(), input$s_throws, input$s_pitch, input$s_min)
+    note <- if (nrow(miss)) paste0(
+      " ", sum(miss$n), " excluded for no ",
+      paste(SEARCH_TRAITS$label[match(miss$trait, SEARCH_TRAITS$trait)], collapse = " or "),
+      " reading.") else ""
+
+    div(style = "margin:6px 0 10px 0; color:#444;",
+        strong(nrow(res)),
+        paste0(" of ", search_bounds()$n[1], " ",
+               if (input$s_throws == "R") "RHP" else "LHP", " ", input$s_pitch,
+               " match, among those with ", input$s_min, "+ pitches in this window."),
+        if (nzchar(note)) span(style = "color:#767676;", note))
+  })
+
+  output$search_table <- gt::render_gt({
+    res <- search_results()
+    # Two different empty results, and telling the reader to widen a slider when
+    # nobody throws the pitch at all is the wrong advice. No LHP throws a KN with
+    # 25+ pitches in a season, and the sliders are a 0-to-step stub in that case,
+    # so widening them would achieve nothing.
+    validate(need(search_bounds()$n[1] > 0, paste0(
+      "No ", if (input$s_throws == "R") "RHP" else "LHP", " throws a ",
+      input$s_pitch, " with ", input$s_min, "+ pitches in this window.")))
+    validate(need(nrow(res) > 0,
+                  "No pitcher matches. Widen a slider, or lower the minimum pitch count."))
+    # Capped BEFORE the context is resolved, not after. resolve_search() is the
+    # expensive half, one cell per column per row, so capping only at render
+    # time would leave the cost in place and save nothing.
+    shown <- head(res, SEARCH_MAX_ROWS)
+    ctx   <- resolve_search(shown, league_ref, input$s_throws, input$hand, input$s_pitch)
+    search_gt(shown, input$s_pitch, input$s_throws, input$hand, ref = ctx,
+              n_total = nrow(res), sort_by = sort_state$col, desc = sort_state$desc)
+  })
+
+  # The click. The payload is an id and the name is looked up here rather than
+  # trusted from the page. Moving to Movement is deliberate: without it the click
+  # updates a selector the reader cannot see, and the page looks broken.
+  observeEvent(input$search_pick, {
+    id <- suppressWarnings(as.integer(input$search_pick))
+    req(!is.na(id), id %in% player_index$pitcher)
+    updateSelectizeInput(session, "pitcher", choices = player_choices(player_index),
+                         selected = id, server = TRUE)
+    updateTabsetPanel(session, "tabs", selected = "Movement")
   })
 
   output$movement <- renderPlot({
