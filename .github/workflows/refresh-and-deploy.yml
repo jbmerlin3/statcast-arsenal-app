@@ -1,0 +1,129 @@
+# The daily chain, run on GitHub's machines instead of a laptop.
+#
+# WHY THIS EXISTS. The app bundles its own data, so the deployed link only moves
+# when something redeploys it. That something used to be a launchd job on one
+# MacBook, which meant the live page was fresh only if that laptop happened to
+# be awake at 06:15. Observed 2026-08-26: scheduled 06:15, ran 06:52, because
+# the lid was shut. A link somebody else is going to open on a Monday morning
+# cannot depend on that.
+#
+# The laptop job still exists and is harmless. Once a few runs here have proved
+# themselves, unload it:
+#   launchctl bootout gui/$(id -u)/com.jonathanmerlin.arsenal-chain
+# Until then both may deploy the same data on the same morning, which is
+# wasteful and not wrong.
+
+name: Refresh data and deploy
+
+on:
+  schedule:
+    # UTC. 10:15 is 06:15 Eastern in summer, 05:15 in winter, both before anyone
+    # is looking. GitHub delays scheduled runs under load, sometimes by half an
+    # hour, so there is a second attempt at 14:15 UTC. The second one is cheap
+    # when the first worked: it re-pulls one day, finds nothing new, and still
+    # redeploys, which costs a bundle upload and nothing else.
+    #
+    # This repo is private, so runner minutes are metered against the account's
+    # monthly allowance. Two runs a day at roughly ten minutes each is about 600
+    # a month, comfortably inside the 2,000 a free account gets. If that ceiling
+    # ever bites, drop the 14:15 entry first: it is redundancy, not function.
+    - cron: '15 10 * * *'
+    - cron: '15 14 * * *'
+  workflow_dispatch:
+
+# One at a time. Two concurrent runs would both refresh the store and both push
+# it back, and the loser's rows would vanish.
+concurrency:
+  group: chain
+  cancel-in-progress: false
+
+jobs:
+  chain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    env:
+      # update_data.R already reads this, so nothing in the chain needed changing
+      # to run somewhere the store does not live beside the repo.
+      STATCAST_STORE: ${{ github.workspace }}/season-store/statcast_clean_2026.rds
+      STORE_RELEASE: season-store
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # RSPM serves Linux binaries, so the 83 packages install without a
+      # compiler. These are the shared libraries those binaries link against at
+      # runtime, which binaries do not carry with them.
+      - name: System libraries for the graphics stack
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libcurl4-openssl-dev libssl-dev libxml2-dev \
+            libfontconfig1-dev libfreetype6-dev libpng-dev \
+            libtiff5-dev libjpeg-dev libharfbuzz-dev libfribidi-dev
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.2'
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-renv@v2
+
+      # rsconnect is in renv's ignored.packages on purpose, so the deploy tool is
+      # not installed on the thing it deploys to. That also means renv::restore()
+      # does not bring it here, where it IS needed.
+      - name: Install rsconnect
+        run: Rscript -e 'renv::install("rsconnect")'
+
+      # The store is 95 MB of accumulated Statcast and does not belong in git.
+      # It rides as a release asset so a normal run pulls one day from Savant
+      # rather than re-scraping the season from a datacenter IP.
+      - name: Fetch the season store
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p season-store
+          if gh release download "$STORE_RELEASE" \
+               --pattern 'statcast_clean_2026.rds' --dir season-store --clobber; then
+            ls -lh season-store
+          else
+            echo "::error::No store asset found in release '$STORE_RELEASE'."
+            echo "Seed it once from the laptop with:"
+            echo "  gh release create $STORE_RELEASE ~/baseball-store/statcast_clean_2026.rds --notes 'season store'"
+            exit 1
+          fi
+
+      - name: Authenticate rsconnect
+        env:
+          SHINYAPPS_NAME: ${{ secrets.SHINYAPPS_NAME }}
+          SHINYAPPS_TOKEN: ${{ secrets.SHINYAPPS_TOKEN }}
+          SHINYAPPS_SECRET: ${{ secrets.SHINYAPPS_SECRET }}
+        run: Rscript scripts/ci_auth.R
+
+      # Steps 1 to 5, the same run_chain() the laptop runs. There is no stamp on
+      # a fresh runner, so step 5 always deploys rather than gating on a date
+      # change. That is the behaviour we want here: the whole point is that the
+      # live bundle matches the data every morning.
+      - name: Run the chain
+        run: Rscript scripts/update_data.R
+
+      - name: Push the refreshed store back
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$STORE_RELEASE" \
+            season-store/statcast_clean_2026.rds --clobber
+          echo "store returned, $(du -h season-store/statcast_clean_2026.rds | cut -f1)"
+
+      # Kept whether or not the run passed, because a failed chain is exactly
+      # when the log is worth reading.
+      - name: Keep the run log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chain-output
+          path: |
+            logs/
+            data/*.rds
+          retention-days: 7
+          if-no-files-found: ignore

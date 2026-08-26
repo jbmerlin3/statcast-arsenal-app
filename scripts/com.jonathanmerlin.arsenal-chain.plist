@@ -11,11 +11,20 @@
     <string>/Users/jonathanmerlin/statcast-arsenal-app/scripts/chain_entry.R</string>
   </array>
 
+  <!-- Four fire times, not one. launchd runs a missed calendar job when the
+       machine next wakes, so a single 06:15 entry on a laptop that sleeps
+       overnight means the data lands whenever the lid happens to open. Observed
+       2026-08-26: scheduled 06:15, actually started 06:52. Four chances a day
+       turns "whenever he opens it" into "within a few hours of any waking
+       moment". It does NOT remove the dependency on this machine being awake;
+       only moving the chain off the laptop does that. -->
   <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key><integer>6</integer>
-    <key>Minute</key><integer>15</integer>
-  </dict>
+  <array>
+    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>15</integer></dict>
+    <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
 
   <key>WorkingDirectory</key>
   <string>/Users/jonathanmerlin/statcast-arsenal-app</string>
