@@ -1,16 +1,22 @@
 # update_data.R
 #
-# The daily chain. Nothing else touches the data. Per CLAUDE.md it runs three
-# steps in order:
+# The daily chain. Nothing else touches the data. It runs in this order:
 #
 #   1. Load the season store, pull from max(game_date) + 1 to today, filter,
 #      bind, dedup on game_pk / at_bat_number / pitch_number, save.
 #   2. Rebuild data/league_ref.rds.
+#   4. Rebuild data/game_logs.rds, the only step allowed to fail soft.
 #   3. Write data/app_data.rds, the trimmed column set.
+#   5. Deploy, because the data rides inside the bundle.
+#
+# Steps 3 and 4 are numbered in the order they were written, not the order they
+# run, which is why 4 appears above 3. Left alone because the numbers appear in
+# the log and in CLAUDE.md.
 #
 # Run the whole chain with:  Rscript scripts/update_data.R
 #
-# The app never calls anything in this file. It reads two rds files and renders.
+# The app never calls anything in this file. It reads three rds files and
+# renders.
 
 library(purrr)
 library(dplyr)
@@ -172,6 +178,19 @@ build_app_data <- function(sc) {
 #' Regular season only, and a pitch needs a type plus the three fields every
 #' downstream metric depends on. Kept as its own function so the incremental
 #' pull is filtered identically to the original full pull.
+#'
+#' KNOWN COST, measured 2026-08-26, recorded so it is not re-derived. The
+#' `pitch_type != ""` clause drops pitches Savant failed to classify, and it
+#' takes their PA-ending rows with them, so those batters faced disappear from
+#' the results panel. Sampling five dates across the season: 0.57% of pitches
+#' are untyped, about 874 batters faced over a season. Usually nothing, but it
+#' clusters. Savant left 28 of Gerrit Cole's 90 pitches untyped in game 823535 on
+#' 2026-06-16, which cost him 8 of his 23 batters faced.
+#'
+#' Not fixed here on purpose. Keeping untyped pitches would mean excluding them
+#' again in every movement, usage and characteristics path, and this store is
+#' shared with 03_ArsenalReports, whose contract is that every row has a pitch
+#' type. Fixing it belongs in a results-specific store, not in this filter.
 clean_statcast <- function(df) {
   df |>
     filter(game_type == "R", pitch_type != "",
@@ -370,6 +389,24 @@ run_chain <- function() {
   message("Wrote ", APP_DATA_PATH, ", ", format(nrow(ad), big.mark = ","), " rows x ", ncol(ad),
           " cols, ", round(file.size(APP_DATA_PATH) / 1024^2, 1), " MB")
   message("App date range is now ", min(ad$game_date), " to ", max(ad$game_date))
+
+  # The data files ship inside the bundle, so steps 1 to 4 do nothing for the
+  # deployed link until this runs. It used to be a manual step, and the result
+  # was a chain that reported RUN OK every morning while the live page sat at
+  # whatever the last hand deploy left there. Found 2026-08-26 with the chain
+  # holding 08-25 and the live page reading "Data through 2026-08-24".
+  #
+  # Not wrapped in tryCatch, unlike step 4. A failed game-log pull is visible on
+  # the page, because the panel prints the log's own max date. A failed deploy
+  # is the opposite: the live page keeps rendering older data with no sign
+  # anything is wrong, which is the whole failure being fixed here. So it fails
+  # the run, chain_status.sh says FAILED, and tomorrow's run tries again.
+  # Steps 1 to 4 have already saved by this point, so a failed deploy costs the
+  # deploy and nothing else.
+  message("\n== Step 5: deploy ==")
+  source("scripts/deploy.R")
+  deploy_app()
+
   invisible(ad)
 }
 

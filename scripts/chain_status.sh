@@ -28,12 +28,25 @@ if [ -n "$ts" ]; then
   [ "$age_h" -gt 30 ] && echo "  STALE: more than 30h old, so last night's run did not happen."
 fi
 
-# The data's own dates, which is what the app actually shows.
+# The data's own dates, and what the last deploy actually shipped. The second
+# one is the point: every local check here can read current while the deployed
+# link serves an older bundle, because the data rides inside the bundle. That
+# gap is what made a stale live app survive weeks of green runs.
 "$(command -v Rscript)" -e '
   ad <- readRDS("'"$REPO"'/data/app_data.rds")
   gl <- tryCatch(readRDS("'"$REPO"'/data/game_logs.rds"), error = function(e) NULL)
   cat("  app_data through", max(ad$game_date), "\n")
   if (!is.null(gl)) cat("  game_logs through", max(gl$game_date), "\n")
+  stamp <- "'"$REPO"'/logs/deployed_through.txt"
+  if (!file.exists(stamp)) {
+    cat("  DEPLOYED: no stamp, the live app has never been deployed by the chain\n")
+  } else {
+    kv <- read.dcf(stamp)[1, ]
+    cat("  deployed  app_data", kv[["app_data"]], "on", kv[["deployed"]], "\n")
+    if (!identical(unname(kv[["app_data"]]), max(ad$game_date)))
+      cat("  STALE LIVE APP: local data is through", max(ad$game_date),
+          "but the deployed bundle carries", kv[["app_data"]], "\n")
+  }
 ' 2>/dev/null
 
 echo "$last" | grep -q FAILED && { echo "  --- last 15 log lines ---"; tail -15 "$LOG"; exit 1; }
