@@ -42,6 +42,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
+    # The default GITHUB_TOKEN is read-only on contents, and pushing the
+    # refreshed store back is a release-asset write. Without this the whole
+    # chain runs, deploys, and then fails on the last step with
+    # "Resource not accessible by integration", leaving the store one day
+    # behind on the next run. Nothing here needs any other scope.
+    permissions:
+      contents: write
+
     env:
       # update_data.R already reads this, so nothing in the chain needed changing
       # to run somewhere the store does not live beside the repo.
