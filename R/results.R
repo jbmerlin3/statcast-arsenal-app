@@ -38,6 +38,30 @@ ip_to_outs <- function(ip) {
 outs_to_ip <- function(outs) sprintf("%d.%d", outs %/% 3, outs %% 3)
 
 
+#' Is this row a batter faced?
+#'
+#' `events` is the empty string on non-terminal pitches, not NA, so the first
+#' two clauses are the PA-ending test. See CLAUDE.md hard rule 3.
+#'
+#' The third clause is the correction. Savant writes `truncated_pa` on a plate
+#' appearance that never finished, because the inning ended underneath it: a
+#' runner picked off or thrown out stealing with the batter still in the box.
+#' That is not a plate appearance and it is not a batter faced, and MLB's game
+#' log does not count it. Counting it inflated TBF and deflated every rate
+#' computed over TBF.
+#'
+#' Measured on the 2026 store, 273 rows league wide. Excluding them takes the
+#' pitchers whose Statcast TBF exceeds their game-log TBF from 112 down to 4,
+#' and lifts exact agreement from 463 pitchers to 504 of 821.
+#'
+#' What is left after this is the automatic intentional walk, which throws no
+#' pitch and so leaves no Statcast row at all. It cannot be recovered from
+#' app_data, so TBF here still reads one low per IBB. See the panel note.
+is_bf <- function(events) {
+  !is.na(events) & events != "" & events != "truncated_pa"
+}
+
+
 #' The Statcast half of the panel
 #'
 #' Filters `stand` the same way arsenal_table() does, so this narrows with the
@@ -48,9 +72,9 @@ outs_to_ip <- function(outs) sprintf("%d.%d", outs %/% 3, outs %% 3)
 results_statcast <- function(df, hand) {
   if (hand != "All") df <- filter(df, stand == hand)
 
-  # PA-ending rows only. events is empty string on non-terminal pitches, not NA.
-  # See CLAUDE.md hard rule 3.
-  pa <- filter(df, events != "" & !is.na(events))
+  # Batters faced only. See is_bf(), which is also what the search panel counts
+  # with, so the two can never drift.
+  pa <- filter(df, is_bf(events))
   # Batted balls, not every row carrying an exit velocity. Statcast measures
   # FOULS too, and they are weak, so a tracked-EV denominator silently halves
   # the rate. Measured on Kirby 2026 vs LHH: 435 rows have an EV, 206 of them
@@ -125,7 +149,7 @@ results_gamelog <- function(logs, pitcher_id, dates, c_fip = NULL) {
   if (!nrow(g)) {
     return(list(have = FALSE, games = 0L, ip_outs = 0L, ip = NA_character_,
                 era = NA_real_, whip = NA_real_, fip = NA_real_,
-                through = NA_character_))
+                through = NA_character_, ibb = 0L))
   }
 
   outs <- sum(g$ip_outs, na.rm = TRUE)
@@ -143,7 +167,11 @@ results_gamelog <- function(logs, pitcher_id, dates, c_fip = NULL) {
     fip     = if (ip > 0) (13 * sum(g$hr, na.rm = TRUE) +
                            3 * (sum(g$bb, na.rm = TRUE) + sum(g$hbp, na.rm = TRUE)) -
                            2 * sum(g$so, na.rm = TRUE)) / ip + c_fip else NA_real_,
-    through = max(g$game_date)
+    through = max(g$game_date),
+    # Not a rate and not displayed as a number. It exists so the Statcast row
+    # can explain itself: see the footnote in results_panel(). Tolerates an
+    # older game_logs.rds built before the column existed.
+    ibb     = if (is.null(g$ibb)) 0L else sum(g$ibb, na.rm = TRUE)
   )
 }
 
@@ -190,6 +218,29 @@ results_panel <- function(sc, gl, dates, hand, log_through = NULL, ctx = NULL) {
       shiny::tags$div(class = "rp-lab", lab))
   }
 
+  # An automatic intentional walk throws no pitch, so Savant has no row for it
+  # and TBF here reads one low per IBB, with K-BB% inflated over the short
+  # denominator. Small, but it is exactly what someone checking this page
+  # against FanGraphs will land on, and an unexplained difference costs more
+  # trust than the number is worth.
+  #
+  # Said rather than corrected. The count comes from the game log, which has no
+  # platoon split, so adding it back would fix the All view by making it stop
+  # equalling the two sides added together. The footnote keeps every number on
+  # the row derived the same way and still accounts for the difference.
+  #
+  # Only when the window actually contains one. A caveat printed on every
+  # pitcher for a thing that happened to none of them is noise.
+  n_ibb <- if (is.null(gl$ibb) || !isTRUE(gl$ibb > 0)) 0L else as.integer(gl$ibb)
+  sc_src <- paste0(
+    "Statcast, this window and this batter side.",
+    if (n_ibb > 0)
+      sprintf(" Excludes %d automatic intentional walk%s, which %s no pitch and so %s no Statcast row.",
+              n_ibb,
+              if (n_ibb == 1) ""      else "s",
+              if (n_ibb == 1) "throws" else "throw",
+              if (n_ibb == 1) "leaves" else "leave"))
+
   sc_row <- shiny::tags$div(
     class = "rp-row",
     shiny::tags$div(class = "rp-head",
@@ -203,7 +254,7 @@ results_panel <- function(sc, gl, dates, hand, log_through = NULL, ctx = NULL) {
       cell("HH%",   num(sc$hh,    "%.1f"), "hh"),
       cell("xwOBA", if (!is.finite(sc$xwoba)) "--" else sub("^0", "", sprintf("%.3f", sc$xwoba)),
            "xwoba")),
-    shiny::tags$div(class = "rp-src", "Statcast, this window and this batter side."))
+    shiny::tags$div(class = "rp-src", sc_src))
 
   gl_cells <- if (!gl$have) {
     # Absence, said out loud. Not zeros, not blanks: a pitcher with no start in
@@ -294,12 +345,12 @@ results_league <- function(ad, gl, dates, hand, fip_const) {
   sc <- a |>
     group_by(pitcher) |>
     summarise(
-      tbf   = sum(events != "" & !is.na(events)),
+      tbf   = sum(is_bf(events)),
       bbe   = sum(type == "X"),
       pa    = sum(woba_denom, na.rm = TRUE),
       k_bb  = pct_or_na(sum(events == "strikeout", na.rm = TRUE) -
                           sum(events == "walk", na.rm = TRUE),
-                        sum(events != "" & !is.na(events))),
+                        sum(is_bf(events))),
       hh    = pct_or_na(sum(type == "X" & launch_speed >= HARD_HIT_MPH, na.rm = TRUE),
                         sum(type == "X")),
       xwoba = { d <- sum(woba_denom, na.rm = TRUE)

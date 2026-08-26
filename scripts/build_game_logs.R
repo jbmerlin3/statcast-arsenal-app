@@ -32,7 +32,7 @@ fetch_game_log <- function(id, season) {
 
   need <- c("date", "stat.inningsPitched", "stat.earnedRuns", "stat.hits",
             "stat.baseOnBalls", "stat.strikeOuts", "stat.battersFaced",
-            "stat.homeRuns", "stat.hitByPitch")
+            "stat.homeRuns", "stat.hitByPitch", "stat.intentionalWalks")
   if (!all(need %in% names(sp))) return(NULL)
 
   data.frame(
@@ -47,6 +47,12 @@ fetch_game_log <- function(id, season) {
     tbf       = as.integer(sp$stat.battersFaced),
     hr        = as.integer(sp$stat.homeRuns),
     hbp       = as.integer(sp$stat.hitByPitch),
+    # Carried for the results panel's footnote, not for any rate. An automatic
+    # intentional walk throws no pitch, so Savant has no row for it and the
+    # Statcast side of the panel cannot see the plate appearance at all. This is
+    # the only place the app can learn one happened. Free to collect: the field
+    # is already in the response this function parses.
+    ibb       = as.integer(sp$stat.intentionalWalks),
     stringsAsFactors = FALSE
   )
 }
