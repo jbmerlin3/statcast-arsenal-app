@@ -386,15 +386,45 @@ server <- function(input, output, session) {
     updateTabsetPanel(session, "tabs", selected = "Movement")
   })
 
+  # ---- Plot sizing guard -----------------------------------------------------
+  #
+  # Shiny draws a plot as soon as the client reports that output's size, and on
+  # a cold connection the first report can carry a zero width: the element is in
+  # the DOM but the browser has not laid it out yet. The graphics device refuses
+  # the size, and Shiny paints a red error box. On a free shinyapps instance that
+  # box is what a first-time visitor looks at for the ten or so seconds the first
+  # plot takes. The message differs by platform, "invalid 'width' argument" from
+  # the PNG device on the server and "invalid quartz() device size" locally,
+  # which is the same fault.
+  #
+  # This has to be a width function and not a req() at the top of the render
+  # expression. renderPlot() OPENS THE DEVICE BEFORE it evaluates the expression,
+  # so a guard inside the expression runs after the failure it is trying to
+  # prevent. Tried that first; the error was unchanged, which is also why the
+  # original traceback goes straight from output$movement to startPNG with no
+  # app code in between.
+  #
+  # req() here suspends the output instead, and the suspension is temporary: the
+  # client re-reports the size once layout settles, this function is reactive on
+  # clientData, and the plot draws on the corrected width. That second report is
+  # known to arrive rather than hoped for, observed on the live app before any
+  # guard existed, where a failed render was followed by a successful one with no
+  # user action.
+  sized_width <- function(id) function() {
+    w <- session$clientData[[paste0("output_", id, "_width")]]
+    req(!is.null(w), is.finite(w), w > 0)
+    w
+  }
+
   output$movement <- renderPlot({
     # league_ref was wired into the characteristics table in Phase 5 but not
     # here, so the reference marks existed and never reached the page.
     plot_movement(pitcher_data(), ref = league_ref)
-  })
+  }, width = sized_width("movement"))
 
   output$usage <- renderPlot({
     plot_usage(pitcher_data())
-  })
+  }, width = sized_width("usage"))
 
   output$usage_table <- gt::render_gt({
     count_usage_gt(count_usage_tbl(pitcher_data(), input$hand), input$hand)
@@ -415,7 +445,7 @@ server <- function(input, output, session) {
 
   output$heatmap <- renderPlot({
     plot_heatmap(pitcher_data(), input$hand)
-  })
+  }, width = sized_width("heatmap"))
 
   # Two sources, two rows, deliberately not merged. The Statcast half reads
   # input$hand and narrows with it; the game-log half does not read it at all,
