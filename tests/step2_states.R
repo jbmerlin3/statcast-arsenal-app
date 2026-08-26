@@ -65,16 +65,30 @@ fails <- character()
 expect <- function(lbl, got, want) if (!identical(got, want))
   fails <<- c(fails, sprintf("%s: got %s, wanted %s", lbl, deparse(got), deparse(want)))
 
-cat("=== THE FALLBACK CASE: Shane Baz, KC, whiff% vs RHH ===\n")
-baz <- cell_for(669358, "KC", "R", "whiff_pct")
-show("Baz KC whiff% vs RHH", baz)
-cat("  state note: ", baz$state_note, "\n", sep = "")
-expect("baz state",      baz$state,      "fallback")
-expect("baz grain",      baz$grain,      "pitch_type x p_throws x count")
-expect("baz n_pitchers", baz$n_pitchers, 22L)
-expect("baz marker",     baz$marker,     "†")
-expect("baz weight",     baz$font_weight, "bold")
-expect("baz has_ref",    baz$has_ref,    TRUE)
+# The fixture used to be Shane Baz's KC. It moved for a reason worth recording:
+# PITCH_CODE_RULES now maps KC to CU, so build_pitch_level() no longer returns a
+# pitch type called KC for anyone, filter(pitch_type == "KC") matched zero rows,
+# and every field came back NA. That is the correct behaviour of the change, not
+# a regression, but it left this file asserting against an empty frame.
+#
+# The expectations were already stale before that, wanting 22 pitchers against a
+# reference that had been rebuilt since. Re-derived here from the current
+# league_ref rather than carried forward.
+#
+# Duran's FS vs RHH is a real fallback: 98 swings clears the 50-swing floor, but
+# the fine pitch_type x p_throws x stand cell does not have enough pitchers, so
+# resolve_cell() drops to the coarser cut. Which is exactly the state this block
+# exists to pin.
+cat("=== THE FALLBACK CASE: Jhoan Duran, FS, whiff% vs RHH ===\n")
+fb <- cell_for(661395, "FS", "R", "whiff_pct")
+show("Duran FS whiff% vs RHH", fb)
+cat("  state note: ", fb$state_note, "\n", sep = "")
+expect("fallback state",      fb$state,       "fallback")
+expect("fallback grain",      fb$grain,       "pitch_type x p_throws x count")
+expect("fallback n_pitchers", fb$n_pitchers,  46L)
+expect("fallback marker",     fb$marker,      "†")
+expect("fallback weight",     fb$font_weight, "bold")
+expect("fallback has_ref",    fb$has_ref,     TRUE)
 
 cat("\n=== THE OTHER THREE STATES ===\n")
 # Below floor uses a real, non-zero denominator rather than an empty pitch type.
@@ -344,7 +358,7 @@ expect("hb carries its note", is.character(hb$metric_note), TRUE)
 expect("velo carries no note", ex$metric_note, NA_character_)
 
 cat("\n=== the four states are separable without hue ===\n")
-four <- list(exact = ex, fallback = baz, below_floor = bf, no_reference = nr)
+four <- list(exact = ex, fallback = fb, below_floor = bf, no_reference = nr)
 key  <- vapply(four, function(c) paste(c$fill != PCTILE_UNFILLED, c$font_weight,
                                        c$font_style, gsub("[0-9]+", "N", c$marker)), character(1))
 for (nm in names(key)) cat(sprintf("  %-13s %s\n", nm, key[[nm]]))

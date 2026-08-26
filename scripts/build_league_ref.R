@@ -108,9 +108,17 @@ summarise_cells <- function(cells, grain) {
 #' for lefties and righties in every pitch type. Pooling the hands makes the
 #' reference bimodal with almost nothing at its own centre, which no sample
 #' floor would catch.
+#' The reference has to be keyed by the codes the app will look it up WITH,
+#' which are the reconciled ones. This used to filter raw codes against
+#' pitch_colors instead, and the two disagreed in both directions: a CS was
+#' remapped to CU at query time and then ranked against a CU population that had
+#' been built with every CS excluded, and a KC now maps to CU but would have
+#' been pooled under its own key. Same function the app calls, so the population
+#' a pitch is ranked against always contains pitches like it.
 build_league_ref <- function(app_data) {
   d0 <- app_data |>
-    filter(pitch_type %in% names(pitch_colors)) |>
+    filter(!is.na(pitch_type), pitch_type != "") |>
+    reconcile_pitch_codes() |>
     mutate(cnt = paste(balls, strikes, sep = "-"))
 
   out <- lapply(names(COUNT_BUCKETS), function(bk) {

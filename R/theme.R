@@ -20,6 +20,10 @@
 pitch_colors <- c(
   FF = "#FF0000", SI = "#FFA500", CU = "#8B008B", CH = "#228B22",
   SL = "#FFFF00", FS = "#00CED1", FC = "#8B4513", ST = "#DDB100",
+  # KC is remapped to CU by PITCH_CODE_RULES before anything looks a colour up,
+  # so this entry is unreachable in normal operation. Kept because
+  # reconcile_pitch_codes() asserts every surviving code is in this vector, and
+  # a code with no colour is the failure that assertion exists to prevent.
   KC = "#6A0DAD", SV = "#7CFC00",
   # Eleventh code, beyond the ten CLAUDE.md lists. A knuckleball cannot be
   # mapped to anything else, and one genuine knuckleballer throws 182 of them,
@@ -50,12 +54,30 @@ pitch_text_colors[c("SL", "ST")] <- c("#B59410", "#B59410")
 #
 # A code absent from this table AND from pitch_colors is dropped and reported,
 # so a code Savant adds next season degrades visibly instead of crashing.
+#
+# KC is here for a different reason than the rest, and it is worth stating.
+# Nothing crashes on a knuckle curve, it has its own colour below. It is mapped
+# because Savant's classifier will hand ONE pitcher both labels for ONE pitch,
+# and then the app draws it twice: two clusters on the movement chart with their
+# crosses on top of each other, and a usage table that splits a 27% curveball
+# into a 20% pitch and a 7% pitch.
+#
+# Measured over the whole 2026 store: 366 pitchers throw CU, 43 throw KC, and
+# exactly ONE throws both above the 5-pitch display floor. His two curves sit
+# 3.5 mph and 4.1 inches apart, which is inside one pitch's own spread. If KC
+# and CU were different pitches, pitchers would throw both; none of the other
+# 408 do.
+#
+# Savant's player page groups them as one "Curve" bucket, and FG_TO_SAVANT in
+# stuff.R has cross-filled a Stuff+ grade from either label to the other since
+# it was written. The display was the last place still treating them as two.
 PITCH_CODE_RULES <- data.frame(
-  code   = c("CS",   "FO",   "EP",   "FA",   "PO",   "UN"),
-  action = c("map",  "map",  "drop", "drop", "drop", "drop"),
-  target = c("CU",   "FS",   NA,     NA,     NA,     NA),
+  code   = c("CS",   "KC",   "FO",   "EP",   "FA",   "PO",   "UN"),
+  action = c("map",  "map",  "map",  "drop", "drop", "drop", "drop"),
+  target = c("CU",   "CU",   "FS",   NA,     NA,     NA,     NA),
   reason = c(
     "slow curve; Savant's own player page folds it into the curve",
+    "knuckle curve; one curveball, see the note above this table",
     "forkball, a splitter variant; FG_TO_SAVANT already folds FanGraphs FO into FS",
     "eephus; 32 of its 35 throwers are position players mopping up",
     "unclassified fastball; 30 of its 33 throwers are position players",
