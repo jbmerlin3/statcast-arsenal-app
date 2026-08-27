@@ -69,7 +69,30 @@ DEPLOY_STAMP <- "logs/deployed_through.txt"
 data_dates <- function() {
   gl <- tryCatch(max(readRDS("data/game_logs.rds")$game_date),
                  error = function(e) NA_character_)
-  c(app_data = max(readRDS("data/app_data.rds")$game_date), game_logs = gl)
+  c(app_data = max(readRDS("data/app_data.rds")$game_date),
+    game_logs = gl,
+    code      = code_version())
+}
+
+
+#' The commit a deploy would carry
+#'
+#' The stamp used to record data dates ONLY, and that was a hole big enough to
+#' drive a day through. A code change moves no data date, so the gate saw
+#' "already current" and refused. Every fix shipped on 2026-08-27 built green in
+#' CI and never reached the live app; the same bug kept being reported because
+#' the running app was still the old one, and the deploy step said so plainly in
+#' the log while nobody read it.
+#'
+#' Returns "unknown" outside a git checkout, which compares unequal to anything
+#' and therefore deploys. Failing toward deploying is the right direction: a
+#' redundant deploy costs one instance wake-up, a skipped one ships nothing.
+code_version <- function() {
+  sha <- tryCatch(
+    suppressWarnings(system2("git", c("rev-parse", "HEAD"),
+                             stdout = TRUE, stderr = FALSE)),
+    error = function(e) NULL)
+  if (is.null(sha) || !length(sha) || !nzchar(sha[1])) "unknown" else substr(sha[1], 1, 12)
 }
 
 
@@ -77,8 +100,11 @@ data_dates <- function() {
 deployed_dates <- function(path = DEPLOY_STAMP) {
   if (!file.exists(path)) return(NULL)
   kv <- tryCatch(read.dcf(path)[1, ], error = function(e) NULL)
-  if (is.null(kv) || !all(c("app_data", "game_logs") %in% names(kv))) return(NULL)
-  kv[c("app_data", "game_logs")]
+  # A stamp written before `code` existed is unusable rather than a match, so
+  # the first run after this change deploys instead of trusting a record that
+  # could not have known what code was live.
+  if (is.null(kv) || !all(c("app_data", "game_logs", "code") %in% names(kv))) return(NULL)
+  kv[c("app_data", "game_logs", "code")]
 }
 
 
@@ -129,10 +155,12 @@ deploy_app <- function(force = FALSE) {
   mb <- sum(file.size(app_files)) / 1024^2
   message(sprintf("Bundling %d files, %.1f MB", length(app_files), mb))
   message("  app_data through ", have[["app_data"]],
-          ", game_logs through ", have[["game_logs"]])
+          ", game_logs through ", have[["game_logs"]],
+          ", code ", have[["code"]])
   message("  live bundle carries ",
-          if (is.null(live)) "unknown, no stamp"
-          else paste0("app_data ", live[["app_data"]], ", game_logs ", live[["game_logs"]]))
+          if (is.null(live)) "unknown, no usable stamp"
+          else paste0("app_data ", live[["app_data"]], ", game_logs ",
+                      live[["game_logs"]], ", code ", live[["code"]]))
 
   rsconnect::deployApp(
     appDir      = ".",
@@ -151,6 +179,7 @@ deploy_app <- function(force = FALSE) {
   dir.create("logs", showWarnings = FALSE)
   write.dcf(data.frame(app_data  = have[["app_data"]],
                        game_logs = have[["game_logs"]],
+                       code      = have[["code"]],
                        deployed  = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"),
                        stringsAsFactors = FALSE), DEPLOY_STAMP)
   message("Deployed, stamp written to ", DEPLOY_STAMP)
@@ -162,12 +191,14 @@ deploy_app <- function(force = FALSE) {
 # chain must load the function without deploying, and must SAY so rather than
 # doing it silently.
 #
-# force = TRUE on the hand-run path, and only there. The stamp check exists to
-# stop the 06:15 job redeploying 27 MB on a morning when no game was played; it
-# is a guard against a pointless AUTOMATIC deploy. A person typing this command
-# has a reason, and the usual reason is a code change, which moves no data date
-# and so would be refused with "nothing to deploy" by a gate that cannot see it.
-# Caught while shipping the plot sizing fix, which is exactly that case.
+# force = TRUE on the hand-run path, kept as a belt to the gate's braces.
+#
+# It used to be load-bearing, because the gate compared data dates only and a
+# code change moves none of them. That patched the symptom on the ONE path a
+# human types, and left CI silently refusing every code fix: on 2026-08-27 four
+# separate fixes built green and never reached the live app. The gate now reads
+# the commit too, so this force is redundant rather than essential, which is the
+# correct relationship between a safety net and the thing it catches.
 if (sys.nframe() == 0L) {
   deploy_app(force = TRUE)
 } else {
