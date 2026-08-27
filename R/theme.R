@@ -109,8 +109,14 @@ hand_label <- function(hand) {
 
 # ---- Sample floors and smoothing ---------------------------------------------
 
-# Pitch types below this are dropped in build_pitch_level() before any rate is
-# computed. A 3-pitch sample produces rate columns that read as real.
+# RETIRED as a row filter, 2026-08-27, and deliberately left here as a number
+# the UI can still quote.
+#
+# It used to drop the rows of any pitch type under five pitches in the window,
+# which silently rewrote a pitcher's arsenal on short windows: a start with 13
+# four-seams and three each of two secondaries reported 100% four-seam. See the
+# note in shape_arsenal(). Sample adequacy is now handled where it belongs, per
+# metric, by METRIC_SPEC's floors and the below_floor state.
 MIN_PITCH_COUNT <- 5
 
 # Bandwidth for the heatmap KDE, in feet, x then z.

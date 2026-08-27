@@ -171,9 +171,27 @@ shape_arsenal <- function(df) {
   df  <- reconcile_pitch_codes(df)
   rep <- attr(df, "pitch_codes")
 
-  pl <- df |>
-    add_count(pitch_type, name = "pt_n") |>
-    filter(pt_n >= MIN_PITCH_COUNT)
+  # EVERY pitch type this app can chart is kept, however few pitches it has.
+  #
+  # There used to be a filter(pt_n >= MIN_PITCH_COUNT) here, dropping the ROWS
+  # of any type under five pitches in the window. On a season it is invisible.
+  # On one start it is a lie: Didier Fuentes on 2026-08-05 threw 13 four-seams,
+  # 3 splitters and 3 sliders, and the app reported 100% four-seam, because the
+  # six secondary pitches were gone before usage was computed. It also read
+  # 0 batters faced, since all four of his PA-ending pitches happened to be
+  # those splitters and sliders.
+  #
+  # Dropping rows was always the wrong instrument. theme.R says it outright:
+  # MIN_PITCH_COUNT decided whether a pitch was SHOWN, while METRIC_SPEC's
+  # per-metric floors decide whether a RATE is trustworthy, "and the two are
+  # deliberately separate constants". Only the second concern is real. A
+  # three-pitch slider has an honest count, an honest velocity and an honest
+  # location; what it does not have is a meaningful whiff rate, and the
+  # below_floor state already greys exactly those cells and prints their
+  # denominator.
+  #
+  # So the count is always true and the rates police themselves.
+  pl <- df |> add_count(pitch_type, name = "pt_n")
   ord <- pl |> count(pitch_type, sort = TRUE) |> pull(pitch_type)
   out <- pl |> mutate(pitch_type = factor(pitch_type, levels = ord))
 

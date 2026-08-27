@@ -110,8 +110,12 @@ ui <- fluidPage(
       radioButtons("hand", "Batter side",
                    choices  = c("All" = "All", "vs LHH" = "L", "vs RHH" = "R"),
                    selected = "All", inline = TRUE),
-      helpText("Pitch types under ", MIN_PITCH_COUNT,
-               " pitches in the selected window are dropped."),
+      # Was "Pitch types under 5 pitches in the selected window are dropped",
+      # which described behaviour that is gone. Every pitch type is charted now;
+      # what varies is whether a RATE off it is trustworthy, which the table
+      # already says per cell in grey with its denominator.
+      helpText("Every pitch type is shown. Rates from small samples are greyed",
+               " and carry their own denominator."),
       # Under the controls rather than over the tabs. The panel describes the
       # whole selection, which is what this column already is, and moving it
       # here fills the dead space below the inputs and lets the tabs start at
@@ -232,6 +236,7 @@ server <- function(input, output, session) {
     # An empty window is a normal thing for a user to select, not an error.
     validate(need(nrow(raw) > 0,
                   "No pitches for this pitcher in the selected window."))
+    pitcher_window_raw(raw)
 
     d <- shape_arsenal(raw)
 
@@ -241,11 +246,18 @@ server <- function(input, output, session) {
     validate(need(nrow(d) > 0, {
       note <- pitch_code_note(d)
       paste0(nrow(raw), " pitches in this window, but none chartable.",
-             if (!is.null(note)) paste0(" ", note, ".") else "",
-             if (is.null(note)) paste0(" No pitch type reached ", MIN_PITCH_COUNT,
-                                       " pitches.") else "")
+             if (!is.null(note)) paste0(" ", note, ".")
+             else " No pitch carried a chartable type code.")
     }))
     d
+  })
+
+  # The window before any pitch-type reconciliation or charting decisions.
+  # Written by pitcher_data() so the two can never describe different windows.
+  pitcher_window_raw <- reactiveVal(NULL)
+  pitcher_window <- reactive({
+    pitcher_data()          # establishes the dependency and fills the value
+    pitcher_window_raw()
   })
 
   output$pitch_code_note <- renderUI({
@@ -462,8 +474,14 @@ server <- function(input, output, session) {
   })
 
   output$results_panel <- renderUI({
+    # The RAW window, not pitcher_data(). Batters faced is a property of the
+    # outing, not of which pitch types survived charting. Fed the charted frame,
+    # this read 0 TBF for a reliever whose every PA-ending pitch was a type the
+    # display had dropped, and blanked every rate computed over it. Even with
+    # that floor gone, reconcile_pitch_codes() still drops genuinely unchartable
+    # codes, and a plate appearance must not disappear because it ended on one.
     d  <- pitcher_data()
-    sc <- results_statcast(d, input$hand)
+    sc <- results_statcast(pitcher_window(), input$hand)
     gl <- if (is.null(game_logs)) {
       list(have = FALSE, games = 0L, through = NA_character_)
     } else {

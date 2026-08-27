@@ -262,10 +262,27 @@ schedule_final_games <- function(from, to, today = baseball_today()) {
 }
 
 
-refresh_store <- function(store_path = STORE_PATH, through = baseball_today()) {
+# How many days back to re-pull on every run.
+#
+# Savant revises pitch classifications for days after a game. Measured
+# 2026-08-27 on Bryce Elder's 2026-08-05 start: six pitches moved FC to FF after
+# the fact. The store held the original call and the app therefore showed a
+# 24/10 cutter-fastball split against Savant's 18/16, on a total that matched
+# exactly, which is the kind of wrong that looks right.
+#
+# Seven days is comfortably past when revisions stop landing, and costs two
+# extra chunk requests a run.
+REPULL_DAYS <- 7
+
+refresh_store <- function(store_path = STORE_PATH, through = baseball_today(),
+                          repull_days = REPULL_DAYS) {
   sc <- readRDS(store_path)
   last  <- max(sc$game_date)
-  start <- as.Date(last) + 1
+  # Two different starts. `new_start` is the first day not held at all, and is
+  # what the empty-pull guard reasons about. `start` reaches further back so
+  # revisions to days already held actually arrive.
+  new_start <- as.Date(last) + 1
+  start     <- as.Date(last) - repull_days + 1
 
   # in_zone is DERIVED, so it is recomputed over the whole store on every path
   # out of this function, including the two that pull nothing. It used to be
@@ -283,10 +300,14 @@ refresh_store <- function(store_path = STORE_PATH, through = baseball_today()) {
     message("Nothing to pull, already current through ", through)
     return(refresh_derived(sc))
   }
-  message("Pulling ", start, " to ", through)
+  message("Pulling ", start, " to ", through,
+          " (", repull_days, "-day re-pull window; new days start ", new_start, ")")
 
   # Asked before the pull, so a broken pull cannot also break the sanity check.
-  n_games <- schedule_final_games(as.character(start), as.character(through))
+  # Counts only the genuinely-new days: the re-pulled ones are already held, so
+  # games in that stretch say nothing about whether this pull worked.
+  n_games <- if (new_start > through) 0L else
+    schedule_final_games(as.character(new_start), as.character(through))
   message(if (is.na(n_games)) "Schedule unreachable, cannot judge an empty pull"
           else paste0(n_games, " final games in that window before today"))
 
@@ -319,8 +340,32 @@ refresh_store <- function(store_path = STORE_PATH, through = baseball_today()) {
   if (length(only_new)) warning("Savant returned new columns: ", paste(only_new, collapse = ", "), call. = FALSE)
   if (length(only_old)) warning("Pull is missing stored columns: ", paste(only_old, collapse = ", "), call. = FALSE)
 
-  out <- bind_rows(sc, new_clean) |>
+  # NEW ROWS FIRST. distinct() keeps the first occurrence of each key, so this
+  # ordering is the whole mechanism by which a revision lands: the freshly
+  # pulled row wins and the stored one is dropped.
+  #
+  # It used to be bind_rows(sc, new_clean), which kept the OLD row and made
+  # re-pulling a revised day a no-op. The comment above this function has always
+  # said re-pulling a revised day is a normal thing to want to do; the code
+  # quietly refused to. Found 2026-08-27 via Bryce Elder's 2026-08-05 start,
+  # where six pitches Savant had since moved from FC to FF were still stored as
+  # FC, giving a 24/10 split against Savant's 18/16 on an identical total.
+  revised <- 0L
+  if (nrow(sc)) {
+    key <- function(d) paste(d$game_pk, d$at_bat_number, d$pitch_number, sep = "-")
+    old_pt <- setNames(as.character(sc$pitch_type), key(sc))
+    k_new  <- key(new_clean)
+    seen   <- k_new %in% names(old_pt)
+    revised <- sum(seen & old_pt[k_new] != as.character(new_clean$pitch_type), na.rm = TRUE)
+  }
+
+  out <- bind_rows(new_clean, sc) |>
     distinct(game_pk, at_bat_number, pitch_number, .keep_all = TRUE)
+
+  if (revised > 0) {
+    message("Applied ", revised, " reclassified pitch",
+            if (revised == 1) "" else "es", " from the re-pull window")
+  }
 
   # The store carries in_zone, and freshly scraped rows arrive without it.
   # Recomputed across the whole frame rather than only the new rows: the formula
@@ -329,13 +374,16 @@ refresh_store <- function(store_path = STORE_PATH, through = baseball_today()) {
   out <- refresh_derived(out)
 
   added <- nrow(out) - nrow(sc)
-  # Rows can come back and still all be duplicates, which dedup silently drops.
-  # Same failure as an empty pull, one step later.
-  if (added == 0 && isTRUE(n_games > 0)) {
+  # Asked about DATES, not row count. With a re-pull window a healthy run can
+  # legitimately add zero rows and still have done its job, by replacing
+  # existing ones with revised copies. The old row-count test would have called
+  # that a failure. What must not happen is the store failing to reach a day on
+  # which games were played.
+  if (isTRUE(n_games > 0) && max(out$game_date) < as.character(new_start)) {
     stop("Pull returned ", format(nrow(new_clean), big.mark = ","),
-         " rows but every one was already stored, with ", n_games,
-         " final games in ", start, " to ", through,
-         ". The store did not advance past ", last, ".", call. = FALSE)
+         " rows but the store still ends ", max(out$game_date),
+         ", with ", n_games, " final games from ", new_start, " to ", through,
+         ". It did not advance past ", last, ".", call. = FALSE)
   }
 
   message("Added ", format(added, big.mark = ","),
