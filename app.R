@@ -236,7 +236,6 @@ server <- function(input, output, session) {
     # An empty window is a normal thing for a user to select, not an error.
     validate(need(nrow(raw) > 0,
                   "No pitches for this pitcher in the selected window."))
-    pitcher_window_raw(raw)
 
     d <- shape_arsenal(raw)
 
@@ -253,11 +252,23 @@ server <- function(input, output, session) {
   })
 
   # The window before any pitch-type reconciliation or charting decisions.
-  # Written by pitcher_data() so the two can never describe different windows.
-  pitcher_window_raw <- reactiveVal(NULL)
+  #
+  # A plain reactive that recomputes the same filter, rather than a reactiveVal
+  # written from inside pitcher_data(). Setting a reactiveVal from within a
+  # reactive() is an anti-pattern and it failed silently here: the deployed app
+  # kept reporting 0 batters faced for Fuentes on 2026-08-05 while the same call
+  # returned 4 locally, because the value was never written and the panel was
+  # reading NULL. Recomputing a filter over one pitcher is cheap; being wrong is
+  # not.
+  #
+  # Deliberately does NOT depend on pitcher_data(). Batters faced must survive
+  # even when nothing in the window is chartable and pitcher_data() validates
+  # its way out.
   pitcher_window <- reactive({
-    pitcher_data()          # establishes the dependency and fills the value
-    pitcher_window_raw()
+    req(input$pitcher, input$dates)
+    app_data |> filter(pitcher == as.integer(input$pitcher),
+                       game_date >= as.character(input$dates[1]),
+                       game_date <= as.character(input$dates[2]))
   })
 
   output$pitch_code_note <- renderUI({
