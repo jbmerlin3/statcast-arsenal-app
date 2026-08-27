@@ -23,12 +23,27 @@ on:
     # when the first worked: it re-pulls one day, finds nothing new, and still
     # redeploys, which costs a bundle upload and nothing else.
     #
-    # This repo is private, so runner minutes are metered against the account's
-    # monthly allowance. Two runs a day at roughly ten minutes each is about 600
-    # a month, comfortably inside the 2,000 a free account gets. If that ceiling
-    # ever bites, drop the 14:15 entry first: it is redundancy, not function.
-    - cron: '15 10 * * *'
-    - cron: '15 14 * * *'
+    # FOUR attempts, not one, and the reason is not paranoia about cron. This app
+    # is sent to potential employers, and part of what it demonstrates is that
+    # the pipeline runs. A visitor who opens it and sees yesterday's date does
+    # not think "Savant lags", they think "this does not actually work". The
+    # date is evidence, and stale evidence argues against the person who sent it.
+    #
+    # So the schedule is built backwards from when somebody might look: three
+    # attempts land before 09:00 Eastern, and a fourth catches the rest of the
+    # morning. GitHub delays cron under load and occasionally skips it, and any
+    # one attempt missing is survivable when the next is an hour away.
+    #
+    # This is nearly free because of the deploy stamp. The first run that finds
+    # new data deploys; the rest fetch the stamp, see those dates already live,
+    # and skip. Four runs a day cost four bundle builds and ONE instance
+    # wake-up, so the constrained budget, shinyapps active hours, is untouched.
+    # Runner minutes are the loose one: about 1,100 a month against the 2,000 a
+    # free private repo gets.
+    - cron: '15 10 * * *'   # 06:15 ET, the moment Savant reliably has last night
+    - cron: '15 11 * * *'   # 07:15 ET
+    - cron: '15 12 * * *'   # 08:15 ET, the last one before a 09:00 send
+    - cron: '15 14 * * *'   # 10:15 ET, catch-all
   workflow_dispatch:
 
 # One at a time. Two concurrent runs would both refresh the store and both push
