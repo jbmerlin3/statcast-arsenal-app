@@ -142,8 +142,16 @@ pull_season_statcast <- function(start_date, end_date, chunk_days = 4) {
     }
   )
 
-  # Remove failed downloads
-  results <- results[!map_lgl(results, is.null)]
+  # Drop failed downloads AND empty ones.
+  #
+  # An empty result is not the same shape as a full one. read.csv on a CSV with
+  # only a header gives zero rows and types every column `logical`, so
+  # bind_rows() meets logical against character and aborts with a vctrs type
+  # error. Found 2026-08-27 by a 200-day sweep that reached back to February,
+  # before the season, where every chunk is empty. A 7-day window never hits it,
+  # which is exactly why it sat here unnoticed.
+  results <- results[!map_lgl(results, function(x) is.null(x) || !NROW(x))]
+  if (!length(results)) return(NULL)
 
   # Combine all successful pulls
   bind_rows(results)
@@ -285,7 +293,10 @@ refresh_store <- function(store_path = STORE_PATH, through = baseball_today(),
   # what the empty-pull guard reasons about. `start` reaches further back so
   # revisions to days already held actually arrive.
   new_start <- as.Date(last) + 1
-  start     <- as.Date(last) - repull_days + 1
+  # Never reach back before the store's own first day. A wide sweep would
+  # otherwise spend requests on the offseason and, worse, pull empty frames that
+  # have nothing to contribute but can still break the bind.
+  start     <- max(as.Date(last) - repull_days + 1, as.Date(min(sc$game_date)))
 
   # in_zone is DERIVED, so it is recomputed over the whole store on every path
   # out of this function, including the two that pull nothing. It used to be
