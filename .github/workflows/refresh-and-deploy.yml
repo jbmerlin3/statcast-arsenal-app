@@ -51,6 +51,15 @@ on:
     - cron: '15 12 * * *'   # 08:15 ET, the last one before a 09:00 send
     - cron: '15 14 * * *'   # 10:15 ET, catch-all
   workflow_dispatch:
+    inputs:
+      repull_days:
+        description: >-
+          How many days back to re-pull. 7 is the daily value and is enough to
+          catch Savant's classification revisions as they land. Raise it for a
+          one-off sweep over games already past that window: 200 covers a whole
+          season. Costs one Savant chunk request per 4 days.
+        required: false
+        default: '7'
 
 # One at a time. Two concurrent runs would both refresh the store and both push
 # it back, and the loser's rows would vanish.
@@ -76,6 +85,9 @@ jobs:
       # to run somewhere the store does not live beside the repo.
       STATCAST_STORE: ${{ github.workspace }}/season-store/statcast_clean_2026.rds
       STORE_RELEASE: season-store
+      # Falls back to 7 for scheduled and API-triggered runs, which send no
+      # inputs. Only a hand-started run can widen it.
+      REPULL_DAYS: ${{ github.event.inputs.repull_days || '7' }}
 
     steps:
       - uses: actions/checkout@v4

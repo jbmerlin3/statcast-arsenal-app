@@ -272,7 +272,10 @@ schedule_final_games <- function(from, to, today = baseball_today()) {
 #
 # Seven days is comfortably past when revisions stop landing, and costs two
 # extra chunk requests a run.
-REPULL_DAYS <- 7
+# Overridable so a deep sweep can be run on demand without editing code. The
+# daily value is 7; a one-off backfill of every revision Savant has made this
+# season is REPULL_DAYS=200 on a workflow_dispatch.
+REPULL_DAYS <- as.integer(Sys.getenv("REPULL_DAYS", "7"))
 
 refresh_store <- function(store_path = STORE_PATH, through = baseball_today(),
                           repull_days = REPULL_DAYS) {
