@@ -228,7 +228,27 @@ clean_statcast <- function(df) {
 #'
 #' Returns NA when the schedule itself cannot be reached, which the caller
 #' treats as "cannot judge" rather than as zero.
-schedule_final_games <- function(from, to, today = Sys.Date()) {
+#' Today, in baseball's timezone
+#'
+#' NOT Sys.Date(). The chain runs on a GitHub runner with TZ=UTC, where the date
+#' rolls over at 20:00 Eastern, in the middle of a night game. A run at 22:00
+#' Eastern therefore saw UTC's tomorrow, counted the evening's finished games as
+#' having finished YESTERDAY, demanded Savant already have them, and stopped the
+#' chain. Savant posts hours later. Observed 2026-08-27T02:00Z: "8 final games in
+#' that window before today", 0 rows pulled, run failed.
+#'
+#' The 06:15 Eastern schedule never hit this, because 10:15 UTC and 06:15 Eastern
+#' fall on the same date. It fired on a hand-triggered evening run and would fire
+#' on any run between roughly 20:00 and 02:00 Eastern.
+#'
+#' MLB schedules by Eastern date, so that is the clock the "has Savant had time
+#' to post this" question is asked on, wherever the chain happens to run.
+baseball_today <- function() {
+  as.Date(format(Sys.time(), tz = "America/New_York", format = "%Y-%m-%d"))
+}
+
+
+schedule_final_games <- function(from, to, today = baseball_today()) {
   u <- sprintf(paste0("https://statsapi.mlb.com/api/v1/schedule",
                       "?sportId=1&startDate=%s&endDate=%s&gameType=R"), from, to)
   j <- tryCatch(jsonlite::fromJSON(u, flatten = TRUE), error = function(e) NULL)
@@ -242,7 +262,7 @@ schedule_final_games <- function(from, to, today = Sys.Date()) {
 }
 
 
-refresh_store <- function(store_path = STORE_PATH, through = Sys.Date()) {
+refresh_store <- function(store_path = STORE_PATH, through = baseball_today()) {
   sc <- readRDS(store_path)
   last  <- max(sc$game_date)
   start <- as.Date(last) + 1
