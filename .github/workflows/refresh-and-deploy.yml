@@ -90,7 +90,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p season-store
+          mkdir -p season-store logs
+          # The deploy stamp rides with the store. Without it every run here
+          # deploys, because a fresh runner has no memory of the last one, and on
+          # shinyapps.io's free tier a deploy is not free: it starts an instance,
+          # which then idles for 15 minutes before shutting down. Measured on
+          # this account, one wake-up costs about 0.25 active hours out of 25 a
+          # month. Two unconditional deploys a day would spend 15 of them before
+          # a single visitor arrived.
+          #
+          # With the stamp restored, the 14:15 run finds the same data dates the
+          # 10:15 run already shipped and skips the deploy, so the redundancy
+          # costs a bundle build and no instance time. Missing is fine and means
+          # "deploy anyway".
+          gh release download "$STORE_RELEASE" --pattern 'deployed_through.txt' \
+            --dir logs --clobber || echo "no stamp yet, this run will deploy"
           if gh release download "$STORE_RELEASE" \
                --pattern 'statcast_clean_2026.rds' --dir season-store --clobber; then
             ls -lh season-store
@@ -122,6 +136,12 @@ jobs:
           gh release upload "$STORE_RELEASE" \
             season-store/statcast_clean_2026.rds --clobber
           echo "store returned, $(du -h season-store/statcast_clean_2026.rds | cut -f1)"
+          # Only written when a deploy actually happened, so a skipped run leaves
+          # the previous stamp alone rather than resetting the gate.
+          if [ -f logs/deployed_through.txt ]; then
+            gh release upload "$STORE_RELEASE" logs/deployed_through.txt --clobber
+            echo "stamp returned: $(tr '\n' ' ' < logs/deployed_through.txt)"
+          fi
 
       # Kept whether or not the run passed, because a failed chain is exactly
       # when the log is worth reading.
