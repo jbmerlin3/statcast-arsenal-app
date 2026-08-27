@@ -40,6 +40,11 @@ on:
     # wake-up, so the constrained budget, shinyapps active hours, is untouched.
     # Runner minutes are the loose one: about 1,100 a month against the 2,000 a
     # free private repo gets.
+    # TEMPORARY probe: a one-off time a few minutes out, to answer a question
+    # three missed attempts left open. Does GitHub's scheduler fire for this
+    # repo AT ALL, or was this morning a registration delay on a repo that was
+    # 12 hours old? Remove once answered.
+    - cron: '53 12 * * *'   # PROBE, delete me
     - cron: '15 10 * * *'   # 06:15 ET, the moment Savant reliably has last night
     - cron: '15 11 * * *'   # 07:15 ET
     - cron: '15 12 * * *'   # 08:15 ET, the last one before a 09:00 send
