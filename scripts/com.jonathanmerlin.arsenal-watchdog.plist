@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.jonathanmerlin.arsenal-watchdog</string>
+
+  <!-- /bin/bash rather than Rscript, unlike the chain agent: this script reads
+       nothing on disk except its own log, so the TCC reasoning that put Rscript
+       first in the chain's plist does not apply. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/jonathanmerlin/statcast-arsenal-app/scripts/watchdog.sh</string>
+  </array>
+
+  <!-- Hourly, not on a calendar. The question "is the live page stale" is worth
+       asking whenever this machine happens to be awake, not at fixed times it
+       might sleep through. StartInterval also fires once shortly after load,
+       so a laptop opened at noon gets checked at noon. -->
+  <key>StartInterval</key>
+  <integer>3600</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/jonathanmerlin/statcast-arsenal-app</string>
+
+  <!-- gh lives in /opt/homebrew/bin, which launchd's default PATH does not
+       include. Without this the staleness check works and the self-heal
+       silently cannot fire, which is the worst of both. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/jonathanmerlin/statcast-arsenal-app/logs/watchdog.out</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/jonathanmerlin/statcast-arsenal-app/logs/watchdog.err</string>
+</dict>
+</plist>
