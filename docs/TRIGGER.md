@@ -42,6 +42,20 @@ User-Agent:            statcast-arsenal-cron
 `User-Agent` is not optional. GitHub's API rejects requests without one, and
 some schedulers do not send a default.
 
+## LIVE as of 2026-08-27
+
+cron-job.org, job "pitcher arsenal", **daily 06:15 America/New_York**, POSTing
+the call above. Proven the same day: a test fire at 15:24:32 GMT produced a
+GitHub run stamped 2026-08-27T15:24:32Z, and GitHub returned
+`x-accepted-github-permissions: actions=write`, confirming the token carries
+exactly the one permission it needs and nothing more.
+
+06:15 Eastern is not arbitrary. The laptop chain ran at that time for a week and
+found Savant ready every morning. Earlier is not safer: if Savant has not posted
+yet the chain deliberately FAILS rather than shipping a gap, so a too-early
+trigger costs the whole morning. A second job later in the morning is cheap
+insurance, because the deploy stamp makes a redundant run skip the deploy.
+
 ## Setting it up
 
 **1. Make a token.** https://github.com/settings/personal-access-tokens/new
