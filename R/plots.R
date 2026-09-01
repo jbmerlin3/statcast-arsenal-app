@@ -83,9 +83,32 @@ plot_movement <- function(df, ref = NULL) {
     d <- df |> filter(pitch_type == pt)
     slice_sample(d, n = min(nrow(d), usage$k[usage$pitch_type == pt]))
   })
-  arm_angle_val <- round(mean(df$arm_angle, na.rm = TRUE), 1)
-  extension_val <- round(mean(df$release_extension, na.rm = TRUE), 1)
-  slope <- tan(arm_angle_val * pi / 180)
+  # mean(x, na.rm = TRUE) over an ALL-NA vector is NaN, not NA, and NaN pastes
+  # into a label as the literal text "NaN". Observed 2026-08-31: Clay Holmes over
+  # 2026-08-16 to 08-26 rendered "Arm Angle: NaN°".
+  #
+  # Not a Holmes problem and not a bug in the pull. Savant stopped publishing
+  # arm_angle on 2026-08-16 and every date since is 100% NA, against 0.3% before
+  # August. It is a derived pose metric and its backfill lags the pitch data. So
+  # ANY pitcher, in ANY window sitting entirely inside that gap, hits this.
+  #
+  # Same species as the NaN the arsenal table guards with pct_or_na(). This chart
+  # never got the equivalent, and it failed worse: the label showed a computer
+  # error, and slope = tan(NaN) silently dropped the dashed slot line too, so the
+  # chart lost a feature without saying anything.
+  mean_or_na <- function(x) { x <- x[!is.na(x)]; if (length(x)) mean(x) else NA_real_ }
+  arm_angle_val <- round(mean_or_na(df$arm_angle), 1)
+  extension_val <- round(mean_or_na(df$release_extension), 1)
+
+  # Drawn only when there is an angle to draw. A segment with a NaN slope
+  # disappears, which reads as "this pitcher has no slot" rather than "this
+  # number is not available yet".
+  has_slot <- is.finite(arm_angle_val)
+  slope <- if (has_slot) tan(arm_angle_val * pi / 180) else NA_real_
+  arm_label <- if (has_slot) paste0("Arm Angle: ", arm_angle_val, "\u00b0") else
+                 "Arm Angle: not yet published"
+  ext_label <- if (is.finite(extension_val)) paste0("Avg Extension: ", extension_val, " ft") else
+                 "Avg Extension: not available"
   # The dashed slot line runs out to the pitcher's arm side, so it mirrors for
   # a lefty.
   hand_sign <- if (df$p_throws[1] == "R") 1 else -1
@@ -99,9 +122,12 @@ plot_movement <- function(df, ref = NULL) {
   # pooled mean lands at a point neither hand throws.
   lg <- if (is.null(ref)) NULL else movement_ref(ref, pitch_order, df$p_throws[1])
 
-  g <- ggplot(mv, aes(hb, ivb, fill = pitch_type)) +
-    annotate("segment", x = hand_sign * 22, y = slope * 22, xend = 0, yend = 0,
-             linetype = "dashed", color = "black", linewidth = 0.9) +
+  g <- ggplot(mv, aes(hb, ivb, fill = pitch_type))
+  if (has_slot) {
+    g <- g + annotate("segment", x = hand_sign * 22, y = slope * 22, xend = 0, yend = 0,
+                      linetype = "dashed", color = "black", linewidth = 0.9)
+  }
+  g <- g +
     geom_hline(yintercept = 0, linewidth = 0.6) +
     geom_vline(xintercept = 0, linewidth = 0.6)
 
@@ -122,9 +148,9 @@ plot_movement <- function(df, ref = NULL) {
     geom_point(shape = 21, color = "white", stroke = 0.5, size = 5) +
     scale_fill_manual(values = pitch_colors) +
     coord_cartesian(xlim = c(-22, 22), ylim = c(-22, 22), clip = "off") +
-    annotate("label", x = -20, y = 24, label = paste0("Arm Angle: ", arm_angle_val, "°"),
+    annotate("label", x = -20, y = 24, label = arm_label,
              size = 4, fontface = "bold", fill = "white", label.size = 0.4, hjust = 0) +
-    annotate("label", x = 6, y = 24, label = paste0("Avg Extension: ", extension_val, " ft"),
+    annotate("label", x = 6, y = 24, label = ext_label,
              size = 4, fontface = "bold", fill = "white", label.size = 0.4, hjust = 0) +
     labs(x = "Horizontal Break (in)", y = "Induced Vertical Break (in)") +
     theme_minimal(base_size = 13) +

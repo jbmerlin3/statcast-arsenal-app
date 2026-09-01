@@ -46,6 +46,26 @@ pitcher_cells <- function(d, by_stand) {
       spin = mean(release_spin_rate, na.rm = TRUE),
       ext  = mean(release_extension, na.rm = TRUE),
 
+      # Release traits, added 2026-08-31 with the Characteristics tab split.
+      #
+      # vaa is derived in add_pitch_features() and arrives as a column, so this
+      # is a plain mean like every other line here. Raw, not residualised: see
+      # the note on the derivation in features.R.
+      vaa = mean(vaa, na.rm = TRUE),
+
+      rel_ht = mean(release_pos_z, na.rm = TRUE),
+
+      # Negated but NOT mirrored, unlike hb above. See the long note in
+      # tables.R: hb's sign varies within a hand and release side's does not, so
+      # mirroring release side deletes handedness and buys nothing.
+      #
+      # Nothing is lost by keeping the hands on opposite signs, because every
+      # cell in this reference is already keyed by p_throws: a righty is only
+      # ever ranked against righties, so the fold in pctile_fill() measures
+      # distance from the RIGHT-HANDED median either way. Reference and table
+      # must apply this identically or the percentile reads the wrong tail.
+      rel_side = -mean(release_pos_x, na.rm = TRUE),
+
       strike_pct = mean(type %in% c("S", "X"), na.rm = TRUE) * 100,
       csw_pct    = mean(description %in% c("called_strike", whiff_desc)) * 100,
       zone_pct   = mean(in_zone, na.rm = TRUE) * 100,

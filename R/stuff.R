@@ -21,7 +21,7 @@ library(tibble)
 #' FanGraphs and Savant do not use the same code set, and the mismatches are
 #' resolved here rather than silently anywhere else. `exact` is FALSE where a
 #' grade is filled from a non-matching label, which is what drives the automatic
-#' footnote in arsenal_gt(). Do not re-flag those by hand.
+#' footnote in traits_gt(). Do not re-flag those by hand.
 #'
 #' The many-to-many rows are deliberate. FanGraphs has no sweeper or slurve
 #' column, so its single SL grade has to cover Savant SL, ST, and SV, and the
@@ -49,7 +49,7 @@ FG_TO_SAVANT <- tribble(
 #' `path` is required and has no default. A default here has already caused
 #' real confusion: a stale file produced "No FanGraphs row" warnings that read
 #' like an MLBAM id mismatch. Make the caller name the export it means, and keep
-#' the export's date window visible by passing it to arsenal_gt(fg_window =).
+#' the export's date window visible by passing it to traits_gt(fg_window =).
 #'
 #' Filter the export to the same date window as the Statcast pull. A half season
 #' of Stuff+ next to full season rate stats is wrong in a way nothing on the

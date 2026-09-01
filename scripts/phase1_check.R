@@ -57,11 +57,49 @@ EXPECTED_COL_DIFFS <- list(
                       hb        = "arm-side normalised, so positive is arm side for both hands. The fixture pitcher is a LHP, so every hb flips sign against the original")
 )
 
+# Columns the new side ADDS to an artifact the original also produces. Separate
+# from EXPECTED_COL_DIFFS, which sanctions a column whose VALUES changed: these
+# have no counterpart to differ from, so "must actually differ" cannot be
+# asserted about them and pretending otherwise would be a sanction that checks
+# nothing.
+#
+# What IS asserted: the added set matches exactly, in both directions, and no
+# column was lost. Same discipline as the ADDED guard on the fixture above. An
+# accidental extra column fails here rather than being absorbed.
+EXPECTED_ADDED_COLS <- list(
+  arsenal_table_R = c("vaa", "ext", "rel_ht", "rel_side"),
+  arsenal_table_L = c("vaa", "ext", "rel_ht", "rel_side")
+)
+
+# Artifacts that exist on ONE side only, because the thing they render was
+# restructured rather than changed. The Characteristics tab split into two
+# tables on 2026-08-31, so arsenal_gt() has no successor to be compared against
+# one-for-one and its three artifacts retire here.
+#
+# Recorded rather than deleted, and asserted to be absent from the other side,
+# because the failure mode this file exists to prevent is a comparison quietly
+# ceasing to happen. Deleting three names from a list is invisible; this is not.
+#
+# The coverage those three provided did NOT evaporate. It moved to
+# tests/step3_null_identical.R, which byte-compares all six new renders against
+# a committed snapshot, and which is a stronger check anyway: it compares against
+# the CURRENT code rather than against a script that predates every deliberate
+# change already sanctioned above.
+OLD_ONLY <- c(
+  chars_gt_R        = "arsenal_gt() split into traits_gt() + results_gt() on 2026-08-31",
+  chars_gt_L        = "arsenal_gt() split into traits_gt() + results_gt() on 2026-08-31",
+  chars_gt_footnote = "arsenal_gt() split into traits_gt() + results_gt() on 2026-08-31"
+)
+NEW_ONLY <- c(
+  traits_gt_R        = "new renderer, no counterpart in the original script",
+  traits_gt_L        = "new renderer, no counterpart in the original script",
+  traits_gt_footnote = "new renderer, no counterpart in the original script",
+  results_gt_R       = "new renderer, no counterpart in the original script",
+  results_gt_L       = "new renderer, no counterpart in the original script"
+)
+
 EXPECTED_DIFFS <- c(
   plot_movement       = "set.seed(3) is a deliberate change from the original's 42, cosmetic subsample only",
-  arsenal_gt_R        = "source note now reports the FanGraphs export window",
-  arsenal_gt_L        = "source note now reports the FanGraphs export window",
-  arsenal_gt_footnote = "source note now reports the FanGraphs export window",
   plot_heatmap_R      = "deliberate presentation change: strip annotation 3.2 to 4.2, plus plot.margin and strip.text margin so the column labels stop clipping",
   plot_heatmap_L      = "deliberate presentation change: strip annotation 3.2 to 4.2, plus plot.margin and strip.text margin so the column labels stop clipping"
 )
@@ -160,7 +198,38 @@ message("Running R/ files ...");             new <- run_side("new")
 
 # ---- Compare -----------------------------------------------------------------
 
-stopifnot(identical(names(old), names(new)))
+# Each side-specific name must appear on ITS side and nowhere else. Checked in
+# both directions so a retired artifact cannot creep back under the same key and
+# a new one cannot silently vanish. Everything outside those two sets must still
+# line up exactly, which is the original assertion.
+stopifnot("an OLD_ONLY artifact is missing from the original side" =
+            all(names(OLD_ONLY) %in% names(old)),
+          "an OLD_ONLY artifact reappeared on the new side" =
+            !any(names(OLD_ONLY) %in% names(new)),
+          "a NEW_ONLY artifact is missing from the new side" =
+            all(names(NEW_ONLY) %in% names(new)),
+          "a NEW_ONLY artifact leaked into the original side" =
+            !any(names(NEW_ONLY) %in% names(old)))
+stopifnot("the two sides disagree outside the sanctioned one-sided artifacts" =
+            identical(setdiff(names(old), names(OLD_ONLY)),
+                      setdiff(names(new), names(NEW_ONLY))))
+
+# Compared names only. The one-sided artifacts are accounted for above and are
+# deliberately not compared to anything.
+old <- old[setdiff(names(old), names(OLD_ONLY))]
+new <- new[setdiff(names(new), names(NEW_ONLY))]
+
+# Added columns are verified for exact membership, then lifted out so the shared
+# columns can be compared. A mismatch here fails before any value comparison, so
+# a column added by accident cannot ride along inside a sanctioned artifact.
+for (nm in names(EXPECTED_ADDED_COLS)) {
+  added <- setdiff(names(new[[nm]]), names(old[[nm]]))
+  lost  <- setdiff(names(old[[nm]]), names(new[[nm]]))
+  stopifnot("an artifact gained a column that is not sanctioned in EXPECTED_ADDED_COLS" =
+              setequal(added, EXPECTED_ADDED_COLS[[nm]]),
+            "an artifact LOST a column, which is never sanctioned" = length(lost) == 0)
+  new[[nm]] <- new[[nm]][, setdiff(names(new[[nm]]), added), drop = FALSE]
+}
 
 # Columns sanctioned above are lifted out before the frames are compared, and
 # checked separately: each one MUST differ. A sanction that no longer describes
@@ -225,6 +294,11 @@ if (length(unexpected) == 0 && length(missing) == 0 && length(col_failures) == 0
   for (nm in names(EXPECTED_COL_DIFFS))
     for (col in names(EXPECTED_COL_DIFFS[[nm]]))
       cat("  ", nm, "$", col, ": ", EXPECTED_COL_DIFFS[[nm]][[col]], "\n", sep = "")
+  for (nm in names(EXPECTED_ADDED_COLS))
+    cat("  ", nm, " added: ", paste(EXPECTED_ADDED_COLS[[nm]], collapse = ", "), "\n", sep = "")
+  cat("\nOne-sided artifacts, not compared:\n")
+  for (nm in names(OLD_ONLY)) cat("  ", nm, " (original only): ", OLD_ONLY[[nm]], "\n", sep = "")
+  for (nm in names(NEW_ONLY)) cat("  ", nm, " (new only): ", NEW_ONLY[[nm]], "\n", sep = "")
   cat("\n")
 }
 

@@ -142,7 +142,13 @@ ui <- fluidPage(
                  helpText("The usage chart always shows both batter sides. ",
                           "The table below follows the Batter side selector."),
                  gt::gt_output("usage_table")),
-        tabPanel("Characteristics", gt::gt_output("chars_table")),
+        # Two tables, traits above results, from one arsenal_table() pass. The
+        # order is deliberate: what the pitch IS reads before what it DID, so a
+        # reader who stops after the first table has still learned the arsenal.
+        tabPanel("Characteristics",
+                 gt::gt_output("traits_table"),
+                 br(),
+                 gt::gt_output("results_table")),
         tabPanel("Heat Maps",
                  # Taller than the other outputs: facet_grid lays out three
                  # situations by however many pitch types the window holds, and
@@ -516,14 +522,37 @@ server <- function(input, output, session) {
   #
   # resolve_table() reads league_ref and the table, never app_data, so this
   # stays cheap enough to run on every input change.
-  output$chars_table <- gt::render_gt({
+  # One computation, two projections. arsenal_table() and arsenal_denoms() both
+  # group over the window, so calling them once per table would double that work
+  # on every input change for two tables that are by construction consistent.
+  # This reactive is also the only thing keeping them consistent: split the
+  # computation and a future edit to one table's filter silently desynchronises
+  # the pitch counts between them.
+  chars_parts <- reactive({
     d   <- pitcher_data()
     tbl <- arsenal_table(d, input$hand, stuff_all())
-    ctx <- resolve_table(tbl, arsenal_denoms(d, input$hand), league_ref,
-                         d$p_throws[1], input$hand)
-    arsenal_gt(tbl, input$hand,
-               fg_window = if (is.null(FG_EXPORT)) NULL else FG_EXPORT$label,
-               ref = ctx)
+    list(tbl = tbl, denoms = arsenal_denoms(d, input$hand),
+         p_throws = d$p_throws[1])
+  })
+
+  # resolve_table() is called separately per table rather than once and split,
+  # because it narrows ARSENAL_METRIC_COLS by the columns present in the frame
+  # it is handed. Resolving the wide table and slicing the cells afterwards
+  # would work today and would break the first time a column name appears in one
+  # table and not the other.
+  output$traits_table <- gt::render_gt({
+    p   <- chars_parts()
+    tbl <- traits_tbl(p$tbl)
+    traits_gt(tbl, input$hand,
+              fg_window = if (is.null(FG_EXPORT)) NULL else FG_EXPORT$label,
+              ref = resolve_table(tbl, p$denoms, league_ref, p$p_throws, input$hand))
+  })
+
+  output$results_table <- gt::render_gt({
+    p   <- chars_parts()
+    tbl <- results_tbl(p$tbl)
+    results_gt(tbl, input$hand,
+               ref = resolve_table(tbl, p$denoms, league_ref, p$p_throws, input$hand))
   })
 }
 

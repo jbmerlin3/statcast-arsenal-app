@@ -304,13 +304,20 @@ stuff_tbl <- tibble::tibble(
   pitch_type = factor(c("FF", "SL", "CH", "CU", "SI"),
                       levels = c("FF", "SL", "CH", "CU", "SI")),
   count = 100L, pitch_pct = 20, velocity = 93, ivb = 15, hb = 5, spin = 2300,
+  # The release traits the 2026-08-31 split added. Present but never asserted on
+  # here: this block is about the Stuff+ ramp. They are carried because this
+  # tibble stands in for arsenal_table() output, and a stand-in missing columns
+  # the real thing always has is how a renderer grows a dependency nobody tests.
+  vaa = -5.0, ext = 6.5, rel_ht = 5.9, rel_side = 2.0,
   strike_pct = 60, whiff_pct = 25, csw_pct = 28, zone_pct = 50, chase_pct = 30,
   xwoba = 0.310,
   # 75 and 125 are the ends of the span; 40 and 160 are outside it and must
   # clamp to the same two colours rather than running off or wrapping.
   stuff_plus = c(100, 85, 115, 40, 160),
   fg_exact = TRUE)
-sh <- as.character(gt::as_raw_html(arsenal_gt(stuff_tbl, "All")))
+# Stuff+ is a TRAIT after the split, so the shading it is asserting on renders
+# through traits_gt(). Still read out of the rendered page, not recomputed.
+sh <- as.character(gt::as_raw_html(traits_gt(traits_tbl(stuff_tbl), "All")))
 stuff_bg <- regmatches(sh, gregexpr('<td headers="stuff_plus"[^>]*>', sh))[[1]]
 hex_of <- function(td) toupper(sub('.*background-color: (#[0-9A-Fa-f]{6}).*', "\\1", td))
 got <- vapply(stuff_bg, hex_of, character(1), USE.NAMES = FALSE)
@@ -481,6 +488,10 @@ ft_frame <- tibble::tibble(
   type         = c(rep("S", 8), rep("X", 2), rep("B", 4)),
   in_zone      = c(rep(1, 8), 1, 1, rep(0, 4)),
   release_speed = 85, ivb = 2, hb = 3, release_spin_rate = 2400,
+  # The release columns the 2026-08-31 split added. Constant across every row on
+  # purpose: this frame exists to exercise the whiff and CSW denominators, and a constant keeps
+  # those means from varying while the rows under test do.
+  vaa = -7.0, release_extension = 6.4, release_pos_x = -1.9, release_pos_z = 5.9,
   woba_denom   = c(rep(NA, 8), 1, 1, rep(NA, 4)),
   estimated_woba_using_speedangle = c(rep(NA, 8), 0.3, 0.2, rep(NA, 4)))
 ft_tb <- arsenal_table(ft_frame, "All",

@@ -46,7 +46,7 @@ statcast-arsenal-app/
     data.R                  # load app_data.rds, league_ref.rds, player_index
     features.R              # build_pitch_level(), pl_trim column contract
     plots.R                 # plot_movement, plot_velo, plot_usage, plot_heatmap
-    tables.R                # arsenal_table, arsenal_gt, count_usage_tbl, count_usage_gt
+    tables.R                # arsenal_table, traits_gt, results_gt, count_usage_tbl, count_usage_gt
     stuff.R                 # load_fg_stuff() and the stuff_all contract
     league.R                # league_ref lookup + percentile helpers
     mod_*.R                 # Shiny modules, one per tab. NOT YET, see below
@@ -119,7 +119,7 @@ the same pitch type and the same pitcher hand, the fill finally means what it
 looks like. That is worth keeping by construction rather than by a note.
 
 Two other things there are not free to change. The gt styles are BATCHED by
-distinct look per column rather than applied per cell the way `arsenal_gt()`
+distinct look per column rather than applied per cell the way `apply_league_ref()`
 does: measured on 457 righty four-seams, per-cell took 44.7 s and batched takes
 5.5 s. And the table is capped at `SEARCH_MAX_ROWS`, applied BEFORE
 `resolve_search()`, since resolving context is the expensive half and capping
@@ -241,7 +241,7 @@ Practical handling of the CSV, which is a manual export and goes stale silently.
   means the export predates the callup, not an ID problem. Check `nrow()` on a
   manual filter of the raw CSV before assuming
 - `FG_TO_SAVANT` handles code mismatches. FanGraphs SL absorbs Savant ST and SV,
-  FanGraphs FO maps to Savant FS. When `fg_exact == FALSE`, `arsenal_gt()`
+  FanGraphs FO maps to Savant FS. When `fg_exact == FALSE`, `traits_gt()`
   auto-adds the footnote. Do not manually re-flag these
 
 ## Hard rules
@@ -374,6 +374,58 @@ correct code?** Both halves. Entry 4 is the second half failing.
   which never drops `p_throws` for this reason.
 - IP is not derivable from pitch-level data. `events` is one row per PA, so a
   double play reads as one out. Pull IP from FanGraphs or `mlb_pitcher_game_logs()`.
+
+## Fact-checking the traits columns
+
+`scripts/verify_traits.R` (added 2026-08-31). The rest of the suite compares the
+app to an older app or to a snapshot of itself, so none of it can catch a number
+that has been wrong since the day it landed. Three tiers, and they catch
+different things:
+
+- **A. Row-level recompute.** Every derived column, all 589k pitches, against the
+  store's raw inputs, keyed on game_pk/at_bat/pitch so a reorder cannot make it
+  pass. Catches wrong columns, dropped signs, filter drift. Cannot catch a wrong
+  definition, since both sides use ours.
+- **B. Aggregate recompute.** Table values against an independently written
+  groupby, MAE over many pitchers. **Apply `reconcile_pitch_codes()` on both
+  sides** — leaving it off reports phantom failures, because `shape_arsenal()`
+  maps CS and KC into CU before grouping.
+- **C. Invariants and physics.** The only tier that can catch a wrong definition
+  without an external source, and **the only check VAA has at all.**
+
+**Almost nothing here has external ground truth.** `scripts/verify_savant.R`
+diffs the one column that does: arm angle, MAE 0.13 degrees over 110 pitchers.
+Since we ship Savant's own `arm_angle` and average it, that validates our
+population, window and aggregation, not any definition of ours. Extension is
+NOT on the custom leaderboard under any of five names tried, release position
+is not served at a usable grain, and VAA is not published anywhere at all.
+
+**The custom leaderboard echoes any selection name back as a column header and
+fills it with NA when the field is not real.** A careless read looks like a
+successful fetch and yields a perfect MAE over zero comparisons. Check for
+all-NA before trusting a result from that endpoint.
+
+Writing tier C took four passes, and every failed invariant was a correct number
+against a wrong expectation. Recorded so they are not rediscovered:
+
+- **Tyler Rogers releases at 1.26 ft.** A 3 ft floor calls the league's most
+  distinctive release point a data error. Bound release traits by what arms
+  actually do.
+- **Eephus pitches reach −34°.** At 30 mph that is right. A flat VAA bound is
+  either wrong or useless; gate it on velocity.
+- **`plate_z` goes negative.** Statcast extrapolates to the plate plane whether
+  or not the ball arrived in the air, so a spiked curveball reports −2.5 ft and
+  −16°. Both correct. Gate bounce checks separately from lob checks so they
+  partition instead of overlapping.
+- **Raw `cor(ivb, vaa)` on four-seams is 0.05**, and that is not a finding. VAA
+  is dominated by location (r = 0.89) and by release height, which runs 1.26 to
+  7.12 ft across the league. Control for plate height, release height and
+  velocity and the partial is **0.986**, which is the physics: with endpoints and
+  flight time fixed, `vz_final = dz/t + 0.5·az·t` rises with ride. That is an
+  identity, so the bar is 0.9, not the 0.4 a tendency would earn.
+
+An invariant that fails on correct data is worse than no invariant: it teaches
+the reader to skip the output.
 
 ## Validating a rate against Savant
 
@@ -519,12 +571,12 @@ Both of these were found by probing gt, not by reading it, and both produce a
 wrong page rather than an error.
 
 **`fmt()` does not compound. The last call on a column wins, and it receives the
-raw values.** Stacking a marker `fmt` on top of `arsenal_gt()`'s xwOBA `fmt`
+raw values.** Stacking a marker `fmt` on top of `results_gt()`'s xwOBA `fmt`
 silently drops the leading-zero rule and renders `0.32` where the table has
 always shown `.320`. A column needing both a format and a suffix needs them in
 one `fns`, not two calls.
 
-**The later `tab_style()` wins.** `arsenal_gt()` ends by folding one pitch-colour
+**The later `tab_style()` wins.** `style_pitch_codes()` folds one pitch-colour
 fill per pitch type across every body cell, so percentile fills must be applied
 **after** that reduce. Applied before, the pitch colour silently overwrites them
 and the context strip renders as the identity block.
@@ -535,6 +587,88 @@ Strip that one token and the render is deterministic. That is what
 `gt_spec()` in `tests/phase1_artifacts.R` does, and why it compares the rendered
 page rather than the internal spec.
 
+
+## The Characteristics tab is two tables, and one of them grades uniqueness
+
+Split 2026-08-31. `arsenal_table()` still computes every column in ONE pass;
+`traits_tbl()` and `results_tbl()` project it. Do not give either projection its
+own `summarise` — the tables must share denominators or the pitch counts drift
+between two tables sitting on the same page.
+
+Which column goes where is `TRAITS_COLS` / `RESULTS_COLS` in `tables.R`, not a
+renderer. Stuff+ is a trait: it grades shape off release, movement and velocity,
+so it belongs beside its inputs rather than beside the outcomes it predicts.
+
+The traits table carries **no footnotes**, by request. `apply_league_ref(notes =
+FALSE)` suppresses the column notes, the state notes, and the dagger glyphs those
+notes are the legend for; the below-floor `(n)` stays, since it is a denominator
+and reads without a legend. Three things are no longer visible on that table and
+are not recoverable from it: whether Stuff+ is stale (`fg_window` is still in the
+signature but unused), that a sweeper's Stuff+ is really a slider's (`fg_exact`
+still carries it), and whether a percentile came from a coarser league cut.
+`tests/step3_render.R` guards those states instead, and its `pick()` is
+glyph-aware so a marker probe cannot land on a table that draws no markers.
+
+Column widths are set per renderer through `gt_chassis(col_px =)` so the two
+stacked tables finish about the same width. The width must be baked into the
+`cols_width()` formula as a literal: gt evaluates that formula lazily in its own
+environment, so both `px(col_px)` and an injected `!!wid` fail at render time.
+
+`resolve_table()` narrows `ARSENAL_METRIC_COLS` by the columns present in the
+frame it is handed, which is what makes one context resolver serve both tables.
+**Resolve each table separately.** Resolving the wide table and slicing its cells
+afterwards works today and breaks the first time a column name appears in one
+table and not the other. This is not hypothetical: doing it that way passed three
+assertions in `tests/step3_render.R` by looking up a results column in a traits
+page, finding nothing, and comparing `FALSE` to `FALSE`.
+
+**VAA is derived, not pulled.** Savant ships no VAA column and has no name for
+it; all 120 columns of the season store were checked. `add_pitch_features()`
+computes it from the trajectory primitives at a fixed 17/12 ft plane, and it is
+what ships so the seven primitives do not have to. Same formula as
+`sc_add_trajectory()` in `02_StuffPlus/scripts/stuffv4.R`, kept in step by hand.
+
+It is **raw**, not residualised on `plate_z`, which is a deliberate choice rather
+than an oversight. The residual already exists: `sc_fit_vaa_adj()` fits it per
+pitch type on a quadratic and its output is priced into the Stuff+ column two
+cells away. The raw angle is the scouting datapoint, the residual is the grade,
+and both are on the page answering different questions.
+
+VAA's direction lives in `PITCH_SHAPE_DIRECTION`, not `METRIC_SPEC`, and tracks
+`ivb` code for code. Flat is the point on a four-seam and steep is the point on a
+curveball, so a blanket rule paints a flat sinker as a plus. Reading
+`METRIC_SPEC$direction` for `vaa`, `ivb` or `hb` is a bug.
+
+**`extreme` is a fourth direction**, used by `rel_ht` and `rel_side` only. It
+folds the percentile to `2 * |p - 50|`, the share of the league closer to the
+median than this pitcher, so both tails fill the same. The premise is a scouting
+one: a release trait is not better for being high or low, it is better for being
+unlike what the hitter has been timing. Two consequences:
+
+- **Extension is NOT extreme** and stays `high`. Short extension is not a weapon,
+  it is just less perceived velocity.
+- **Folding discards direction.** A 96th-percentile release height and a 4th both
+  render the identical fill. Only the printed value says which tail, so an
+  `extreme` metric must never be rendered without its number beside it.
+
+`rel_side` is **negated but NOT arm-side mirrored**, deliberately unlike `hb`.
+It was mirrored briefly on 2026-08-31 and reverted the same day. `hb`'s mirror
+earns its keep because `hb`'s sign varies WITHIN a hand — a righty's slider runs
+glove side, his sinker arm side — so the raw sign means two things and
+normalising is what makes one column readable. Release side never crosses the
+midline, so its sign is handedness and nothing else; mirroring it deleted the
+only thing the sign carried and then spent a footnote saying so.
+
+The negation stays: Savant measures `release_pos_x` from the catcher's view,
+positive toward first base, putting a LHP near +2.1 and a RHP near -1.9.
+Negating reads positive toward third base, so **a righty is positive and a lefty
+negative**. `arsenal_table()` and `build_league_ref.R` apply the identical
+expression and must not drift, or the percentile reads the wrong tail.
+
+Nothing is lost by keeping the hands on opposite signs: every `league_ref` cell
+is keyed by `p_throws`, so a righty is only ever ranked against righties. And
+because the fold is `2 * |p - 50|`, reversing a within-hand rank leaves the fill
+invariant — removing the mirror changed the printed numbers and not one colour.
 
 ## The percentile answers a narrower question than it looks like
 
