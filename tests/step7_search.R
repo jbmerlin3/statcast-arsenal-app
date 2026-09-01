@@ -36,13 +36,17 @@ expect <- function(l, got, want) if (!identical(got, want))
 
 # One pitcher's worth of identical pitches. Traits are exact, so every boundary
 # below is a written-out number and not a quantile of live data.
+# rel_ht joined SEARCH_TRAITS on 2026-08-31. Defaulted like ext and spin so the
+# boundary cases below keep asserting what they were written to assert: a
+# constant cannot move a range test on velocity or HB.
 arm <- function(id, name, throws, pt, k, velo, ivb, hb, stand = "R",
-                spin = 2300, ext = 6.5, desc = "foul", iz = 1, wd = NA_real_,
-                team = "AAA") {
+                spin = 2300, ext = 6.5, rel_ht = 5.9, desc = "foul", iz = 1,
+                wd = NA_real_, team = "AAA") {
   tibble::tibble(
     pitcher = id, player_name = name, p_throws = throws, pitch_type = pt,
     stand = rep(stand, k), release_speed = velo, ivb = ivb, hb = hb,
-    release_spin_rate = spin, release_extension = ext, pitch_team = rep(team, k),
+    release_spin_rate = spin, release_extension = ext, release_pos_z = rel_ht,
+    pitch_team = rep(team, k),
     description = rep(desc, k), in_zone = iz, woba_denom = wd,
     estimated_woba_using_speedangle = NA_real_)
 }

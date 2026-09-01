@@ -70,6 +70,9 @@ search_aggregate <- function(df, hand, team = "All") {
       hb        = mean(hb,                na.rm = TRUE),
       spin      = mean(release_spin_rate, na.rm = TRUE),
       ext       = mean(release_extension, na.rm = TRUE),
+      # Raw release height. No sign convention and no normalisation, unlike hb
+      # two lines up, because height has no arm side to mirror.
+      rel_ht    = mean(release_pos_z,      na.rm = TRUE),
       whiff_pct = pct_or_na(sum(description %in% whiff_desc),
                             sum(description %in% swing_only)),
       chase_pct = pct_or_na(sum(in_zone == 0 & description %in% swing_only),
@@ -270,7 +273,7 @@ search_gt <- function(tbl, pitch_type, p_throws, hand, ref = NULL,
   # span. The arrow marks the column in force, so the table says how it is
   # ordered instead of leaving the reader to infer it.
   headers <- c(player_name = "PITCHER", team = "TEAM", pitches = "N", velo = "VELO",
-               ivb = "IVB", hb = "HB", spin = "SPIN", ext = "EXT",
+               ivb = "IVB", hb = "HB", spin = "SPIN", ext = "EXT", rel_ht = "REL HT",
                whiff_pct = "WHIFF%", chase_pct = "CHASE%", xwoba = "xwOBA")
   labs <- lapply(names(headers), function(cl) {
     arrow <- if (identical(cl, sort_by)) if (desc) " ▾" else " ▴" else ""
@@ -281,7 +284,7 @@ search_gt <- function(tbl, pitch_type, p_throws, hand, ref = NULL,
   names(labs) <- names(headers)
 
   g <- tbl |>
-    dplyr::select(player_name, team, pitches, velo, ivb, hb, spin, ext,
+    dplyr::select(player_name, team, pitches, velo, ivb, hb, spin, ext, rel_ht,
                   whiff_pct, chase_pct, xwoba) |>
     gt() |>
     cols_label(.list = labs) |>
@@ -290,6 +293,9 @@ search_gt <- function(tbl, pitch_type, p_throws, hand, ref = NULL,
     cols_align("left", columns = player_name) |>
     cols_width(player_name ~ px(170), team ~ px(64), everything() ~ px(78)) |>
     fmt_number(columns = c(velo, ivb, hb, ext), decimals = 1) |>
+    # Two decimals, matching the traits table and the slider label. See the
+    # note on SEARCH_TRAITS: one decimal buckets a third of the league.
+    fmt_number(columns = c(rel_ht), decimals = 2) |>
     fmt_number(columns = c(spin), decimals = 0) |>
     fmt_number(columns = c(whiff_pct, chase_pct), decimals = 1) |>
     # Leading zero dropped, the usual convention for a rate bounded below one,
