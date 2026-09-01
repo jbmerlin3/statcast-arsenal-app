@@ -236,7 +236,7 @@ resolve_search <- function(tbl, ref, p_throws, stand, pitch_type) {
 #' Render a search result as a gt
 #'
 #' Rows are pitchers and the pitch type is fixed, which flips two things around
-#' from arsenal_gt(). There is no per-row pitch colour, because a row is not a
+#' from traits_gt(). There is no per-row pitch colour, because a row is not a
 #' pitch type, so the percentile fills own the body outright and the pitch
 #' identity lives in the header instead. And the first column is a name rather
 #' than a code, so it carries the click.
@@ -247,7 +247,7 @@ resolve_search <- function(tbl, ref, p_throws, stand, pitch_type) {
 #' that is gt everywhere and add a package to renv.lock and to the deploy
 #' manifest, to buy a row selection this does in one line.
 #'
-#' text_transform rather than fmt for the same reason arsenal_gt() uses it: fmt
+#' text_transform rather than fmt for the same reason apply_league_ref() uses it: fmt
 #' does not compound, so a second fmt on a column would silently win and drop
 #' the formatting already applied.
 search_gt <- function(tbl, pitch_type, p_throws, hand, ref = NULL,
@@ -293,7 +293,7 @@ search_gt <- function(tbl, pitch_type, p_throws, hand, ref = NULL,
     fmt_number(columns = c(spin), decimals = 0) |>
     fmt_number(columns = c(whiff_pct, chase_pct), decimals = 1) |>
     # Leading zero dropped, the usual convention for a rate bounded below one,
-    # matching arsenal_gt().
+    # matching the characteristics tables.
     fmt(columns = xwoba, fns = \(x) sub("^0", "", sprintf("%.3f", x))) |>
     tab_style(cell_borders(sides = c("top", "bottom"), color = "black", weight = px(2)),
               cells_column_labels()) |>
@@ -310,10 +310,10 @@ search_gt <- function(tbl, pitch_type, p_throws, hand, ref = NULL,
   if (!is.null(ref)) {
     # After every other style, never before. The later tab_style wins in gt, so
     # anything applied afterwards would overwrite the percentile fills. Same
-    # ordering rule as arsenal_gt(), for the same reason.
+    # ordering rule as style_pitch_codes(), for the same reason.
     #
     # BATCHED by style, one tab_style per distinct look per column, rather than
-    # arsenal_gt()'s one per cell. An arsenal table has about 50 cells and the
+    # apply_league_ref()'s one per cell. An arsenal table has about 50 cells and the
     # difference does not show; a search table has one row per pitcher, and the
     # per-cell version was measured at 44.7 s and 2.7 MB of HTML on 457 righty
     # four-seams. Grouping identical looks takes the same table to 1.4 s.

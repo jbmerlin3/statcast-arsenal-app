@@ -149,17 +149,39 @@ lg_eligible <- function(metric, counts) {
 #' "low" inverts the percentile, not the palette. Same scale, same reading, so a
 #' plus pitch is the same colour whichever direction its metric runs.
 #'
+#' "extreme" FOLDS the percentile instead of inverting it: 2 * |p - 50|, which is
+#' the share of the league sitting closer to the median than this pitcher does.
+#' Added 2026-08-31 for the release traits, where the question is not whether a
+#' number is high but whether it is unusual. A 96th-percentile release height and
+#' a 4th both fold to 92 and fill identically, which is the intent.
+#'
+#' Folding a rank rather than measuring a distance is the choice worth naming
+#' here, because MAGNITUDE_METRICS exists for precisely the opposite call on ivb
+#' and hb. It goes the other way for release because the argument that forced
+#' magnitude there does not hold: a cutter's IVB spread is genuinely tighter than
+#' a curveball's, so a rank means different things across those rows, while
+#' release height is the same slot measured the same way whatever the pitch is
+#' labelled. With the spread stable across rows a rank IS comparable, and it has
+#' the better sentence attached: "farther from average than 92% of the league"
+#' needs no span constant to be tuned and no units to be explained.
+#'
+#' Note what folding costs, since the palette cannot say it: direction is gone.
+#' Only the raw value printed in the cell tells the reader which tail they are
+#' looking at, so an extreme metric must never be rendered without its number.
+#'
 #' Vectorised over `pctile`, since a metric has one direction and a column has
 #' many values. NA in, NA out.
 pctile_fill <- function(pctile, direction) {
   spec <- switch(direction,
-    high    = list(stops = PCTILE_PAL_DIVERGING, invert = FALSE),
-    low     = list(stops = PCTILE_PAL_DIVERGING, invert = TRUE),
-    neutral = list(stops = PCTILE_PAL_NEUTRAL,   invert = FALSE),
+    high    = list(stops = PCTILE_PAL_DIVERGING, invert = FALSE, fold = FALSE),
+    low     = list(stops = PCTILE_PAL_DIVERGING, invert = TRUE,  fold = FALSE),
+    extreme = list(stops = PCTILE_PAL_DIVERGING, invert = FALSE, fold = TRUE),
+    neutral = list(stops = PCTILE_PAL_NEUTRAL,   invert = FALSE, fold = FALSE),
     stop("unknown direction: ", direction,
-         ". Expected high, low, or neutral.", call. = FALSE))
+         ". Expected high, low, extreme, or neutral.", call. = FALSE))
 
   p   <- if (spec$invert) 100 - pctile else pctile
+  if (spec$fold) p <- 2 * abs(p - 50)
   out <- rep(NA_character_, length(p))
   ok  <- is.finite(p)
   if (any(ok)) {
@@ -308,7 +330,7 @@ resolve_column <- function(ref, values, metric, pitch_types, p_throws, stand,
 
 #' Resolve a whole arsenal table: per-cell styling plus the table's note lines
 #'
-#' The grain tables.R renders at. resolve_column() would leave arsenal_gt()
+#' The grain tables.R renders at. resolve_column() would leave the renderers
 #' holding ten note vectors and doing the union, dedupe and ordering itself,
 #' which is the same aggregation this pair exists to keep off the table side,
 #' reappearing one level up.

@@ -169,19 +169,19 @@ KDE_MIN_N <- 15
 # silently. ext is high: more extension is less reaction time. usage_pct is
 # neutral, it is genuinely directionless.
 METRIC_SPEC <- data.frame(
-  metric = c("velo", "ivb", "hb", "spin", "ext",
+  metric = c("velo", "ivb", "hb", "vaa", "spin", "ext", "rel_ht", "rel_side",
              "strike_pct", "csw_pct", "zone_pct", "usage_pct",
              "whiff_pct", "chase_pct", "xwoba"),
-  kind   = c(rep("mean", 5), rep("rate", 7)),
+  kind   = c(rep("mean", 8), rep("rate", 7)),
   # usage_pct's denominator is the CUT's total pitches, not the pitch type's.
   # It is a share: its precision comes from how many pitches the share was
   # measured over, not from how many were of this type. Flooring it on the pitch
   # type's own count greys a well-measured 30% share because the pitch is
   # uncommon, which is backwards.
-  denom  = c(rep("pitches", 5),
+  denom  = c(rep("pitches", 8),
              "pitches", "pitches", "pitches", "cut_pitches",
              "swings", "oz", "pa"),
-  floor  = c(rep(25, 5),
+  floor  = c(rep(25, 8),
              rep(50, 4),
              50, 50, 50),
   # NOTE: the direction here is NOT used for ivb or hb. Those two are looked up
@@ -194,9 +194,26 @@ METRIC_SPEC <- data.frame(
   # zone_pct is treated as high-is-good outright, which is a simplification: a
   # pitcher can live in the zone and get hit.
   #
-  # usage_pct stays neutral, and is now the only metric that is. A pitch type's
-  # share of an arsenal has no good end at all.
-  direction = c("high", "high", "high", "high", "high",
+  # usage_pct stays neutral. A pitch type's share of an arsenal has no good end
+  # at all.
+  #
+  # rel_ht and rel_side are "extreme", added 2026-08-31 and the only two that
+  # use it. The premise is a scouting one rather than a statistical one: a
+  # release trait is not better for being high or low, it is better for being
+  # UNLIKE the release the hitter has been timing all week. Very over the top and
+  # very low both play; league-average does not. So the fill runs off distance
+  # from the median in either direction, not off rank. See pctile_fill().
+  #
+  # Extension is deliberately NOT extreme and stays "high". Short extension is
+  # not a weapon, it is just less perceived velocity, and it is the one release
+  # measurement with an unambiguous good end.
+  #
+  # vaa's entry here is NEVER read, exactly like ivb's and hb's. Flat is the
+  # point on a four-seam and steep is the point on a curveball, so its direction
+  # is a property of the pitch shape and lives in PITCH_SHAPE_DIRECTION. The
+  # value below is a placeholder that keeps the frame rectangular.
+  direction = c("high", "high", "high", "high", "high", "high",
+                "extreme", "extreme",
                 "high", "high", "high", "neutral",
                 "high", "high", "low"),
   stringsAsFactors = FALSE
@@ -221,7 +238,22 @@ METRIC_SPEC <- data.frame(
 METRIC_NOTES <- c(
   hb = paste("HB is arm-side normalized: positive is arm-side run for both",
              "hands, so a lefty and a righty with the same shape read the same.",
-             "The movement chart keeps the true direction instead.")
+             "The movement chart keeps the true direction instead."),
+  # NOT arm-side normalized, unlike hb, and this note says what the sign means
+  # rather than explaining a normalisation away. The earlier version mirrored it
+  # and then had to footnote that positive meant arm side, which is the only
+  # thing release side can mean: the sign was pure handedness and normalising it
+  # threw that away. See the note in tables.R.
+  rel_side = paste("Rel Side is measured from the middle of the rubber,",
+                   "positive toward third base, so a righty reads positive and",
+                   "a lefty negative. Percentiles are within hand, so each is",
+                   "ranked against arms on his own side."),
+  # One note, on rel_side rather than on both, because two identical footnotes
+  # under adjacent columns reads as a rendering bug. rel_ht is the same scale.
+  rel_ht = paste("Rel Ht and Rel Side are shaded by how FAR from league average",
+                 "they sit, not by which way. Both tails fill the same, because",
+                 "an unusual slot is the thing that plays; league-average is the",
+                 "pale end. The value beside the shading says which way.")
 )
 
 # Arsenal table column name to METRIC_SPEC metric name. Only `velocity` actually
@@ -261,6 +293,22 @@ PITCH_SHAPE_DIRECTION <- list(
   hb  = c(FF = "high", SI = "high", CH = "high", FS = "high",
           FC = "low",  SL = "low",  ST = "low",  CU = "low",
           KC = "low",  SV = "low",
+          KN = "neutral"),
+  # vaa added 2026-08-31, and it tracks ivb code for code, which is not a
+  # copy-paste. VAA is the angle the pitch arrives at and IVB is the ride that
+  # flattens it, so a pitch that wants ride wants a flat approach by the same
+  # argument. "high" here means LESS NEGATIVE: league VAA runs about -4.7 on a
+  # four-seam and -9.6 on a curve, so a flat four-seam is the high end of a
+  # negative scale.
+  #
+  # A blanket high-is-good rule would paint a flat sinker as a plus, which is
+  # the same error as painting Webb's changeup red for dropping. A blanket
+  # "extreme" rule would do it too, which is why vaa is not graded on uniqueness
+  # the way the release traits are: where the ball comes FROM has no right
+  # answer, and how it arrives very much does.
+  vaa = c(FF = "high", FC = "high",
+          SI = "low",  CH = "low", FS = "low", SL = "low",
+          ST = "low",  CU = "low", KC = "low", SV = "low",
           KN = "neutral")
 )
 
@@ -290,11 +338,32 @@ metric_direction <- function(metric, pitch_type) {
 }
 
 
+#' Table column name to METRIC_SPEC metric name
+#'
+#' Spans BOTH tables since the Characteristics tab split on 2026-08-31, and is
+#' deliberately still one map rather than two. resolve_table() already narrows it
+#' with `names(ARSENAL_METRIC_COLS) %in% names(tbl)`, so each table resolves
+#' exactly the columns it actually has and a second map would only be a second
+#' place for a key to go stale.
+#'
+#' Only `velocity` differs from its metric name, which is the whole reason this
+#' has to exist rather than being assumed: one silent mismatch drops a column's
+#' context with no error.
+#'
+#' PITCH, COUNT and PITCH% are absent from both tables on purpose. They are the
+#' identity block, and Stuff+ is absent because league_ref carries no Stuff+
+#' metric; it shades itself off the 100 anchor in traits_gt().
 ARSENAL_METRIC_COLS <- c(
+  # Traits
   velocity   = "velo",
   ivb        = "ivb",
   hb         = "hb",
+  vaa        = "vaa",
   spin       = "spin",
+  ext        = "ext",
+  rel_ht     = "rel_ht",
+  rel_side   = "rel_side",
+  # Results
   strike_pct = "strike_pct",
   whiff_pct  = "whiff_pct",
   csw_pct    = "csw_pct",

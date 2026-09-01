@@ -61,6 +61,35 @@ add_pitch_features <- function(df) {
       in_zone = in_zone_flag(plate_x, plate_z, sz_bot, sz_top)
     )
 
+  # VAA, the vertical angle the ball crosses the front of the plate at, in
+  # degrees and always negative. Savant ships no such column and has no name for
+  # it: all 120 columns of the season store were checked on 2026-08-31. It is
+  # derived from the trajectory primitives, which live in the season store and
+  # NOT in app_data, so this takes the pitch_team pattern below rather than
+  # in_zone's. Deriving it here is exactly what lets the seven primitives stay
+  # off the deploy artifact while the one number that reads them ships.
+  #
+  # Same formula as sc_add_trajectory() in 02_StuffPlus/scripts/stuffv4.R. Kept
+  # in step by hand, which is tolerable only because it is four lines of physics
+  # with no fitted constant in it. If either side gains a constant, this becomes
+  # a shared file instead.
+  #
+  # yf is the front of the plate, 17/12 ft. A FIXED reference plane, so this is a
+  # property of the pitch rather than of where it ended up. It still moves with
+  # location through the trajectory, which is the known confound: the same
+  # fastball crosses flatter at the top of the zone than at the knees.
+  #
+  # Deliberately NOT residualised on plate_z here. sc_fit_vaa_adj() in stuffv4.R
+  # does that, per pitch type on a quadratic, and its output is already priced
+  # into the Stuff+ column that sits two cells away in the traits table. The raw
+  # angle is the scouting datapoint; the residual is the grade. Both are on the
+  # page and they are answering different questions.
+  if (all(c("vy0", "vz0", "ay", "az") %in% names(df))) {
+    yf  <- 17 / 12
+    tf  <- (-df$vy0 - sqrt(df$vy0^2 - 2 * df$ay * (50 - yf))) / df$ay
+    df$vaa <- atan((df$vz0 + df$az * tf) / abs(df$vy0 + df$ay * tf)) * 180 / pi
+  }
+
   # The pitching team, derived rather than looked up. Top of the inning means
   # the away team is batting, so the HOME team is on the mound. Resolves every
   # row of the 2026 store, 572,181 of them, across 30 teams.
@@ -238,7 +267,7 @@ PL_TRIM_COLS <- c(
   "stand", "p_throws", "balls", "strikes",
   "release_speed", "release_extension", "release_spin_rate", "pfx_x", "pfx_z", "arm_angle",
   "release_pos_x", "release_pos_z",
-  "plate_x", "plate_z", "sz_bot", "sz_top", "hb", "ivb", "in_zone",
+  "plate_x", "plate_z", "sz_bot", "sz_top", "hb", "ivb", "vaa", "in_zone",
   "type", "description", "events", "bb_type", "launch_speed",
   "estimated_woba_using_speedangle", "woba_denom",
   "vx0", "vy0", "vz0", "ax", "ay", "az", "release_pos_y"
@@ -259,16 +288,25 @@ PL_TRIM_COLS <- c(
 #' resident.
 #'
 #' They are dropped from the DEPLOY artifact only. PL_TRIM_COLS still carries
-#' them, so a console session keeps release point and trajectory. Putting one
-#' back is a one-line edit here plus a chain rerun.
+#' them, so a console session keeps trajectory. Putting one back is a one-line
+#' edit here plus a chain rerun.
 #'
 #' Two that look droppable and are not: arm_angle is read by plot_movement(),
 #' and launch_speed backs HH% in the results panel.
+#'
+#' AMENDED 2026-08-31, when the traits table gave release point a reader. The
+#' original note said these ten were "readable, just unread", and that was the
+#' whole justification for dropping them, so the moment two of them are read the
+#' justification expires for those two rather than being argued around.
+#'
+#' release_pos_x and release_pos_z came back. The seven trajectory columns did
+#' NOT: add_pitch_features() now derives vaa from them and vaa is what ships, so
+#' the artifact pays for one column instead of seven. That is the whole reason
+#' the derivation lives in features.R rather than in tables.R.
 APP_DATA_UNREAD <- c(
-  # Trajectory, for a VAA that is not implemented. See the backlog in PLAN.md.
+  # Trajectory. vaa is derived from these in add_pitch_features() and ships in
+  # their place; nothing else reads them. Putting them back costs ~19 MB.
   "vx0", "vy0", "vz0", "ax", "ay", "az", "release_pos_y",
-  # Release point. Ad hoc in reports, nothing in the app.
-  "release_pos_x", "release_pos_z",
   # bb_type. CLAUDE.md documents its empty-string trap, but nothing reads it.
   "bb_type"
 )

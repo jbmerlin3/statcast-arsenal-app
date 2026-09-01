@@ -86,17 +86,28 @@ ok("unknown value stops rather than mislabelling",
 
 cat("\n== titles ==\n")
 title_of <- function(g) g[["_heading"]]$title
-ok("arsenal_gt R title unchanged",
-   identical(title_of(arsenal_gt(aR, "R")), "PITCH CHARACTERISTICS (vs RHH)"))
-ok("arsenal_gt L title unchanged",
-   identical(title_of(arsenal_gt(aL, "L")), "PITCH CHARACTERISTICS (vs LHH)"))
-ok("arsenal_gt All title is not 'vs LHH'",
-   identical(title_of(arsenal_gt(aA, "All")), "PITCH CHARACTERISTICS (vs All Batters)"))
+# Titles changed on 2026-08-31 with the table split. What these assertions are
+# actually guarding is hand_label() reaching the heading at all, and that the
+# "All" case does not silently fall through to "vs LHH", which is the bug they
+# were written for. Both survive the rename.
+ok("traits_gt R title",
+   identical(title_of(traits_gt(traits_tbl(aR), "R")), "PITCH TRAITS (vs RHH)"))
+ok("traits_gt L title",
+   identical(title_of(traits_gt(traits_tbl(aL), "L")), "PITCH TRAITS (vs LHH)"))
+ok("traits_gt All title is not 'vs LHH'",
+   identical(title_of(traits_gt(traits_tbl(aA), "All")), "PITCH TRAITS (vs All Batters)"))
+ok("results_gt R title",
+   identical(title_of(results_gt(results_tbl(aR), "R")), "PITCH RESULTS (vs RHH)"))
+ok("results_gt All title is not 'vs LHH'",
+   identical(title_of(results_gt(results_tbl(aA), "All")), "PITCH RESULTS (vs All Batters)"))
 ok("count_usage_gt All title",
    identical(title_of(count_usage_gt(cA, "All")), "USAGE BY COUNT vs All Batters"))
 ok("label argument overrides, for Phase 4 date ranges",
-   identical(title_of(arsenal_gt(aR, "R", label = "2nd Half, vs RHH")),
-             "PITCH CHARACTERISTICS (2nd Half, vs RHH)"))
+   identical(title_of(traits_gt(traits_tbl(aR), "R", label = "2nd Half, vs RHH")),
+             "PITCH TRAITS (2nd Half, vs RHH)"))
+ok("label argument overrides on results too",
+   identical(title_of(results_gt(results_tbl(aR), "R", label = "2nd Half, vs RHH")),
+             "PITCH RESULTS (2nd Half, vs RHH)"))
 
 cat(sprintf("\nPHASE 4 HAND=ALL: %s\n", if (fails == 0L) "PASS" else paste(fails, "FAILED")))
 quit(status = if (fails == 0L) 0 else 1)

@@ -35,7 +35,7 @@ ORIGINAL_DEFS <- c(
   260:294,   # plot_heatmap
   301:334,   # FG_TO_SAVANT, load_fg_stuff
   336:358,   # arsenal_table
-  360:394,   # arsenal_gt
+  360:394,   # traits_gt + results_gt (one arsenal_gt in the original)
   402:419,   # count_usage_tbl
   421:438    # count_usage_gt
 )
@@ -57,7 +57,7 @@ if (mode == "new") {
 plt <- readRDS(fixture)
 
 # Two stuff_all inputs, both synthetic, so the regression never reads FanGraphs.
-# The second carries an fg_exact FALSE row specifically to fire arsenal_gt's
+# The second carries an fg_exact FALSE row specifically to fire traits_gt's
 # footnote branch, which the empty frame leaves untested.
 stuff_empty <- tibble(pitch_type = character(), stuff_plus = numeric(), fg_exact = logical())
 stuff_mixed <- tibble(pitch_type = c("FF", "SL"),
@@ -112,12 +112,32 @@ artifacts <- list(
   plot_heatmap_R     = plot_spec(plot_heatmap(plt, "R")),
   plot_heatmap_L     = plot_spec(plot_heatmap(plt, "L")),
 
-  arsenal_gt_R       = gt_spec(arsenal_gt(arsenal_table(plt, "R", stuff_empty), "R")),
-  arsenal_gt_L       = gt_spec(arsenal_gt(arsenal_table(plt, "L", stuff_empty), "L")),
-  arsenal_gt_footnote= gt_spec(arsenal_gt(arsenal_table(plt, "R", stuff_mixed), "R")),
   count_usage_gt_R   = gt_spec(count_usage_gt(count_usage_tbl(plt, "R"), "R")),
   count_usage_gt_L   = gt_spec(count_usage_gt(count_usage_tbl(plt, "L"), "L"))
 )
+
+# The Characteristics tab renders differ IN SHAPE between the two sides as of
+# 2026-08-31, so they are emitted under mode-specific names rather than forced
+# into one comparison. The original script has a single arsenal_gt(); the new
+# code has two renderers and no function of that name at all. Renaming one of
+# the new tables to the old key would have made the harness compare a 12-column
+# traits table against a 14-column characteristics table and report a difference
+# that means nothing, and putting both under one key would have hidden it.
+#
+# phase1_check.R knows both name sets and asserts each appears on exactly one
+# side, so this cannot decay into a silent drop. Byte-level coverage for the two
+# new renders lives in tests/step3_null_identical.R instead.
+if (mode == "old") {
+  artifacts$chars_gt_R        <- gt_spec(arsenal_gt(arsenal_table(plt, "R", stuff_empty), "R"))
+  artifacts$chars_gt_L        <- gt_spec(arsenal_gt(arsenal_table(plt, "L", stuff_empty), "L"))
+  artifacts$chars_gt_footnote <- gt_spec(arsenal_gt(arsenal_table(plt, "R", stuff_mixed), "R"))
+} else {
+  artifacts$traits_gt_R        <- gt_spec(traits_gt(traits_tbl(arsenal_table(plt, "R", stuff_empty)), "R"))
+  artifacts$traits_gt_L        <- gt_spec(traits_gt(traits_tbl(arsenal_table(plt, "L", stuff_empty)), "L"))
+  artifacts$traits_gt_footnote <- gt_spec(traits_gt(traits_tbl(arsenal_table(plt, "R", stuff_mixed)), "R"))
+  artifacts$results_gt_R       <- gt_spec(results_gt(results_tbl(arsenal_table(plt, "R", stuff_empty)), "R"))
+  artifacts$results_gt_L       <- gt_spec(results_gt(results_tbl(arsenal_table(plt, "L", stuff_empty)), "L"))
+}
 
 saveRDS(artifacts, out_path)
 cat("wrote", length(artifacts), "artifacts for mode:", mode, "\n")

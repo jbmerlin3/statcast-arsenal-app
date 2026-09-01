@@ -8,7 +8,12 @@ tb    <- arsenal_table(plt, "R", stuff)
 
 bad_keys <- setdiff(names(ARSENAL_METRIC_COLS), names(tb))
 bad_vals <- setdiff(unname(ARSENAL_METRIC_COLS), METRIC_SPEC$metric)
-lvls     <- setdiff(unique(METRIC_SPEC$direction), c("high", "low", "neutral"))
+# "extreme" joined the set on 2026-08-31 for the release traits. This list is
+# the total-ness check for pctile_fill(), so it must be widened deliberately and
+# in step with that switch, never to make a failure go away: a direction that
+# reaches pctile_fill() without a branch there stops the render.
+lvls     <- setdiff(unique(METRIC_SPEC$direction),
+                    c("high", "low", "neutral", "extreme"))
 
 cat("map keys absent from arsenal_table :", if (length(bad_keys)) bad_keys else "none", "\n")
 cat("map values absent from METRIC_SPEC :", if (length(bad_vals)) bad_vals else "none", "\n")
