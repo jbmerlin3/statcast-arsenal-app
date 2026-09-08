@@ -209,11 +209,35 @@ deploy_app <- function(force = FALSE) {
   # claiming the live app is current, because nothing else on the page would
   # contradict it.
   dir.create("logs", showWarnings = FALSE)
-  write.dcf(data.frame(app_data  = have[["app_data"]],
-                       game_logs = have[["game_logs"]],
-                       code      = have[["code"]],
-                       deployed  = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"),
-                       stringsAsFactors = FALSE), DEPLOY_STAMP)
+  # Built FROM `have` by name rather than field by field. Listing the fields
+  # here by hand is what broke the gate on 2026-09-08: data_dates() gained a
+  # `content` digest and deployed_dates() started requiring it, but this write
+  # still emitted four fields. Every stamp was therefore unusable, the gate
+  # matched nothing, and all four scheduled runs a day deployed unconditionally
+  # -- the exact cost the schedule comments in the workflow are written around.
+  # The run reported success and the stamp looked plausible, which is why it
+  # took reading the stamp for a missing field to catch it.
+  #
+  # as.list() so the frame has one column per element of `have` whatever
+  # data_dates() returns, and a field added there can never again be silently
+  # dropped here.
+  stamp <- c(as.list(have), deployed = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"))
+  write.dcf(as.data.frame(stamp, stringsAsFactors = FALSE), DEPLOY_STAMP)
+
+  # Read the stamp back and assert the gate would ACCEPT it. Structural
+  # construction above prevents dropping a field, but only this proves the two
+  # halves agree: deployed_dates() returning NULL is indistinguishable from "no
+  # stamp yet", so a mismatch does not error anywhere, it just silently disables
+  # the gate and deploys on every run forever. Cheap, and it fails here where
+  # the cause is obvious rather than on a budget alert weeks later.
+  back <- deployed_dates()
+  if (is.null(back) || !identical(unname(back), unname(have))) {
+    warning("Deploy stamp does not round-trip: the gate is disabled and every ",
+            "run will redeploy. Written fields: ",
+            paste(names(stamp), collapse = ", "),
+            ". data_dates() produced: ", paste(names(have), collapse = ", "),
+            call. = FALSE)
+  }
   message("Deployed, stamp written to ", DEPLOY_STAMP)
   invisible(TRUE)
 }
