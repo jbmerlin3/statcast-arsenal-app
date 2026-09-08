@@ -103,9 +103,7 @@ arsenal_table <- function(df, hand, stuff_all) {
       # exact runs this pitch saved over the window, correct at any sample, and
       # it takes no percentile. See ARSENAL_METRIC_COLS.
       rv = round(sum(delta_pitcher_run_exp, na.rm = TRUE), 1),
-      # The same thing per 100 pitches, the comparable form and the one that
-      # shades. Savant publishes both, under these names.
-      rv100 = round(100 * sum(delta_pitcher_run_exp, na.rm = TRUE) / n(), 2),
+
       .groups = "drop"
     ) |>
     arrange(desc(pitch_pct)) |>
@@ -173,10 +171,15 @@ TRAITS_COLS <- c("pitch_type", "count", "pitch_pct",
                  "ext", "rel_ht", "rel_side",
                  "stuff_plus", "fg_exact")
 
-RESULTS_COLS <- c("pitch_type", "count", "pitch_pct",
+# COUNT and PITCH% are TRAITS-only as of 2026-09-08. They are identity columns
+# rather than results, they were identical in both tables, and the two stack
+# directly on top of each other in the same pitch order, so repeating them cost
+# two columns of width to say nothing new. See DENOM_SHOWN_AS_COUNT for the one
+# consequence: a pitches-denominated results cell now shows its sample only in
+# the traits table above.
+RESULTS_COLS <- c("pitch_type",
                   "strike_pct", "whiff_pct", "csw_pct",
-                  "zone_pct", "chase_pct", "gb_pct", "xwoba",
-                  "rv", "rv100")
+                  "zone_pct", "chase_pct", "gb_pct", "xwoba", "rv")
 
 #' any_of(), not all_of(), and this is the one place in the file where that is
 #' correct rather than sloppy. fg_exact is absent whenever stuff_all carried no
@@ -206,19 +209,28 @@ gt_chassis <- function(tbl, title, col_px = 80) {
   # fail at RENDER time with "object not found" -- late, and only on the code
   # path that renders. Building the formula text sidesteps the lookup entirely.
   wid <- stats::as.formula(sprintf("everything() ~ px(%d)", as.integer(col_px)))
-  tbl |>
+  g <- tbl |>
     gt() |>
     tab_header(title = title) |>
     cols_align("center") |>
     cols_width(wid) |>
     tab_style(cell_borders(sides = c("top", "bottom"), color = "black", weight = px(2)),
-              cells_column_labels()) |>
-    tab_style(cell_text(weight = "bold"), cells_body(columns = pitch_pct)) |>
-    tab_options(
-      table.font.size = 13, heading.title.font.size = 15, heading.align = "left",
-      column_labels.font.weight = "bold", column_labels.background.color = "gray95",
-      table.border.top.color = "transparent"
-    )
+              cells_column_labels())
+
+  # Broken out of the pipe rather than done with an inline lambda. The results
+  # table dropped pitch_pct on 2026-09-08 and cells_body() on an absent column
+  # errors at render, so this has to be conditional -- but a `(\(g) ...)()` step
+  # inside the pipe fed cols_label() a non-gt object and failed several calls
+  # later, where the message named the wrong function entirely.
+  if ("pitch_pct" %in% names(tbl)) {
+    g <- g |> tab_style(cell_text(weight = "bold"), cells_body(columns = pitch_pct))
+  }
+
+  g |> tab_options(
+    table.font.size = 13, heading.title.font.size = 15, heading.align = "left",
+    column_labels.font.weight = "bold", column_labels.background.color = "gray95",
+    table.border.top.color = "transparent"
+  )
 }
 
 
@@ -391,15 +403,14 @@ results_gt <- function(tbl, hand, label = hand_label(hand), ref = NULL) {
     gt_chassis(paste0("PITCH RESULTS (", label, ")"),
                col_px = round(960 / ncol(tbl))) |>
     cols_label(
-      pitch_type = "PITCH", count = "COUNT", pitch_pct = "PITCH%",
+      pitch_type = "PITCH",
       strike_pct = "STRIKE%", whiff_pct = "WHIFF%", csw_pct = "CSW%",
       zone_pct = "IN-ZONE%", chase_pct = "CHASE%", gb_pct = "GB%",
-      xwoba = "xwOBA", rv = "RV", rv100 = "RV/100"
+      xwoba = "xwOBA", rv = "RV"
     ) |>
     # force_sign, because the whole point of a run value is which side of zero
     # it is on. "+1.2" and "-1.2" read at a glance; "1.2" and "-1.2" do not.
     fmt_number(columns = rv, decimals = 1, force_sign = TRUE) |>
-    fmt_number(columns = rv100, decimals = 2, force_sign = TRUE) |>
     # Drop the leading zero on xwOBA, the usual convention for a rate bounded
     # below one.
     fmt(columns = xwoba, fns = \(x) sub("^0", "", sprintf("%.3f", x)))

@@ -317,7 +317,7 @@ stuff_tbl <- tibble::tibble(
   # tibble stands in for arsenal_table() output, and a stand-in missing columns
   # the real thing always has is how a renderer grows a dependency nobody tests.
   vaa = -5.0, ext = 6.5, rel_ht = 5.9, rel_side = 2.0,
-  gb_pct = 42.0, rv = 1.0, rv100 = 0.25,
+  gb_pct = 42.0, rv = 1.0,
   strike_pct = 60, whiff_pct = 25, csw_pct = 28, zone_pct = 50, chase_pct = 30,
   xwoba = 0.310,
   # 75 and 125 are the ends of the span; 40 and 160 are outside it and must

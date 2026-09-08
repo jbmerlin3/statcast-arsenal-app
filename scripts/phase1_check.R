@@ -67,8 +67,8 @@ EXPECTED_COL_DIFFS <- list(
 # column was lost. Same discipline as the ADDED guard on the fixture above. An
 # accidental extra column fails here rather than being absorbed.
 EXPECTED_ADDED_COLS <- list(
-  arsenal_table_R = c("vaa", "ext", "rel_ht", "rel_side", "gb_pct", "rv", "rv100"),
-  arsenal_table_L = c("vaa", "ext", "rel_ht", "rel_side", "gb_pct", "rv", "rv100")
+  arsenal_table_R = c("vaa", "ext", "rel_ht", "rel_side", "gb_pct", "rv"),
+  arsenal_table_L = c("vaa", "ext", "rel_ht", "rel_side", "gb_pct", "rv")
 )
 
 # Artifacts that exist on ONE side only, because the thing they render was

@@ -102,6 +102,23 @@
 # the traits table uses. The two tables are now the same shape by arithmetic
 # rather than by coincidence.
 
+# RECAPTURED 2026-09-08, same day, dropping three results columns. Diffed by
+# column first: traits byte-identical in all four variants, results dropped
+# exactly count, pitch_pct and rv100, and no surviving cell moved.
+#
+#   count, pitch_pct : duplicates of the traits table stacked directly above,
+#                      in the same pitch order. Two columns of width to say
+#                      nothing new.
+#   rv100            : removed the same day it was added. Split-half r of 0.02
+#                      to 0.10 at every sample we have, because per-pitch run
+#                      value is dominated by rare events. RV alone carries the
+#                      same statement without the false precision.
+#
+# The diff script that found this initially reported ADDED columns and not
+# DROPPED ones, so the first pass read "nothing changed" on a table that had
+# lost three columns. Any comparison of two column sets has to be run in both
+# directions or it only catches growth.
+
 suppressMessages({library(dplyr); library(tidyr); library(purrr); library(forcats)
                   library(ggplot2); library(gt); library(readr)})
 

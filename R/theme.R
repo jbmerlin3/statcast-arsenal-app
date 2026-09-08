@@ -171,8 +171,8 @@ KDE_MIN_N <- 15
 METRIC_SPEC <- data.frame(
   metric = c("velo", "ivb", "hb", "vaa", "spin", "ext", "rel_ht", "rel_side",
              "strike_pct", "csw_pct", "zone_pct", "usage_pct",
-             "whiff_pct", "chase_pct", "xwoba", "gb_pct", "rv100"),
-  kind   = c(rep("mean", 8), rep("rate", 9)),
+             "whiff_pct", "chase_pct", "xwoba", "gb_pct"),
+  kind   = c(rep("mean", 8), rep("rate", 8)),
   # usage_pct's denominator is the CUT's total pitches, not the pitch type's.
   # It is a share: its precision comes from how many pitches the share was
   # measured over, not from how many were of this type. Flooring it on the pitch
@@ -180,10 +180,10 @@ METRIC_SPEC <- data.frame(
   # uncommon, which is backwards.
   denom  = c(rep("pitches", 8),
              "pitches", "pitches", "pitches", "cut_pitches",
-             "swings", "oz", "pa", "bbe", "pitches"),
+             "swings", "oz", "pa", "bbe"),
   floor  = c(rep(25, 8),
              rep(50, 4),
-             50, 50, 50, 25, 50),
+             50, 50, 50, 25),
   # NOTE: the direction here is NOT used for ivb or hb. Those two are looked up
   # per pitch type in PITCH_SHAPE_DIRECTION, because more ride is the point of a
   # four-seam and the death of a sinker. The entries below are kept so the frame
@@ -228,7 +228,7 @@ METRIC_SPEC <- data.frame(
   direction = c("high", "high", "high", "high", "high", "high",
                 "extreme", "extreme",
                 "high", "high", "high", "neutral",
-                "high", "high", "low", "high", "high"),
+                "high", "high", "low", "high"),
   stringsAsFactors = FALSE
 )
 
@@ -383,12 +383,17 @@ ARSENAL_METRIC_COLS <- c(
   zone_pct   = "zone_pct",
   chase_pct  = "chase_pct",
   xwoba      = "xwoba",
-  gb_pct     = "gb_pct",
-  # rv is deliberately ABSENT. It is a counting stat, so a pitcher with 30
-  # sliders and one with 300 are not comparable on it and a percentile would be
-  # measuring workload. rv100 is the shadeable sibling; rv renders unshaded,
-  # like COUNT.
-  rv100      = "rv100"
+  gb_pct     = "gb_pct"
+  # rv is deliberately ABSENT and has no entry in METRIC_SPEC either. It is a
+  # counting stat, so a pitcher with 30 sliders and one with 300 are not
+  # comparable on it and a percentile would be measuring workload. It renders
+  # unshaded, carrying its sign, and that is the whole of what it claims.
+  #
+  # rv100 was built alongside it on 2026-09-08 and removed the same day. It is
+  # the shadeable form, but its split-half reliability is 0.02 to 0.10 at every
+  # sample we have -- per-pitch run value is dominated by rare events, one home
+  # run being -2.7 runs -- so the colour would have been a lottery dressed as a
+  # grade. RV alone says the same thing without the false precision.
 )
 
 
@@ -647,11 +652,17 @@ CELL_STATE_STYLE <- data.frame(
 # season against 99 pitches, so its parenthetical n does real work.
 DENOM_COLS <- c("pitches", "swings", "oz", "pa", "cut_pitches", "bbe")
 
-# The denominator every table already prints as its own column: COUNT in the two
-# characteristics tables, N in the search table. A parenthetical repeating it
-# says nothing the row does not already say, and it says it once per column: a
-# six-pitch traits row carried eight identical "(19)" markers beside a COUNT
-# cell reading 19.
+# The denominator that is already on screen as a column: COUNT in the TRAITS
+# table, N in the search table. A parenthetical repeating it says nothing the
+# page does not already say, and it says it once per column: a six-pitch traits
+# row carried eight identical "(19)" markers beside a COUNT cell reading 19.
+#
+# NOTE, 2026-09-08: the results table dropped its own COUNT and PITCH% as
+# duplicates of the traits table above it. So a pitches-denominated results cell
+# now shows no sample at all in its own table, and the reader takes it from the
+# traits table, which is directly above and in the same pitch order. That is the
+# intended reading and it is the one thing here that depends on the two tables
+# staying adjacent and identically ordered.
 #
 # So a below-floor marker is emitted only when the denominator DIFFERS from this
 # one, which leaves it on exactly the three that carry new information -- whiff

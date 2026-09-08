@@ -78,7 +78,7 @@ pitcher_cells <- function(d, by_stand) {
       # identically or the percentile is measured against a different statistic.
       gb_pct     = { b <- description == "hit_into_play" & nzchar(bb_type) & !is.na(bb_type)
                      sum(b & bb_type == "ground_ball") / sum(b) * 100 },
-      rv100      = 100 * sum(delta_pitcher_run_exp, na.rm = TRUE) / n(),
+
       .groups = "drop"
     )
 

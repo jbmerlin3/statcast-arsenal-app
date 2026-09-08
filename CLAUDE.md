@@ -421,10 +421,23 @@ Added 2026-09-08. Two columns came back into `app_data`: `bb_type` and
 and nothing else.
 
 **`RV` is a counting stat and takes no percentile.** It is absent from
-`ARSENAL_METRIC_COLS` on purpose: a pitcher with 30 sliders and one with 300 are
-not comparable on a total, so a percentile there measures workload. `rv100` is
-the shadeable sibling. RV is exact at any window, which is the whole reason it
-belongs on a tab people open one game at a time.
+`ARSENAL_METRIC_COLS` and from `METRIC_SPEC`: a pitcher with 30 sliders and one
+with 300 are not comparable on a total, so a percentile there measures workload.
+RV is exact at any window, which is the whole reason it belongs on a tab people
+open one game at a time.
+
+**`RV/100` was built and removed the same day.** It is the shadeable form, but
+its split-half reliability is 0.02–0.10 at every sample we have — per-pitch run
+value is dominated by rare events, one home run being −2.7 runs — so the colour
+would have been a lottery dressed as a grade. RV alone says the same thing
+without the false precision. Do not re-add it without new evidence.
+
+**The results table carries no COUNT or PITCH%.** They are identity columns, not
+results, and the traits table stacked directly above prints both in the same
+pitch order. One consequence, which is the only thing on the page depending on
+the two tables staying adjacent: a `pitches`-denominated results cell shows its
+sample nowhere in its own table, because `DENOM_SHOWN_AS_COUNT` suppresses the
+parenthetical. The reader takes it from the row above.
 
 **`RV/100` is `high`: positive `delta_pitcher_run_exp` is good for the pitcher.**
 Verified, not assumed — `scripts/verify_arsenal_savant.R` asserts our RV/100
