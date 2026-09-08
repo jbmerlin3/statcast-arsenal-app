@@ -92,6 +92,18 @@ arsenal_table <- function(df, hand, stuff_all) {
       xwoba = { d <- sum(woba_denom, na.rm = TRUE)
                 if (d > 0) round(sum(estimated_woba_using_speedangle * woba_denom,
                                      na.rm = TRUE) / d, 3) else NA_real_ },
+      # Ground balls over BATTED BALLS, not over pitches. bb_type is populated
+      # only on balls in play and is the empty string elsewhere, which is the
+      # trap CLAUDE.md documents: counting over all pitches would put 80%
+      # zeroes in the denominator. Filtered on description instead, so this is
+      # the same `bbe` arsenal_denoms() reports.
+      gb_pct = { b <- description == "hit_into_play" & nzchar(bb_type) & !is.na(bb_type)
+                 round(pct_or_na(sum(b & bb_type == "ground_ball"), sum(b)), 1) },
+      # Run value, pitcher perspective, POSITIVE IS GOOD. A counting stat: the
+      # exact runs this pitch saved over the window, correct at any sample, and
+      # it takes no percentile. See ARSENAL_METRIC_COLS.
+      rv = round(sum(delta_pitcher_run_exp, na.rm = TRUE), 1),
+
       .groups = "drop"
     ) |>
     arrange(desc(pitch_pct)) |>
@@ -122,6 +134,9 @@ arsenal_denoms <- function(df, hand) {
       swings  = sum(description %in% swing_only),
       oz      = sum(in_zone == 0),
       pa      = sum(woba_denom, na.rm = TRUE),
+      # Must match gb_pct's denominator in arsenal_table() exactly, or the
+      # parenthetical n describes a different sample from the number beside it.
+      bbe     = sum(description == "hit_into_play" & nzchar(bb_type) & !is.na(bb_type)),
       .groups = "drop"
     )
 }
@@ -156,9 +171,15 @@ TRAITS_COLS <- c("pitch_type", "count", "pitch_pct",
                  "ext", "rel_ht", "rel_side",
                  "stuff_plus", "fg_exact")
 
-RESULTS_COLS <- c("pitch_type", "count", "pitch_pct",
+# COUNT and PITCH% are TRAITS-only as of 2026-09-08. They are identity columns
+# rather than results, they were identical in both tables, and the two stack
+# directly on top of each other in the same pitch order, so repeating them cost
+# two columns of width to say nothing new. See DENOM_SHOWN_AS_COUNT for the one
+# consequence: a pitches-denominated results cell now shows its sample only in
+# the traits table above.
+RESULTS_COLS <- c("pitch_type",
                   "strike_pct", "whiff_pct", "csw_pct",
-                  "zone_pct", "chase_pct", "xwoba")
+                  "zone_pct", "chase_pct", "gb_pct", "xwoba", "rv")
 
 #' any_of(), not all_of(), and this is the one place in the file where that is
 #' correct rather than sloppy. fg_exact is absent whenever stuff_all carried no
@@ -181,26 +202,44 @@ results_tbl <- function(tbl) select(tbl, any_of(RESULTS_COLS))
 #' short of the traits table above it, and two left-aligned tables of visibly
 #' different width read as a rendering fault rather than as a design. Each
 #' renderer picks a width that lands them on roughly the same total instead.
-gt_chassis <- function(tbl, title, col_px = 80) {
+gt_chassis <- function(tbl, title, n_visible = ncol(tbl)) {
   # The width is baked into the formula as a LITERAL rather than passed as a
   # variable. gt evaluates a cols_width() formula lazily in an environment where
   # a local argument does not exist, so both `px(col_px)` and an injected `!!wid`
   # fail at RENDER time with "object not found" -- late, and only on the code
   # path that renders. Building the formula text sidesteps the lookup entirely.
-  wid <- stats::as.formula(sprintf("everything() ~ px(%d)", as.integer(col_px)))
-  tbl |>
+  # n_visible, not ncol(tbl): the traits table carries a hidden fg_exact that gt
+  # does not render, so dividing by ncol() would make its columns narrower than
+  # the arithmetic intends and leave the two tables unequal again.
+  base <- TABLE_WIDTH_PX %/% n_visible
+  rem  <- TABLE_WIDTH_PX %% n_visible
+  # The remainder goes on the first column, which is the pitch code in both
+  # tables and the one that can absorb a few px without reading as misaligned.
+  # Specific formula BEFORE everything(), because gt takes the first match.
+  wid1 <- stats::as.formula(sprintf("%s ~ px(%d)", names(tbl)[1], base + rem))
+  wid  <- stats::as.formula(sprintf("everything() ~ px(%d)", base))
+  g <- tbl |>
     gt() |>
     tab_header(title = title) |>
     cols_align("center") |>
-    cols_width(wid) |>
+    cols_width(wid1, wid) |>
     tab_style(cell_borders(sides = c("top", "bottom"), color = "black", weight = px(2)),
-              cells_column_labels()) |>
-    tab_style(cell_text(weight = "bold"), cells_body(columns = pitch_pct)) |>
-    tab_options(
-      table.font.size = 13, heading.title.font.size = 15, heading.align = "left",
-      column_labels.font.weight = "bold", column_labels.background.color = "gray95",
-      table.border.top.color = "transparent"
-    )
+              cells_column_labels())
+
+  # Broken out of the pipe rather than done with an inline lambda. The results
+  # table dropped pitch_pct on 2026-09-08 and cells_body() on an absent column
+  # errors at render, so this has to be conditional -- but a `(\(g) ...)()` step
+  # inside the pipe fed cols_label() a non-gt object and failed several calls
+  # later, where the message named the wrong function entirely.
+  if ("pitch_pct" %in% names(tbl)) {
+    g <- g |> tab_style(cell_text(weight = "bold"), cells_body(columns = pitch_pct))
+  }
+
+  g |> tab_options(
+    table.font.size = 13, heading.title.font.size = 15, heading.align = "left",
+    column_labels.font.weight = "bold", column_labels.background.color = "gray95",
+    table.border.top.color = "transparent"
+  )
 }
 
 
@@ -323,7 +362,9 @@ apply_league_ref <- function(g, ref, notes = TRUE) {
 traits_gt <- function(tbl, hand, fg_window = NULL, label = hand_label(hand),
                       ref = NULL) {
   g <- tbl |>
-    gt_chassis(paste0("PITCH TRAITS (", label, ")")) |>
+    # fg_exact is hidden below, so it must not claim width.
+    gt_chassis(paste0("PITCH TRAITS (", label, ")"),
+               n_visible = ncol(tbl) - sum("fg_exact" %in% names(tbl))) |>
     cols_label(
       pitch_type = "PITCH", count = "COUNT", pitch_pct = "PITCH%",
       velocity = "AVG VELO", ivb = "IVB", hb = "HB", vaa = "VAA", spin = "SPIN",
@@ -365,18 +406,21 @@ traits_gt <- function(tbl, hand, fg_window = NULL, label = hand_label(hand),
 #' than restatements of what a column means, and that is the line the traits
 #' table's footnotes fell on the wrong side of.
 #'
-#' RESULTS_COL_PX is set so this table finishes about as wide as the traits table
-#' stacked above it. Recompute it if either column list changes: the traits table
-#' is 12 columns at 80px, so 960 / ncol here.
+#' Width comes from TABLE_WIDTH_PX via gt_chassis(), so this table finishes
+#' EXACTLY as wide as the traits table above it whatever either column list
+#' does. Nothing here needs recomputing when a column is added or removed.
 results_gt <- function(tbl, hand, label = hand_label(hand), ref = NULL) {
   g <- tbl |>
-    gt_chassis(paste0("PITCH RESULTS (", label, ")"),
-               col_px = round(960 / ncol(tbl))) |>
+    gt_chassis(paste0("PITCH RESULTS (", label, ")"), n_visible = ncol(tbl)) |>
     cols_label(
-      pitch_type = "PITCH", count = "COUNT", pitch_pct = "PITCH%",
+      pitch_type = "PITCH",
       strike_pct = "STRIKE%", whiff_pct = "WHIFF%", csw_pct = "CSW%",
-      zone_pct = "IN-ZONE%", chase_pct = "CHASE%", xwoba = "xwOBA"
+      zone_pct = "IN-ZONE%", chase_pct = "CHASE%", gb_pct = "GB%",
+      xwoba = "xwOBA", rv = "RV"
     ) |>
+    # force_sign, because the whole point of a run value is which side of zero
+    # it is on. "+1.2" and "-1.2" read at a glance; "1.2" and "-1.2" do not.
+    fmt_number(columns = rv, decimals = 1, force_sign = TRUE) |>
     # Drop the leading zero on xwOBA, the usual convention for a rate bounded
     # below one.
     fmt(columns = xwoba, fns = \(x) sub("^0", "", sprintf("%.3f", x)))

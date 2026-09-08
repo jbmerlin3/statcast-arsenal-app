@@ -35,6 +35,7 @@ pitcher_cells <- function(d, by_stand) {
       swings  = sum(description %in% swing_only),
       oz      = sum(in_zone == 0),
       pa      = sum(woba_denom, na.rm = TRUE),
+      bbe     = sum(description == "hit_into_play" & nzchar(bb_type) & !is.na(bb_type)),
 
       velo = mean(release_speed, na.rm = TRUE),
       ivb  = mean(ivb, na.rm = TRUE),
@@ -73,6 +74,11 @@ pitcher_cells <- function(d, by_stand) {
       chase_pct  = sum(in_zone == 0 & description %in% swing_only) / sum(in_zone == 0) * 100,
       xwoba      = sum(estimated_woba_using_speedangle * woba_denom, na.rm = TRUE) /
                      sum(woba_denom, na.rm = TRUE),
+      # Same two expressions the table uses. Reference and value must be built
+      # identically or the percentile is measured against a different statistic.
+      gb_pct     = { b <- description == "hit_into_play" & nzchar(bb_type) & !is.na(bb_type)
+                     sum(b & bb_type == "ground_ball") / sum(b) * 100 },
+
       .groups = "drop"
     )
 
@@ -103,7 +109,8 @@ summarise_cells <- function(cells, grain) {
                                denom == "pitches" ~ pitches,
                                denom == "swings"  ~ swings,
                                denom == "oz"      ~ oz,
-                               denom == "pa"      ~ pa)) |>
+                               denom == "pa"      ~ pa,
+                               denom == "bbe"     ~ bbe)) |>
     filter(is.finite(value), denom_n >= floor)
 
   long |>

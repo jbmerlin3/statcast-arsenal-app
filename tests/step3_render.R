@@ -50,12 +50,17 @@ build <- function(id, hand, dates = NULL) {
 #' regression. It passed on the current fixtures only because neither happens to
 #' have one, which is exactly the kind of accident that should not be load
 #' bearing.
-pick <- function(b, state, glyphs = FALSE) {
+#' `cols` narrows to particular columns. Needed since 2026-09-08, when the
+#' below-floor marker was suppressed on metrics whose denominator is the COUNT
+#' column: an unfiltered search lands on velocity, which now correctly carries no
+#' marker, and the n assertion fails on intended behaviour.
+pick <- function(b, state, glyphs = FALSE, cols = NULL) {
   nms <- c("traits", "results")
   if (glyphs) nms <- Filter(function(nm) isTRUE(b[[nm]]$glyphs), nms)
   for (nm in nms) {
     p   <- b[[nm]]
     hit <- p$ctx$cells[p$ctx$cells$state == state, ]
+    if (!is.null(cols)) hit <- hit[hit$column %in% cols, ]
     if (nrow(hit)) return(list(panel = p, cell = hit[1, ], which = nm))
   }
   stop("no ", state, " cell in any eligible table, so this probe tested nothing")
@@ -80,13 +85,31 @@ expect("fallback cell is filled, not white", grepl("#FFFFFF", cell, ignore.case 
 expect("fallback cell is bold", grepl("font-weight: bold", cell), TRUE)
 
 cat("\n=== below floor renders unfilled, grey, italic, with its n ===\n")
-b2    <- pick(cam, "below_floor"); bf <- b2$cell
+# whiff_pct: its denominator is swings, so it is one of the three that still
+# carries a parenthetical. The COUNT-denominated case is asserted separately
+# below, because "no marker" is now just as much a contract as "a marker".
+b2    <- pick(cam, "below_floor", cols = "whiff_pct"); bf <- b2$cell
 cell2 <- tds(b2$panel$g, bf$column)[bf$row]
 cat("  [", b2$which, "] ", bf$column, " row ", bf$row, ": ", txt(cell2), "\n", sep = "")
-expect("below floor is white",  grepl("background-color: #FFFFFF", cell2, ignore.case = TRUE), TRUE)
-expect("below floor is grey",   grepl("color: #767676", cell2, ignore.case = TRUE), TRUE)
-expect("below floor is italic", grepl("font-style: italic", cell2), TRUE)
+# CHANGED 2026-09-08 with the fill. A thin cell now renders in colour and in
+# normal text, and the parenthetical n is the whole of what marks it. So the n
+# assertion carries the weight the three style assertions used to share, and it
+# is checked in the RENDERED page rather than in the resolver for that reason.
+expect("below floor is not white",
+       grepl("background-color: #FFFFFF", cell2, ignore.case = TRUE), FALSE)
+expect("below floor is not greyed", grepl("color: #767676", cell2, ignore.case = TRUE), FALSE)
+expect("below floor is not italic",  grepl("font-style: italic", cell2), FALSE)
 expect("below floor shows its n", grepl("\\([0-9]+\\)$", txt(cell2)), TRUE)
+
+# The other half: a thin cell whose denominator IS the COUNT column carries no
+# parenthetical, because the row already prints it. Without this the suppression
+# could silently revert and only the visual clutter would tell anyone.
+b3 <- pick(cam, "below_floor", cols = c("velocity", "ivb", "spin", "csw_pct", "zone_pct"))
+cell3b <- tds(b3$panel$g, b3$cell$column)[b3$cell$row]
+cat("  [", b3$which, "] ", b3$cell$column, " row ", b3$cell$row, ": ", txt(cell3b), "\n", sep = "")
+expect("a COUNT-denominated thin cell carries NO parenthetical",
+       grepl("\\([0-9]+\\)$", txt(cell3b)), FALSE)
+expect("and it is still filled", grepl("background-color: #FFFFFF", cell3b, ignore.case = TRUE), FALSE)
 
 cat("\n=== the percentile fill survives the pitch-colour reduce ===\n")
 e2    <- pick(baz, "exact"); ex <- e2$cell
@@ -96,6 +119,23 @@ cat("  [", e2$which, "] cell fill: ", sub('.*background-color: ([^;]*);.*', '\\1
     "   resolver said: ", ex$fill, "   pitch colour is: ", pc, "\n", sep = "")
 expect("cell carries the percentile fill", grepl(ex$fill, cell3, ignore.case = TRUE), TRUE)
 expect("cell does NOT carry the pitch-colour fill", grepl(pc, cell3, ignore.case = TRUE), FALSE)
+
+cat("\n=== the two tables render to the same total width ===\n")
+# They stack, so unequal widths read as a rendering fault. This cannot be
+# checked by arithmetic in the renderers: 12 and 9 columns do not both divide
+# TABLE_WIDTH_PX evenly, and the traits table hides a column that must not claim
+# width. Measured off the rendered page for that reason, and pinned so adding or
+# dropping a column in either table cannot silently unbalance them.
+total_px <- function(g) {
+  h <- as.character(as_raw_html(g))
+  w <- as.numeric(gsub("[^0-9]", "", regmatches(h, gregexpr("width:[0-9]+px", h))[[1]]))
+  sum(w[w > 40])
+}
+tw <- total_px(baz$traits$g); rw <- total_px(baz$results$g)
+cat(sprintf("  traits %dpx | results %dpx | target %dpx\n", tw, rw, TABLE_WIDTH_PX))
+expect("traits table hits TABLE_WIDTH_PX",  tw, as.numeric(TABLE_WIDTH_PX))
+expect("results table hits TABLE_WIDTH_PX", rw, as.numeric(TABLE_WIDTH_PX))
+expect("the two tables are exactly equal",  tw == rw, TRUE)
 
 cat("\n=== note order is dagger, double dagger, grey ===\n")
 # Whichever panel carries the most notes, so the sortedness check has something
@@ -254,6 +294,12 @@ nan_frame <- tibble::tibble(
   # purpose: this frame exists to exercise empty denominators, and a constant keeps
   # those means from varying while the rows under test do.
   vaa = -4.8, release_extension = 6.4, release_pos_x = -1.9, release_pos_z = 5.9,
+  # bb_type is populated only on balls in play and is the empty string
+  # elsewhere, which is the shape gb_pct() filters on. delta_pitcher_run_exp is
+  # a constant 0: this frame tests denominators, and a run value that varied
+  # would move rv/rv100 without any assertion noticing.
+  bb_type = ifelse(description == "hit_into_play", "ground_ball", ""),
+  delta_pitcher_run_exp = 0,
   woba_denom   = c(NA, NA, 1, NA, NA, NA, rep(NA, 6)),
   estimated_woba_using_speedangle = c(NA, NA, 0.3, NA, NA, NA, rep(NA, 6)))
 nan_tb <- arsenal_table(nan_frame, "All",

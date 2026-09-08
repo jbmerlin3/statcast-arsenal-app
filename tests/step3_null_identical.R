@@ -91,6 +91,42 @@
 # its pick() was made glyph-aware in the same commit so the dagger probe cannot
 # silently land on a table that draws no daggers.
 
+# RECAPTURED 2026-09-08 for GB%, RV and RV/100 on the results table. Diffed by
+# column first: traits byte-identical in all four variants, results gained
+# exactly gb_pct, rv and rv100 with every pre-existing cell unmoved. So the
+# three columns were added and nothing was disturbed, which is the property
+# this baseline exists to prove.
+#
+# Column width moved with them and is not separately checked here: results went
+# from 9 columns to 12, so gt_chassis()'s 960/ncol lands on 80px, the same width
+# the traits table uses. The two tables are now the same shape by arithmetic
+# rather than by coincidence.
+
+# RECAPTURED 2026-09-08, same day, dropping three results columns. Diffed by
+# column first: traits byte-identical in all four variants, results dropped
+# exactly count, pitch_pct and rv100, and no surviving cell moved.
+#
+#   count, pitch_pct : duplicates of the traits table stacked directly above,
+#                      in the same pitch order. Two columns of width to say
+#                      nothing new.
+#   rv100            : removed the same day it was added. Split-half r of 0.02
+#                      to 0.10 at every sample we have, because per-pitch run
+#                      value is dominated by rare events. RV alone carries the
+#                      same statement without the false precision.
+#
+# The diff script that found this initially reported ADDED columns and not
+# DROPPED ones, so the first pass read "nothing changed" on a table that had
+# lost three columns. Any comparison of two column sets has to be run in both
+# directions or it only catches growth.
+
+# RECAPTURED 2026-09-08 for exact width matching. Column WIDTHS only: no cell
+# text moved and no column was added or dropped in any of the six variants.
+#
+# traits is unchanged, 960/12 dividing evenly at 80px. results went from a flat
+# 107px, which summed to 963 and left the stacked tables 3px apart, to 106px
+# with the pitch column absorbing the 6px remainder. Both now total exactly 960.
+# tests/step3_render.R pins that off the rendered page.
+
 suppressMessages({library(dplyr); library(tidyr); library(purrr); library(forcats)
                   library(ggplot2); library(gt); library(readr)})
 

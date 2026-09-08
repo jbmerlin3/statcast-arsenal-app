@@ -122,8 +122,16 @@ expect("below floor state",  bf$state, "below_floor")
 expect("below floor n is real, not zero", bf$n > 0, TRUE)
 expect("below floor is under its floor",  bf$n < bf$floor, TRUE)
 expect("below floor marker", bf$marker, paste0(" (", bf$n, ")"))
-expect("below floor fill",   bf$fill,  PCTILE_UNFILLED)
-expect("below floor italic", bf$font_style, "italic")
+# CHANGED 2026-09-08. A thin cell is now FILLED with its real percentile and set
+# in normal text; the floor annotates the sample instead of withholding the
+# comparison. The marker assertion above is what still guarantees the reader is
+# told the denominator, and it is the one that must never be relaxed: without it
+# a 60% whiff off five swings is a deep red cell with nothing qualifying it.
+expect("below floor is filled with its real percentile",
+       bf$fill != PCTILE_UNFILLED, TRUE)
+expect("below floor is normal text, not italic", bf$font_style, "normal")
+expect("below floor is not greyed",              bf$text_color, "#000000")
+expect("below floor still reports its n",        bf$marker, paste0(" (", bf$n, ")"))
 expect("below floor had a reference all along", bf$has_ref, TRUE)
 
 expect("no reference state",  nr$state, "no_reference")
@@ -309,6 +317,7 @@ stuff_tbl <- tibble::tibble(
   # tibble stands in for arsenal_table() output, and a stand-in missing columns
   # the real thing always has is how a renderer grows a dependency nobody tests.
   vaa = -5.0, ext = 6.5, rel_ht = 5.9, rel_side = 2.0,
+  gb_pct = 42.0, rv = 1.0,
   strike_pct = 60, whiff_pct = 25, csw_pct = 28, zone_pct = 50, chase_pct = 30,
   xwoba = 0.310,
   # 75 and 125 are the ends of the span; 40 and 160 are outside it and must
@@ -431,8 +440,22 @@ expect("the rate floor is still the measured 50", fl, 50)
 # changed to > flips the at-floor cell and nothing else in the file.
 expect("at floor is eligible",     at_floor$state, "exact")
 expect("at floor is filled",       at_floor$fill != PCTILE_UNFILLED, TRUE)
+# A cell with NO COMPUTABLE VALUE must stay white, and this became a real risk on
+# 2026-09-08 rather than a theoretical one. below_floor fires for two unrelated
+# reasons -- a thin denominator and a non-finite value -- and now that the state
+# paints, only the is.finite() guard in resolve_cell() separates them. Drop that
+# guard and a pitch type nobody swung at gets cell_fill(NA), which paints an
+# uncoloured cell rather than a white one and looks like a rendering fault.
+na_cell <- resolve_cell(ref, NA_real_, "whiff_pct", "FF", "R", "All", "All Counts",
+                        counts = list(pitches = 40, swings = 0, oz = 12, pa = 6))
+expect("a value with no sample is below floor", na_cell$state, "below_floor")
+expect("a value with no sample stays WHITE",    na_cell$fill,  PCTILE_UNFILLED)
+expect("and its fill is a real colour, never NA", is.na(na_cell$fill), FALSE)
+
 expect("floor - 1 is below floor", below_1$state,  "below_floor")
-expect("floor - 1 is unfilled",    below_1$fill,   PCTILE_UNFILLED)
+# Still filled: the state boundary is what moves at the floor, not the colour.
+expect("floor - 1 is filled anyway", below_1$fill != PCTILE_UNFILLED, TRUE)
+expect("floor - 1 carries its n",  below_1$marker, paste0(" (", below_1$n, ")"))
 expect("floor - 1 reports its n",  below_1$marker, " (49)")
 expect("the two sides of the boundary differ", at_floor$state == below_1$state, FALSE)
 
@@ -492,6 +515,12 @@ ft_frame <- tibble::tibble(
   # purpose: this frame exists to exercise the whiff and CSW denominators, and a constant keeps
   # those means from varying while the rows under test do.
   vaa = -7.0, release_extension = 6.4, release_pos_x = -1.9, release_pos_z = 5.9,
+  # bb_type is populated only on balls in play and is the empty string
+  # elsewhere, which is the shape gb_pct() filters on. delta_pitcher_run_exp is
+  # a constant 0: this frame tests denominators, and a run value that varied
+  # would move rv/rv100 without any assertion noticing.
+  bb_type = ifelse(description == "hit_into_play", "ground_ball", ""),
+  delta_pitcher_run_exp = 0,
   woba_denom   = c(rep(NA, 8), 1, 1, rep(NA, 4)),
   estimated_woba_using_speedangle = c(rep(NA, 8), 0.3, 0.2, rep(NA, 4)))
 ft_tb <- arsenal_table(ft_frame, "All",

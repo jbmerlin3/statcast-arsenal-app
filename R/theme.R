@@ -171,8 +171,8 @@ KDE_MIN_N <- 15
 METRIC_SPEC <- data.frame(
   metric = c("velo", "ivb", "hb", "vaa", "spin", "ext", "rel_ht", "rel_side",
              "strike_pct", "csw_pct", "zone_pct", "usage_pct",
-             "whiff_pct", "chase_pct", "xwoba"),
-  kind   = c(rep("mean", 8), rep("rate", 7)),
+             "whiff_pct", "chase_pct", "xwoba", "gb_pct"),
+  kind   = c(rep("mean", 8), rep("rate", 8)),
   # usage_pct's denominator is the CUT's total pitches, not the pitch type's.
   # It is a share: its precision comes from how many pitches the share was
   # measured over, not from how many were of this type. Flooring it on the pitch
@@ -180,10 +180,10 @@ METRIC_SPEC <- data.frame(
   # uncommon, which is backwards.
   denom  = c(rep("pitches", 8),
              "pitches", "pitches", "pitches", "cut_pitches",
-             "swings", "oz", "pa"),
+             "swings", "oz", "pa", "bbe"),
   floor  = c(rep(25, 8),
              rep(50, 4),
-             50, 50, 50),
+             50, 50, 50, 25),
   # NOTE: the direction here is NOT used for ivb or hb. Those two are looked up
   # per pitch type in PITCH_SHAPE_DIRECTION, because more ride is the point of a
   # four-seam and the death of a sinker. The entries below are kept so the frame
@@ -212,10 +212,23 @@ METRIC_SPEC <- data.frame(
   # point on a four-seam and steep is the point on a curveball, so its direction
   # is a property of the pitch shape and lives in PITCH_SHAPE_DIRECTION. The
   # value below is a placeholder that keeps the frame rectangular.
+  # gb_pct is "high" globally rather than per pitch type, and that is a
+  # simplification worth naming. A ground ball prevents runs better than a fly
+  # ball on average, so more is better for most of an arsenal. It is least true
+  # of a four-seam thrown up, whose job is the whiff and whose grounders are
+  # incidental. Left global because RV/100 sits two columns away and IS the
+  # per-pitch verdict, so GB% does not have to carry that judgement alone.
+  #
+  # rv100 is "high" because a POSITIVE delta_pitcher_run_exp is good for the
+  # pitcher. Verified against Savant rather than assumed: our RV/100 correlates
+  # -0.75 with their wOBA and +0.22 with their whiff% over 1,141 cells, and our
+  # RV/100 matches theirs at r = 0.969. Getting this backwards would paint the
+  # league's best pitches deep blue, which is the least visible bug this table
+  # can have.
   direction = c("high", "high", "high", "high", "high", "high",
                 "extreme", "extreme",
                 "high", "high", "high", "neutral",
-                "high", "high", "low"),
+                "high", "high", "low", "high"),
   stringsAsFactors = FALSE
 )
 
@@ -369,7 +382,18 @@ ARSENAL_METRIC_COLS <- c(
   csw_pct    = "csw_pct",
   zone_pct   = "zone_pct",
   chase_pct  = "chase_pct",
-  xwoba      = "xwoba"
+  xwoba      = "xwoba",
+  gb_pct     = "gb_pct"
+  # rv is deliberately ABSENT and has no entry in METRIC_SPEC either. It is a
+  # counting stat, so a pitcher with 30 sliders and one with 300 are not
+  # comparable on it and a percentile would be measuring workload. It renders
+  # unshaded, carrying its sign, and that is the whole of what it claims.
+  #
+  # rv100 was built alongside it on 2026-09-08 and removed the same day. It is
+  # the shadeable form, but its split-half reliability is 0.02 to 0.10 at every
+  # sample we have -- per-pitch run value is dominated by rare events, one home
+  # run being -2.7 runs -- so the colour would have been a lottery dressed as a
+  # grade. RV alone says the same thing without the false precision.
 )
 
 
@@ -597,11 +621,32 @@ PCTILE_UNFILLED <- "#FFFFFF"
 # LEAGUE reference, single for a coarser one and double for none at all. A
 # parenthetical instead says something about the PITCHER's own sample. A reader
 # who learns that once can read any cell without the footnote.
+# CHANGED 2026-09-08. below_floor is now FILLED, in normal black text, and keeps
+# only its parenthetical n.
+#
+# It used to render unfilled, grey and italic, on the reasoning that a rate off
+# nine swings should not be placed against the league at all. That reasoning is
+# sound about PREDICTION and wrong about what this tab is for. Asked for one
+# start, a scout is asking what happened that day measured against what the
+# league does over a season, which is a descriptive question that a small sample
+# answers exactly. Holmes on 2026-09-07 rendered 40 of 48 trait cells and every
+# single results cell in grey: a table that reported nothing about a start it
+# had complete information on.
+#
+# The floors did not move and are not gone. They still classify the cell, so the
+# parenthetical n still appears on exactly the cells that used to be greyed. What
+# changed is that the floor now ANNOTATES the sample instead of withholding the
+# comparison: the reader is told the number came off nine swings and is left to
+# weigh it, rather than being shown a blank.
+#
+# Keep this in view: a 60% whiff on five swings will now render as a deep red
+# cell. That is the intended behaviour and it is a real cost. The (n) beside it
+# is the only thing qualifying it, so the n must never be dropped from this row.
 CELL_STATE_STYLE <- data.frame(
   state       = c("exact", "fallback",  "below_floor", "no_reference"),
-  filled      = c(TRUE,    TRUE,        FALSE,         FALSE),
-  text_color  = c("#000000", "#000000", PCTILE_GREY,   PCTILE_GREY),
-  font_style  = c("normal", "normal",   "italic",      "italic"),
+  filled      = c(TRUE,    TRUE,        TRUE,          FALSE),
+  text_color  = c("#000000", "#000000", "#000000",     PCTILE_GREY),
+  font_style  = c("normal", "normal",   "normal",      "italic"),
   font_weight = c("normal", "bold",     "normal",      "normal"),
   # below_floor's marker is built at runtime, since it carries its own n.
   marker      = c("",       "\u2020",   "",            "\u2021"),
@@ -615,7 +660,39 @@ CELL_STATE_STYLE <- data.frame(
 # Every denominator a metric can divide by. One list, so a frame of counts and
 # METRIC_SPEC$denom cannot drift apart silently: a denom naming a column nobody
 # supplies resolves to no sample at all and greys the metric everywhere.
-DENOM_COLS <- c("pitches", "swings", "oz", "pa", "cut_pitches")
+# bbe = batted balls, added 2026-09-08 for GB%. It is the THINNEST denominator
+# on the table by a distance: a median of 17 per pitcher-pitch-type over a full
+# season against 99 pitches, so its parenthetical n does real work.
+DENOM_COLS <- c("pitches", "swings", "oz", "pa", "cut_pitches", "bbe")
+
+# The denominator that is already on screen as a column: COUNT in the TRAITS
+# table, N in the search table. A parenthetical repeating it says nothing the
+# page does not already say, and it says it once per column: a six-pitch traits
+# row carried eight identical "(19)" markers beside a COUNT cell reading 19.
+#
+# NOTE, 2026-09-08: the results table dropped its own COUNT and PITCH% as
+# duplicates of the traits table above it. So a pitches-denominated results cell
+# now shows no sample at all in its own table, and the reader takes it from the
+# traits table, which is directly above and in the same pitch order. That is the
+# intended reading and it is the one thing here that depends on the two tables
+# staying adjacent and identically ordered.
+#
+# So a below-floor marker is emitted only when the denominator DIFFERS from this
+# one, which leaves it on exactly the three that carry new information -- whiff
+# over swings, chase over out-of-zone, xwOBA over plate appearances -- and on
+# usage, whose denominator is the pitcher's own total rather than the pitch
+# type's.
+#
+# Named rather than written as a bare "pitches" at the comparison, because the
+# claim being made is about what the TABLE renders, not about the metric.
+# Total rendered width of the two characteristics tables, in px. They stack, so
+# a difference between them reads as a rendering fault rather than as a design,
+# and the difference is not a matter of taste: 12 columns and 9 columns cannot
+# both divide 960 evenly. gt_chassis() gives every column the floor and hands
+# the remainder to the first, so the totals are EQUAL rather than close.
+TABLE_WIDTH_PX <- 960L
+
+DENOM_SHOWN_AS_COUNT <- "pitches"
 
 MIN_REF_PITCHERS <- 20
 

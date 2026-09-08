@@ -269,7 +269,7 @@ PL_TRIM_COLS <- c(
   "release_pos_x", "release_pos_z",
   "plate_x", "plate_z", "sz_bot", "sz_top", "hb", "ivb", "vaa", "in_zone",
   "type", "description", "events", "bb_type", "launch_speed",
-  "estimated_woba_using_speedangle", "woba_denom",
+  "estimated_woba_using_speedangle", "woba_denom", "delta_pitcher_run_exp",
   "vx0", "vy0", "vz0", "ax", "ay", "az", "release_pos_y"
 )
 
@@ -303,12 +303,12 @@ PL_TRIM_COLS <- c(
 #' NOT: add_pitch_features() now derives vaa from them and vaa is what ships, so
 #' the artifact pays for one column instead of seven. That is the whole reason
 #' the derivation lives in features.R rather than in tables.R.
+#' AMENDED AGAIN 2026-09-08. bb_type came back when GB% landed, so the only
+#' entries left are the seven trajectory columns vaa is derived from.
 APP_DATA_UNREAD <- c(
   # Trajectory. vaa is derived from these in add_pitch_features() and ships in
   # their place; nothing else reads them. Putting them back costs ~19 MB.
-  "vx0", "vy0", "vz0", "ax", "ay", "az", "release_pos_y",
-  # bb_type. CLAUDE.md documents its empty-string trap, but nothing reads it.
-  "bb_type"
+  "vx0", "vy0", "vz0", "ax", "ay", "az", "release_pos_y"
 )
 
 APP_DATA_COLS <- setdiff(PL_TRIM_COLS, c("pt_n", APP_DATA_UNREAD))

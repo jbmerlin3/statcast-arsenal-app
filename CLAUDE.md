@@ -375,6 +375,106 @@ correct code?** Both halves. Entry 4 is the second half failing.
 - IP is not derivable from pitch-level data. `events` is one row per PA, so a
   double play reads as one out. Pull IP from FanGraphs or `mlb_pitcher_game_logs()`.
 
+## A short window is shaded, not greyed
+
+Changed 2026-09-08. `below_floor` renders FILLED, in normal black text, keeping
+only its parenthetical n. It used to render unfilled, grey and italic.
+
+The old reasoning was sound about prediction and wrong about what this tab is
+for. Asked for one start, a scout is asking what happened that day measured
+against what the league does over a season — a descriptive question a small
+sample answers exactly. Holmes on 2026-09-07 rendered 40 of 48 trait cells and
+**every** results cell in grey: a table reporting nothing about a start it had
+complete information on. It is now 100% shaded, both tables.
+
+**The floors did not move and are not gone.** They still classify the cell, so
+the parenthetical n appears on exactly the cells that used to be greyed. The
+floor now annotates the sample instead of withholding the comparison.
+
+**The cost, accepted deliberately:** a 60% whiff on five swings renders deep red.
+The `(n)` is the only thing qualifying it, so it must never be dropped from that
+row — `tests/step2_states.R` pins the marker for that reason.
+
+**`is.finite()` in `resolve_cell()`'s fill is now load bearing.** `below_floor`
+fires for two unrelated reasons: a thin denominator, which gets colour, and a
+non-finite value, which cannot. Drop the guard and a pitch type nobody swung at
+gets `cell_fill(NA)` — an uncoloured cell rather than a white one, which reads
+as a rendering fault. Pinned by test.
+
+Rejected on the way here, recorded so they are not re-proposed:
+
+- **Lowering the rate floors.** At one game the median cell is 5 swings, 5
+  out-of-zone, 3 PA, and **0.0%** of rate cells clear 50. Lowering prints noise
+  in colour and does not fix the cause.
+- **Shrinkage toward the league mean.** At fixed n it is a linear transform of
+  the numerator, so it cannot change the ranking — measured, raw and shrunk
+  correlate with season truth identically at every n. It changes calibration,
+  not signal, and it splits the number shown from the number coloured.
+- **A window-matched reference.** Statistically the cleanest, and rejected on
+  cost: `league_ref` is read in 44 places across 12 files, and it would go from
+  one table to one per window size.
+
+## GB%, RV and RV/100
+
+Added 2026-09-08. Two columns came back into `app_data`: `bb_type` and
+`delta_pitcher_run_exp`. `APP_DATA_UNREAD` is now the seven trajectory columns
+and nothing else.
+
+**`RV` is a counting stat and takes no percentile.** It is absent from
+`ARSENAL_METRIC_COLS` and from `METRIC_SPEC`: a pitcher with 30 sliders and one
+with 300 are not comparable on a total, so a percentile there measures workload.
+RV is exact at any window, which is the whole reason it belongs on a tab people
+open one game at a time.
+
+**`RV/100` was built and removed the same day.** It is the shadeable form, but
+its split-half reliability is 0.02–0.10 at every sample we have — per-pitch run
+value is dominated by rare events, one home run being −2.7 runs — so the colour
+would have been a lottery dressed as a grade. RV alone says the same thing
+without the false precision. Do not re-add it without new evidence.
+
+**The results table carries no COUNT or PITCH%.** They are identity columns, not
+results, and the traits table stacked directly above prints both in the same
+pitch order. One consequence, which is the only thing on the page depending on
+the two tables staying adjacent: a `pitches`-denominated results cell shows its
+sample nowhere in its own table, because `DENOM_SHOWN_AS_COUNT` suppresses the
+parenthetical. The reader takes it from the row above.
+
+**`RV/100` is `high`: positive `delta_pitcher_run_exp` is good for the pitcher.**
+Verified, not assumed — `scripts/verify_arsenal_savant.R` asserts our RV/100
+runs **negative against Savant's wOBA (−0.75)** and positive against their
+whiff% (+0.22). Correlation alone cannot catch a flipped convention, since a
+shared flip still correlates at +1, which is why the sign is asserted against a
+third quantity.
+
+**`GB%` denominator is `bbe`, the thinnest on the table** — median 17 batted
+balls per pitcher-pitch-type over a full season against 99 pitches. `bb_type` is
+the empty string on everything that is not a ball in play, so the definition
+filters on `description == "hit_into_play"`; counting over all pitches would put
+80% zeroes in the denominator. Direction is `high` globally, a simplification:
+grounders prevent runs on average, least so on a four-seam thrown up, and RV/100
+two columns over is the per-pitch verdict so GB% need not carry it alone.
+
+Reliability, measured: GB% split-half r = 0.86 at 50 batted balls, **better than
+whiff% at the same n**. RV/100 is r = 0.02–0.10 at every sample we have, because
+per-pitch run value is dominated by rare events — one home run is −2.7 runs. It
+is on the table as a description of what happened, which is exact, and must not
+be read as a projection.
+
+## Savant's pitch-arsenal leaderboard is real ground truth
+
+`scripts/verify_arsenal_savant.R`. The leaderboard publishes run value, whiff%
+and pitch counts **per pitcher per pitch type** — the exact grain these tables
+render at, and the only external source at that grain. Over 1,141 cells:
+pitches r = 0.996, whiff% r = 0.995 (MAE 0.66), run value r = 0.971,
+RV/100 r = 0.969.
+
+The whiff% agreement is worth noting on its own: it validates the foul-tip and
+bunt definitions at pitch-type grain, which nothing previously did.
+
+Window mismatch is expected and is not a finding — the leaderboard is
+season-to-date and the local store lags it. Read correlation, and read the mean
+gap against that lag.
+
 ## Fact-checking the traits columns
 
 `scripts/verify_traits.R` (added 2026-08-31). The rest of the suite compares the
