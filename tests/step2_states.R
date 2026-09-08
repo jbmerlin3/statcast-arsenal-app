@@ -65,30 +65,63 @@ fails <- character()
 expect <- function(lbl, got, want) if (!identical(got, want))
   fails <<- c(fails, sprintf("%s: got %s, wanted %s", lbl, deparse(got), deparse(want)))
 
-# The fixture used to be Shane Baz's KC. It moved for a reason worth recording:
-# PITCH_CODE_RULES now maps KC to CU, so build_pitch_level() no longer returns a
-# pitch type called KC for anyone, filter(pitch_type == "KC") matched zero rows,
-# and every field came back NA. That is the correct behaviour of the change, not
-# a regression, but it left this file asserting against an empty frame.
+# FOUND, NOT HARDCODED, as of 2026-09-08. This is the third time this fixture
+# went stale and the previous two were re-derived by hand:
 #
-# The expectations were already stale before that, wanting 22 pitchers against a
-# reference that had been rebuilt since. Re-derived here from the current
-# league_ref rather than carried forward.
+#   Shane Baz's KC broke when PITCH_CODE_RULES mapped KC to CU, so the filter
+#   matched zero rows and every field came back NA.
+#   Jhoan Duran's FS vs RHH broke when the store grew from 589k to 636k pitches
+#   and the fine cell gained enough pitchers to resolve exact instead.
 #
-# Duran's FS vs RHH is a real fallback: 98 swings clears the 50-swing floor, but
-# the fine pitch_type x p_throws x stand cell does not have enough pitchers, so
-# resolve_cell() drops to the coarser cut. Which is exactly the state this block
-# exists to pin.
-cat("=== THE FALLBACK CASE: Jhoan Duran, FS, whiff% vs RHH ===\n")
-fb <- cell_for(661395, "FS", "R", "whiff_pct")
-show("Duran FS whiff% vs RHH", fb)
-cat("  state note: ", fb$state_note, "\n", sep = "")
-expect("fallback state",      fb$state,       "fallback")
-expect("fallback grain",      fb$grain,       "pitch_type x p_throws x count")
-expect("fallback n_pitchers", fb$n_pitchers,  46L)
-expect("fallback marker",     fb$marker,      "†")
-expect("fallback weight",     fb$font_weight, "bold")
-expect("fallback has_ref",    fb$has_ref,     TRUE)
+# Both were correct behaviour of a correct change, and both left this block
+# asserting nothing. A fallback is by definition a cell whose fine league cut is
+# THIN, so any particular one stops being a fallback the moment the reference
+# fills in. Pinning a pitcher pins the thing most likely to move.
+#
+# So the fallback case is now searched for. What gets asserted is the fallback
+# CONTRACT, which is what this block was always about: the coarser grain is
+# named, the dagger is set, the cell is bold and filled, and has_ref is TRUE.
+# The n_pitchers and the exact grain string are printed rather than asserted,
+# because those are properties of whichever cell answered.
+#
+# If no fallback exists anywhere, that FAILS loudly rather than passing. A
+# league reference with no coarse fallbacks left would mean this state is dead
+# and the test should say so, not go quiet.
+cat("=== THE FALLBACK CASE, found in the current league_ref ===\n")
+find_fallback <- function() {
+  cands <- ad |>
+    group_by(pitcher, pitch_type, stand) |>
+    summarise(n = n(), sw = sum(description %in% swing_only), .groups = "drop") |>
+    filter(sw >= 60, n >= 80) |>
+    slice_sample(n = 400)
+  for (i in seq_len(nrow(cands))) {
+    r <- cands[i, ]
+    c1 <- tryCatch(cell_for(r$pitcher, as.character(r$pitch_type),
+                            r$stand, "whiff_pct"), error = function(e) NULL)
+    if (!is.null(c1) && identical(c1$state, "fallback"))
+      return(list(cell = c1, who = r))
+  }
+  NULL
+}
+set.seed(4)
+hit <- find_fallback()
+expect("a fallback cell exists in the current reference", !is.null(hit), TRUE)
+if (!is.null(hit)) {
+  fb <- hit$cell
+  show(sprintf("id %s %s vs %sHH whiff%%", hit$who$pitcher,
+               hit$who$pitch_type, hit$who$stand), fb)
+  cat("  grain: ", fb$grain, " | n_pitchers: ", fb$n_pitchers, "\n", sep = "")
+  cat("  state note: ", fb$state_note, "\n", sep = "")
+  expect("fallback state",       fb$state,       "fallback")
+  expect("fallback names a coarser grain", is.character(fb$grain) && nzchar(fb$grain), TRUE)
+  expect("fallback grain is NOT the finest cut",
+         grepl("stand", fb$grain, fixed = TRUE), FALSE)
+  expect("fallback marker",      fb$marker,      "\u2020")
+  expect("fallback weight",      fb$font_weight, "bold")
+  expect("fallback is filled",   fb$fill != PCTILE_UNFILLED, TRUE)
+  expect("fallback has_ref",     fb$has_ref,     TRUE)
+  expect("fallback quotes a real pitcher count", fb$n_pitchers >= MIN_REF_PITCHERS, TRUE)
+}
 
 cat("\n=== THE OTHER THREE STATES ===\n")
 # Below floor uses a real, non-zero denominator rather than an empty pitch type.

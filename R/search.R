@@ -153,9 +153,13 @@ search_missing <- function(pool, p_throws, pitch_type, min_pitches = 25) {
 #' A slider bound, printed at the trait's own precision
 #'
 #' Spin wants 2,725 and extension wants 6.5, and one sprintf cannot do both.
-#' Its own function because the slider label and the table have to agree: a
-#' label reading 101.6 over a column reading 102 is a bug report waiting to
-#' happen.
+#'
+#' NO LONGER CALLED BY THE UI as of 2026-09-08, when the slider labels stopped
+#' printing their range: ionRangeSlider's own handle bubbles say it. Kept rather
+#' than deleted because the per-trait precision contract it encodes is still
+#' real and still tested in tests/step7_search.R, and it is the thing any future
+#' bound-printing would need. Delete it and those four assertions together, or
+#' not at all.
 fmt_bound <- function(x, digits) {
   formatC(x, format = "f", digits = digits, big.mark = ",")
 }
