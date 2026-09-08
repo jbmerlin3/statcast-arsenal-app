@@ -249,9 +249,11 @@ resolve_cell <- function(ref, value, metric, pitch_type, p_throws, stand,
     exact    = NA_character_,
     fallback = paste0("Percentile from a coarser league cut, ", hit$grain,
                       ", built on ", hit$n_pitchers, " pitchers."),
-    below_floor = paste0("Grey values sit below the ", spec$floor, " ", spec$denom,
-                         " floor for this metric. The figure in parentheses is ",
-                         "the value's own denominator."),
+    below_floor = paste0("A figure in parentheses is the value's own denominator, ",
+                         "shown whenever it sits under ", spec$floor, " ", spec$denom,
+                         " for this metric. Those cells are still ranked against ",
+                         "the full-season league, so a short window reads as what ",
+                         "happened over it rather than as a projection."),
     no_reference = paste0("No league reference at any grain for this pitch type ",
                           "and pitcher hand, so no percentile is shown. The ",
                           "pitcher's own sample is not the limit here."))
@@ -269,11 +271,20 @@ resolve_cell <- function(ref, value, metric, pitch_type, p_throws, stand,
     # one inch in a cutter's tight IVB spread and four in a curveball's. `pctile`
     # below still reports the true rank, so a cell can read 90th and look pale,
     # which is the honest reading of leading a tight group by very little.
+    # The is.finite() guard became load bearing on 2026-09-08, when below_floor
+    # started rendering filled. That state fires for two different reasons: a
+    # thin denominator, which now gets its colour, and a value that is not
+    # finite at all, which cannot. A pitch type nobody swung at has whiff_pct
+    # NA, so its percentile is NA, and pctile_fill() hands back NA_character_.
+    # Passing that to cell_fill() paints a cell with no colour rather than
+    # leaving it white. So an unpaintable cell falls back to white explicitly.
     fill        = if (!sty$filled) PCTILE_UNFILLED else {
                     p_fill <- if (metric %in% MAGNITUDE_METRICS) {
                       shape_delta_pctile(value, hit$mean)
                     } else hit$pctile
-                    pctile_fill(p_fill, metric_direction(metric, pitch_type))
+                    if (isTRUE(is.finite(p_fill)))
+                      pctile_fill(p_fill, metric_direction(metric, pitch_type))
+                    else PCTILE_UNFILLED
                   },
     text_color  = sty$text_color,
     font_style  = sty$font_style,

@@ -83,9 +83,14 @@ cat("\n=== below floor renders unfilled, grey, italic, with its n ===\n")
 b2    <- pick(cam, "below_floor"); bf <- b2$cell
 cell2 <- tds(b2$panel$g, bf$column)[bf$row]
 cat("  [", b2$which, "] ", bf$column, " row ", bf$row, ": ", txt(cell2), "\n", sep = "")
-expect("below floor is white",  grepl("background-color: #FFFFFF", cell2, ignore.case = TRUE), TRUE)
-expect("below floor is grey",   grepl("color: #767676", cell2, ignore.case = TRUE), TRUE)
-expect("below floor is italic", grepl("font-style: italic", cell2), TRUE)
+# CHANGED 2026-09-08 with the fill. A thin cell now renders in colour and in
+# normal text, and the parenthetical n is the whole of what marks it. So the n
+# assertion carries the weight the three style assertions used to share, and it
+# is checked in the RENDERED page rather than in the resolver for that reason.
+expect("below floor is not white",
+       grepl("background-color: #FFFFFF", cell2, ignore.case = TRUE), FALSE)
+expect("below floor is not greyed", grepl("color: #767676", cell2, ignore.case = TRUE), FALSE)
+expect("below floor is not italic",  grepl("font-style: italic", cell2), FALSE)
 expect("below floor shows its n", grepl("\\([0-9]+\\)$", txt(cell2)), TRUE)
 
 cat("\n=== the percentile fill survives the pitch-colour reduce ===\n")

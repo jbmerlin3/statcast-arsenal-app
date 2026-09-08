@@ -584,11 +584,32 @@ PCTILE_UNFILLED <- "#FFFFFF"
 # LEAGUE reference, single for a coarser one and double for none at all. A
 # parenthetical instead says something about the PITCHER's own sample. A reader
 # who learns that once can read any cell without the footnote.
+# CHANGED 2026-09-08. below_floor is now FILLED, in normal black text, and keeps
+# only its parenthetical n.
+#
+# It used to render unfilled, grey and italic, on the reasoning that a rate off
+# nine swings should not be placed against the league at all. That reasoning is
+# sound about PREDICTION and wrong about what this tab is for. Asked for one
+# start, a scout is asking what happened that day measured against what the
+# league does over a season, which is a descriptive question that a small sample
+# answers exactly. Holmes on 2026-09-07 rendered 40 of 48 trait cells and every
+# single results cell in grey: a table that reported nothing about a start it
+# had complete information on.
+#
+# The floors did not move and are not gone. They still classify the cell, so the
+# parenthetical n still appears on exactly the cells that used to be greyed. What
+# changed is that the floor now ANNOTATES the sample instead of withholding the
+# comparison: the reader is told the number came off nine swings and is left to
+# weigh it, rather than being shown a blank.
+#
+# Keep this in view: a 60% whiff on five swings will now render as a deep red
+# cell. That is the intended behaviour and it is a real cost. The (n) beside it
+# is the only thing qualifying it, so the n must never be dropped from this row.
 CELL_STATE_STYLE <- data.frame(
   state       = c("exact", "fallback",  "below_floor", "no_reference"),
-  filled      = c(TRUE,    TRUE,        FALSE,         FALSE),
-  text_color  = c("#000000", "#000000", PCTILE_GREY,   PCTILE_GREY),
-  font_style  = c("normal", "normal",   "italic",      "italic"),
+  filled      = c(TRUE,    TRUE,        TRUE,          FALSE),
+  text_color  = c("#000000", "#000000", "#000000",     PCTILE_GREY),
+  font_style  = c("normal", "normal",   "normal",      "italic"),
   font_weight = c("normal", "bold",     "normal",      "normal"),
   # below_floor's marker is built at runtime, since it carries its own n.
   marker      = c("",       "\u2020",   "",            "\u2021"),
