@@ -245,6 +245,54 @@ print(as.data.frame(lg), row.names = FALSE)
 chk("curveball steeper than four-seam",
     lg$v[lg$pitch_type=="CU"] < lg$v[lg$pitch_type=="FF"] - 3)
 
+# ---- D. Column freshness -----------------------------------------------------
+# Added 2026-09-08 after arm_angle went unnoticed at 100% NA for eleven dates.
+#
+# The failure had no error and no symptom until a chart printed "NaN". Savant
+# populates arm_angle from a pose pipeline that lags the pitch data, and
+# update_data.R re-pulls only REPULL_DAYS (default 7). When a backfill lands
+# later than that, the date has already fallen out of the window and is never
+# re-fetched, so it is frozen as NA for the life of the store. August 2026 sat
+# at 46.8% NA while every other month was under 1%, and Savant had the values
+# the whole time.
+#
+# Nothing else here can catch that. Tier A recomputes what IS in the store, so a
+# stale NA reconciles against itself perfectly. verify_arsenal_savant.R compares
+# against pitchers Savant RETURNS, which by construction excludes missing ones.
+# A source that drops its own nulls cannot be used to find nulls.
+#
+# The most recent dates are EXEMPT and that is not a fudge: Savant genuinely has
+# not computed them yet, so a fresh date at 100% NA is correct upstream
+# behaviour rather than staleness. Measured 2026-09-08: the newest date was
+# 100% NA at Savant itself while every date from 2 to 7 days back was ~0.4%.
+FRESH_LAG_DAYS <- 3L
+STALE_NA_RATE  <- 0.25
+
+cat("\nD. COLUMN FRESHNESS. Catches a silent NA band that reconciles with itself.\n")
+# `gd`, not `.d`. A leading-dot name partial-matches mutate()'s own `.data`
+# argument, so `.d = as.Date(game_date)` is swallowed as a parameter rather than
+# evaluated as a column, and game_date is then looked up outside the data mask.
+# It fails with "object 'game_date' not found" on a frame that plainly has it.
+# `.t` a hundred lines up is fine because it matches no argument name.
+by_date <- ad |>
+  mutate(gd = as.Date(game_date)) |>
+  filter(gd <= max(gd) - FRESH_LAG_DAYS) |>
+  group_by(gd) |>
+  summarise(n = n(), na_rate = mean(is.na(arm_angle)), .groups = "drop")
+bad <- by_date[by_date$na_rate > STALE_NA_RATE, ]
+chk(sprintf("arm_angle populated on every date older than %d days", FRESH_LAG_DAYS),
+    nrow(bad) == 0,
+    sprintf("%d of %d dates over %.0f%% NA", nrow(bad), nrow(by_date), 100 * STALE_NA_RATE))
+if (nrow(bad)) {
+  cat("     stale dates (re-run the chain with a wider repull_days):\n")
+  for (i in seq_len(min(nrow(bad), 12)))
+    cat(sprintf("       %s  %5d pitches  %.0f%% NA\n", bad$gd[i], bad$n[i], 100 * bad$na_rate[i]))
+  if (nrow(bad) > 12) cat("       ... and ", nrow(bad) - 12, " more\n", sep = "")
+}
+chk("season-wide arm_angle NA under 5%",
+    mean(is.na(ad$arm_angle)) < 0.05,
+    sprintf("%.2f%%", 100 * mean(is.na(ad$arm_angle))))
+
 cat("\n", strrep("-", 66), "\n", sep = "")
 if (length(fails)) { cat("FAILURES:\n"); for (f in fails) cat("  ", f, "\n") }
 cat("VERIFY TRAITS: ", if (length(fails)) "FAIL" else "PASS", "\n", sep = "")
