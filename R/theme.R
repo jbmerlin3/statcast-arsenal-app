@@ -426,11 +426,23 @@ RESULTS_FLOOR_FRACTION <- 0.5
 # already worked, which is a different and much less useful question than asking
 # for a shape and then seeing whether it worked. The outcome columns are shown
 # and coloured, never filtered on.
+# rel_ht added 2026-08-31. Release HEIGHT only, not release side: height needs
+# no handedness convention, where side is catcher's-view signed and would put a
+# lefty and a righty at opposite ends of the same slider. Adding side means
+# deciding what a slider spanning -3.4 to +3.0 means to a reader who has not
+# picked a hand yet, and that is a design question rather than a column.
+#
+# step 0.05 and digits 2, finer than extension's 0.1. The league spread is about
+# half a foot, so a 0.1 step gives roughly ten positions across the middle 80%
+# of arms and buckets a third of the league onto one number. It also matches the
+# two decimals the traits table prints, and fmt_bound() exists precisely so the
+# slider label and the table cannot disagree.
 SEARCH_TRAITS <- data.frame(
-  trait  = c("velo",  "ivb",  "hb",   "spin",  "ext"),
-  label  = c("Velocity (mph)", "IVB (in)", "HB (in)", "Spin (rpm)", "Extension (ft)"),
-  step   = c(0.1,     0.5,    0.5,    25,      0.1),
-  digits = c(1L,      1L,     1L,     0L,      1L),
+  trait  = c("velo",  "ivb",  "hb",   "spin",  "ext",  "rel_ht"),
+  label  = c("Velocity (mph)", "IVB (in)", "HB (in)", "Spin (rpm)",
+             "Extension (ft)", "Rel Height (ft)"),
+  step   = c(0.1,     0.5,    0.5,    25,      0.1,    0.05),
+  digits = c(1L,      1L,     1L,     0L,      1L,     2L),
   stringsAsFactors = FALSE
 )
 
@@ -454,6 +466,7 @@ SEARCH_METRIC_COLS <- c(
   hb        = "hb",
   spin      = "spin",
   ext       = "ext",
+  rel_ht    = "rel_ht",
   whiff_pct = "whiff_pct",
   chase_pct = "chase_pct",
   xwoba     = "xwoba"

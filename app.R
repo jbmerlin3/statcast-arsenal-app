@@ -331,7 +331,15 @@ server <- function(input, output, session) {
                             min = rg$lo[i], max = rg$hi[i], ticks = FALSE,
                             value = c(rg$lo[i], rg$hi[i]), step = spec$step))
     })
-    tagList(fluidRow(cols[1:3]), fluidRow(cols[4:5]))
+    # Chunked from the actual slider count rather than hardcoded. This read
+    # fluidRow(cols[1:3]), fluidRow(cols[4:5]) while SEARCH_TRAITS held exactly
+    # five traits, so adding a sixth rendered five sliders and silently dropped
+    # the new one: no error, no gap, just a control that was never drawn.
+    rows <- split(cols, ceiling(seq_along(cols) / 3))
+    # do.call, not tagList(!!!...). tagList collects with list(...) and does not
+    # process rlang's splice operator, so !!! reaches it as a literal call and
+    # errors at render.
+    do.call(tagList, unname(lapply(rows, function(r) fluidRow(r))))
   })
 
   # Sort state, owned here rather than in the table, because a click has to know
