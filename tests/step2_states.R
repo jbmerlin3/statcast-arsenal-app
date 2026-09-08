@@ -317,6 +317,7 @@ stuff_tbl <- tibble::tibble(
   # tibble stands in for arsenal_table() output, and a stand-in missing columns
   # the real thing always has is how a renderer grows a dependency nobody tests.
   vaa = -5.0, ext = 6.5, rel_ht = 5.9, rel_side = 2.0,
+  gb_pct = 42.0, rv = 1.0, rv100 = 0.25,
   strike_pct = 60, whiff_pct = 25, csw_pct = 28, zone_pct = 50, chase_pct = 30,
   xwoba = 0.310,
   # 75 and 125 are the ends of the span; 40 and 160 are outside it and must
@@ -514,6 +515,12 @@ ft_frame <- tibble::tibble(
   # purpose: this frame exists to exercise the whiff and CSW denominators, and a constant keeps
   # those means from varying while the rows under test do.
   vaa = -7.0, release_extension = 6.4, release_pos_x = -1.9, release_pos_z = 5.9,
+  # bb_type is populated only on balls in play and is the empty string
+  # elsewhere, which is the shape gb_pct() filters on. delta_pitcher_run_exp is
+  # a constant 0: this frame tests denominators, and a run value that varied
+  # would move rv/rv100 without any assertion noticing.
+  bb_type = ifelse(description == "hit_into_play", "ground_ball", ""),
+  delta_pitcher_run_exp = 0,
   woba_denom   = c(rep(NA, 8), 1, 1, rep(NA, 4)),
   estimated_woba_using_speedangle = c(rep(NA, 8), 0.3, 0.2, rep(NA, 4)))
 ft_tb <- arsenal_table(ft_frame, "All",

@@ -171,8 +171,8 @@ KDE_MIN_N <- 15
 METRIC_SPEC <- data.frame(
   metric = c("velo", "ivb", "hb", "vaa", "spin", "ext", "rel_ht", "rel_side",
              "strike_pct", "csw_pct", "zone_pct", "usage_pct",
-             "whiff_pct", "chase_pct", "xwoba"),
-  kind   = c(rep("mean", 8), rep("rate", 7)),
+             "whiff_pct", "chase_pct", "xwoba", "gb_pct", "rv100"),
+  kind   = c(rep("mean", 8), rep("rate", 9)),
   # usage_pct's denominator is the CUT's total pitches, not the pitch type's.
   # It is a share: its precision comes from how many pitches the share was
   # measured over, not from how many were of this type. Flooring it on the pitch
@@ -180,10 +180,10 @@ METRIC_SPEC <- data.frame(
   # uncommon, which is backwards.
   denom  = c(rep("pitches", 8),
              "pitches", "pitches", "pitches", "cut_pitches",
-             "swings", "oz", "pa"),
+             "swings", "oz", "pa", "bbe", "pitches"),
   floor  = c(rep(25, 8),
              rep(50, 4),
-             50, 50, 50),
+             50, 50, 50, 25, 50),
   # NOTE: the direction here is NOT used for ivb or hb. Those two are looked up
   # per pitch type in PITCH_SHAPE_DIRECTION, because more ride is the point of a
   # four-seam and the death of a sinker. The entries below are kept so the frame
@@ -212,10 +212,23 @@ METRIC_SPEC <- data.frame(
   # point on a four-seam and steep is the point on a curveball, so its direction
   # is a property of the pitch shape and lives in PITCH_SHAPE_DIRECTION. The
   # value below is a placeholder that keeps the frame rectangular.
+  # gb_pct is "high" globally rather than per pitch type, and that is a
+  # simplification worth naming. A ground ball prevents runs better than a fly
+  # ball on average, so more is better for most of an arsenal. It is least true
+  # of a four-seam thrown up, whose job is the whiff and whose grounders are
+  # incidental. Left global because RV/100 sits two columns away and IS the
+  # per-pitch verdict, so GB% does not have to carry that judgement alone.
+  #
+  # rv100 is "high" because a POSITIVE delta_pitcher_run_exp is good for the
+  # pitcher. Verified against Savant rather than assumed: our RV/100 correlates
+  # -0.75 with their wOBA and +0.22 with their whiff% over 1,141 cells, and our
+  # RV/100 matches theirs at r = 0.969. Getting this backwards would paint the
+  # league's best pitches deep blue, which is the least visible bug this table
+  # can have.
   direction = c("high", "high", "high", "high", "high", "high",
                 "extreme", "extreme",
                 "high", "high", "high", "neutral",
-                "high", "high", "low"),
+                "high", "high", "low", "high", "high"),
   stringsAsFactors = FALSE
 )
 
@@ -369,7 +382,13 @@ ARSENAL_METRIC_COLS <- c(
   csw_pct    = "csw_pct",
   zone_pct   = "zone_pct",
   chase_pct  = "chase_pct",
-  xwoba      = "xwoba"
+  xwoba      = "xwoba",
+  gb_pct     = "gb_pct",
+  # rv is deliberately ABSENT. It is a counting stat, so a pitcher with 30
+  # sliders and one with 300 are not comparable on it and a percentile would be
+  # measuring workload. rv100 is the shadeable sibling; rv renders unshaded,
+  # like COUNT.
+  rv100      = "rv100"
 )
 
 
@@ -623,7 +642,26 @@ CELL_STATE_STYLE <- data.frame(
 # Every denominator a metric can divide by. One list, so a frame of counts and
 # METRIC_SPEC$denom cannot drift apart silently: a denom naming a column nobody
 # supplies resolves to no sample at all and greys the metric everywhere.
-DENOM_COLS <- c("pitches", "swings", "oz", "pa", "cut_pitches")
+# bbe = batted balls, added 2026-09-08 for GB%. It is the THINNEST denominator
+# on the table by a distance: a median of 17 per pitcher-pitch-type over a full
+# season against 99 pitches, so its parenthetical n does real work.
+DENOM_COLS <- c("pitches", "swings", "oz", "pa", "cut_pitches", "bbe")
+
+# The denominator every table already prints as its own column: COUNT in the two
+# characteristics tables, N in the search table. A parenthetical repeating it
+# says nothing the row does not already say, and it says it once per column: a
+# six-pitch traits row carried eight identical "(19)" markers beside a COUNT
+# cell reading 19.
+#
+# So a below-floor marker is emitted only when the denominator DIFFERS from this
+# one, which leaves it on exactly the three that carry new information -- whiff
+# over swings, chase over out-of-zone, xwOBA over plate appearances -- and on
+# usage, whose denominator is the pitcher's own total rather than the pitch
+# type's.
+#
+# Named rather than written as a bare "pitches" at the comparison, because the
+# claim being made is about what the TABLE renders, not about the metric.
+DENOM_SHOWN_AS_COUNT <- "pitches"
 
 MIN_REF_PITCHERS <- 20
 

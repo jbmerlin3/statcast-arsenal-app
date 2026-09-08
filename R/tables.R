@@ -92,6 +92,20 @@ arsenal_table <- function(df, hand, stuff_all) {
       xwoba = { d <- sum(woba_denom, na.rm = TRUE)
                 if (d > 0) round(sum(estimated_woba_using_speedangle * woba_denom,
                                      na.rm = TRUE) / d, 3) else NA_real_ },
+      # Ground balls over BATTED BALLS, not over pitches. bb_type is populated
+      # only on balls in play and is the empty string elsewhere, which is the
+      # trap CLAUDE.md documents: counting over all pitches would put 80%
+      # zeroes in the denominator. Filtered on description instead, so this is
+      # the same `bbe` arsenal_denoms() reports.
+      gb_pct = { b <- description == "hit_into_play" & nzchar(bb_type) & !is.na(bb_type)
+                 round(pct_or_na(sum(b & bb_type == "ground_ball"), sum(b)), 1) },
+      # Run value, pitcher perspective, POSITIVE IS GOOD. A counting stat: the
+      # exact runs this pitch saved over the window, correct at any sample, and
+      # it takes no percentile. See ARSENAL_METRIC_COLS.
+      rv = round(sum(delta_pitcher_run_exp, na.rm = TRUE), 1),
+      # The same thing per 100 pitches, the comparable form and the one that
+      # shades. Savant publishes both, under these names.
+      rv100 = round(100 * sum(delta_pitcher_run_exp, na.rm = TRUE) / n(), 2),
       .groups = "drop"
     ) |>
     arrange(desc(pitch_pct)) |>
@@ -122,6 +136,9 @@ arsenal_denoms <- function(df, hand) {
       swings  = sum(description %in% swing_only),
       oz      = sum(in_zone == 0),
       pa      = sum(woba_denom, na.rm = TRUE),
+      # Must match gb_pct's denominator in arsenal_table() exactly, or the
+      # parenthetical n describes a different sample from the number beside it.
+      bbe     = sum(description == "hit_into_play" & nzchar(bb_type) & !is.na(bb_type)),
       .groups = "drop"
     )
 }
@@ -158,7 +175,8 @@ TRAITS_COLS <- c("pitch_type", "count", "pitch_pct",
 
 RESULTS_COLS <- c("pitch_type", "count", "pitch_pct",
                   "strike_pct", "whiff_pct", "csw_pct",
-                  "zone_pct", "chase_pct", "xwoba")
+                  "zone_pct", "chase_pct", "gb_pct", "xwoba",
+                  "rv", "rv100")
 
 #' any_of(), not all_of(), and this is the one place in the file where that is
 #' correct rather than sloppy. fg_exact is absent whenever stuff_all carried no
@@ -375,8 +393,13 @@ results_gt <- function(tbl, hand, label = hand_label(hand), ref = NULL) {
     cols_label(
       pitch_type = "PITCH", count = "COUNT", pitch_pct = "PITCH%",
       strike_pct = "STRIKE%", whiff_pct = "WHIFF%", csw_pct = "CSW%",
-      zone_pct = "IN-ZONE%", chase_pct = "CHASE%", xwoba = "xwOBA"
+      zone_pct = "IN-ZONE%", chase_pct = "CHASE%", gb_pct = "GB%",
+      xwoba = "xwOBA", rv = "RV", rv100 = "RV/100"
     ) |>
+    # force_sign, because the whole point of a run value is which side of zero
+    # it is on. "+1.2" and "-1.2" read at a glance; "1.2" and "-1.2" do not.
+    fmt_number(columns = rv, decimals = 1, force_sign = TRUE) |>
+    fmt_number(columns = rv100, decimals = 2, force_sign = TRUE) |>
     # Drop the leading zero on xwOBA, the usual convention for a rate bounded
     # below one.
     fmt(columns = xwoba, fns = \(x) sub("^0", "", sprintf("%.3f", x)))

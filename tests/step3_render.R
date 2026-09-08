@@ -50,12 +50,17 @@ build <- function(id, hand, dates = NULL) {
 #' regression. It passed on the current fixtures only because neither happens to
 #' have one, which is exactly the kind of accident that should not be load
 #' bearing.
-pick <- function(b, state, glyphs = FALSE) {
+#' `cols` narrows to particular columns. Needed since 2026-09-08, when the
+#' below-floor marker was suppressed on metrics whose denominator is the COUNT
+#' column: an unfiltered search lands on velocity, which now correctly carries no
+#' marker, and the n assertion fails on intended behaviour.
+pick <- function(b, state, glyphs = FALSE, cols = NULL) {
   nms <- c("traits", "results")
   if (glyphs) nms <- Filter(function(nm) isTRUE(b[[nm]]$glyphs), nms)
   for (nm in nms) {
     p   <- b[[nm]]
     hit <- p$ctx$cells[p$ctx$cells$state == state, ]
+    if (!is.null(cols)) hit <- hit[hit$column %in% cols, ]
     if (nrow(hit)) return(list(panel = p, cell = hit[1, ], which = nm))
   }
   stop("no ", state, " cell in any eligible table, so this probe tested nothing")
@@ -80,7 +85,10 @@ expect("fallback cell is filled, not white", grepl("#FFFFFF", cell, ignore.case 
 expect("fallback cell is bold", grepl("font-weight: bold", cell), TRUE)
 
 cat("\n=== below floor renders unfilled, grey, italic, with its n ===\n")
-b2    <- pick(cam, "below_floor"); bf <- b2$cell
+# whiff_pct: its denominator is swings, so it is one of the three that still
+# carries a parenthetical. The COUNT-denominated case is asserted separately
+# below, because "no marker" is now just as much a contract as "a marker".
+b2    <- pick(cam, "below_floor", cols = "whiff_pct"); bf <- b2$cell
 cell2 <- tds(b2$panel$g, bf$column)[bf$row]
 cat("  [", b2$which, "] ", bf$column, " row ", bf$row, ": ", txt(cell2), "\n", sep = "")
 # CHANGED 2026-09-08 with the fill. A thin cell now renders in colour and in
@@ -92,6 +100,16 @@ expect("below floor is not white",
 expect("below floor is not greyed", grepl("color: #767676", cell2, ignore.case = TRUE), FALSE)
 expect("below floor is not italic",  grepl("font-style: italic", cell2), FALSE)
 expect("below floor shows its n", grepl("\\([0-9]+\\)$", txt(cell2)), TRUE)
+
+# The other half: a thin cell whose denominator IS the COUNT column carries no
+# parenthetical, because the row already prints it. Without this the suppression
+# could silently revert and only the visual clutter would tell anyone.
+b3 <- pick(cam, "below_floor", cols = c("velocity", "ivb", "spin", "csw_pct", "zone_pct"))
+cell3b <- tds(b3$panel$g, b3$cell$column)[b3$cell$row]
+cat("  [", b3$which, "] ", b3$cell$column, " row ", b3$cell$row, ": ", txt(cell3b), "\n", sep = "")
+expect("a COUNT-denominated thin cell carries NO parenthetical",
+       grepl("\\([0-9]+\\)$", txt(cell3b)), FALSE)
+expect("and it is still filled", grepl("background-color: #FFFFFF", cell3b, ignore.case = TRUE), FALSE)
 
 cat("\n=== the percentile fill survives the pitch-colour reduce ===\n")
 e2    <- pick(baz, "exact"); ex <- e2$cell
@@ -259,6 +277,12 @@ nan_frame <- tibble::tibble(
   # purpose: this frame exists to exercise empty denominators, and a constant keeps
   # those means from varying while the rows under test do.
   vaa = -4.8, release_extension = 6.4, release_pos_x = -1.9, release_pos_z = 5.9,
+  # bb_type is populated only on balls in play and is the empty string
+  # elsewhere, which is the shape gb_pct() filters on. delta_pitcher_run_exp is
+  # a constant 0: this frame tests denominators, and a run value that varied
+  # would move rv/rv100 without any assertion noticing.
+  bb_type = ifelse(description == "hit_into_play", "ground_ball", ""),
+  delta_pitcher_run_exp = 0,
   woba_denom   = c(NA, NA, 1, NA, NA, NA, rep(NA, 6)),
   estimated_woba_using_speedangle = c(NA, NA, 0.3, NA, NA, NA, rep(NA, 6)))
 nan_tb <- arsenal_table(nan_frame, "All",

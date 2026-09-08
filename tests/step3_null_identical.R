@@ -91,6 +91,17 @@
 # its pick() was made glyph-aware in the same commit so the dagger probe cannot
 # silently land on a table that draws no daggers.
 
+# RECAPTURED 2026-09-08 for GB%, RV and RV/100 on the results table. Diffed by
+# column first: traits byte-identical in all four variants, results gained
+# exactly gb_pct, rv and rv100 with every pre-existing cell unmoved. So the
+# three columns were added and nothing was disturbed, which is the property
+# this baseline exists to prove.
+#
+# Column width moved with them and is not separately checked here: results went
+# from 9 columns to 12, so gt_chassis()'s 960/ncol lands on 80px, the same width
+# the traits table uses. The two tables are now the same shape by arithmetic
+# rather than by coincidence.
+
 suppressMessages({library(dplyr); library(tidyr); library(purrr); library(forcats)
                   library(ggplot2); library(gt); library(readr)})
 

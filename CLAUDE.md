@@ -414,6 +414,54 @@ Rejected on the way here, recorded so they are not re-proposed:
   cost: `league_ref` is read in 44 places across 12 files, and it would go from
   one table to one per window size.
 
+## GB%, RV and RV/100
+
+Added 2026-09-08. Two columns came back into `app_data`: `bb_type` and
+`delta_pitcher_run_exp`. `APP_DATA_UNREAD` is now the seven trajectory columns
+and nothing else.
+
+**`RV` is a counting stat and takes no percentile.** It is absent from
+`ARSENAL_METRIC_COLS` on purpose: a pitcher with 30 sliders and one with 300 are
+not comparable on a total, so a percentile there measures workload. `rv100` is
+the shadeable sibling. RV is exact at any window, which is the whole reason it
+belongs on a tab people open one game at a time.
+
+**`RV/100` is `high`: positive `delta_pitcher_run_exp` is good for the pitcher.**
+Verified, not assumed — `scripts/verify_arsenal_savant.R` asserts our RV/100
+runs **negative against Savant's wOBA (−0.75)** and positive against their
+whiff% (+0.22). Correlation alone cannot catch a flipped convention, since a
+shared flip still correlates at +1, which is why the sign is asserted against a
+third quantity.
+
+**`GB%` denominator is `bbe`, the thinnest on the table** — median 17 batted
+balls per pitcher-pitch-type over a full season against 99 pitches. `bb_type` is
+the empty string on everything that is not a ball in play, so the definition
+filters on `description == "hit_into_play"`; counting over all pitches would put
+80% zeroes in the denominator. Direction is `high` globally, a simplification:
+grounders prevent runs on average, least so on a four-seam thrown up, and RV/100
+two columns over is the per-pitch verdict so GB% need not carry it alone.
+
+Reliability, measured: GB% split-half r = 0.86 at 50 batted balls, **better than
+whiff% at the same n**. RV/100 is r = 0.02–0.10 at every sample we have, because
+per-pitch run value is dominated by rare events — one home run is −2.7 runs. It
+is on the table as a description of what happened, which is exact, and must not
+be read as a projection.
+
+## Savant's pitch-arsenal leaderboard is real ground truth
+
+`scripts/verify_arsenal_savant.R`. The leaderboard publishes run value, whiff%
+and pitch counts **per pitcher per pitch type** — the exact grain these tables
+render at, and the only external source at that grain. Over 1,141 cells:
+pitches r = 0.996, whiff% r = 0.995 (MAE 0.66), run value r = 0.971,
+RV/100 r = 0.969.
+
+The whiff% agreement is worth noting on its own: it validates the foul-tip and
+bunt definitions at pitch-type grain, which nothing previously did.
+
+Window mismatch is expected and is not a finding — the leaderboard is
+season-to-date and the local store lags it. Read correlation, and read the mean
+gap against that lag.
+
 ## Fact-checking the traits columns
 
 `scripts/verify_traits.R` (added 2026-08-31). The rest of the suite compares the
