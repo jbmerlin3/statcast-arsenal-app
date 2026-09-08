@@ -202,18 +202,27 @@ results_tbl <- function(tbl) select(tbl, any_of(RESULTS_COLS))
 #' short of the traits table above it, and two left-aligned tables of visibly
 #' different width read as a rendering fault rather than as a design. Each
 #' renderer picks a width that lands them on roughly the same total instead.
-gt_chassis <- function(tbl, title, col_px = 80) {
+gt_chassis <- function(tbl, title, n_visible = ncol(tbl)) {
   # The width is baked into the formula as a LITERAL rather than passed as a
   # variable. gt evaluates a cols_width() formula lazily in an environment where
   # a local argument does not exist, so both `px(col_px)` and an injected `!!wid`
   # fail at RENDER time with "object not found" -- late, and only on the code
   # path that renders. Building the formula text sidesteps the lookup entirely.
-  wid <- stats::as.formula(sprintf("everything() ~ px(%d)", as.integer(col_px)))
+  # n_visible, not ncol(tbl): the traits table carries a hidden fg_exact that gt
+  # does not render, so dividing by ncol() would make its columns narrower than
+  # the arithmetic intends and leave the two tables unequal again.
+  base <- TABLE_WIDTH_PX %/% n_visible
+  rem  <- TABLE_WIDTH_PX %% n_visible
+  # The remainder goes on the first column, which is the pitch code in both
+  # tables and the one that can absorb a few px without reading as misaligned.
+  # Specific formula BEFORE everything(), because gt takes the first match.
+  wid1 <- stats::as.formula(sprintf("%s ~ px(%d)", names(tbl)[1], base + rem))
+  wid  <- stats::as.formula(sprintf("everything() ~ px(%d)", base))
   g <- tbl |>
     gt() |>
     tab_header(title = title) |>
     cols_align("center") |>
-    cols_width(wid) |>
+    cols_width(wid1, wid) |>
     tab_style(cell_borders(sides = c("top", "bottom"), color = "black", weight = px(2)),
               cells_column_labels())
 
@@ -353,7 +362,9 @@ apply_league_ref <- function(g, ref, notes = TRUE) {
 traits_gt <- function(tbl, hand, fg_window = NULL, label = hand_label(hand),
                       ref = NULL) {
   g <- tbl |>
-    gt_chassis(paste0("PITCH TRAITS (", label, ")")) |>
+    # fg_exact is hidden below, so it must not claim width.
+    gt_chassis(paste0("PITCH TRAITS (", label, ")"),
+               n_visible = ncol(tbl) - sum("fg_exact" %in% names(tbl))) |>
     cols_label(
       pitch_type = "PITCH", count = "COUNT", pitch_pct = "PITCH%",
       velocity = "AVG VELO", ivb = "IVB", hb = "HB", vaa = "VAA", spin = "SPIN",
@@ -395,13 +406,12 @@ traits_gt <- function(tbl, hand, fg_window = NULL, label = hand_label(hand),
 #' than restatements of what a column means, and that is the line the traits
 #' table's footnotes fell on the wrong side of.
 #'
-#' RESULTS_COL_PX is set so this table finishes about as wide as the traits table
-#' stacked above it. Recompute it if either column list changes: the traits table
-#' is 12 columns at 80px, so 960 / ncol here.
+#' Width comes from TABLE_WIDTH_PX via gt_chassis(), so this table finishes
+#' EXACTLY as wide as the traits table above it whatever either column list
+#' does. Nothing here needs recomputing when a column is added or removed.
 results_gt <- function(tbl, hand, label = hand_label(hand), ref = NULL) {
   g <- tbl |>
-    gt_chassis(paste0("PITCH RESULTS (", label, ")"),
-               col_px = round(960 / ncol(tbl))) |>
+    gt_chassis(paste0("PITCH RESULTS (", label, ")"), n_visible = ncol(tbl)) |>
     cols_label(
       pitch_type = "PITCH",
       strike_pct = "STRIKE%", whiff_pct = "WHIFF%", csw_pct = "CSW%",

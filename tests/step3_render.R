@@ -120,6 +120,23 @@ cat("  [", e2$which, "] cell fill: ", sub('.*background-color: ([^;]*);.*', '\\1
 expect("cell carries the percentile fill", grepl(ex$fill, cell3, ignore.case = TRUE), TRUE)
 expect("cell does NOT carry the pitch-colour fill", grepl(pc, cell3, ignore.case = TRUE), FALSE)
 
+cat("\n=== the two tables render to the same total width ===\n")
+# They stack, so unequal widths read as a rendering fault. This cannot be
+# checked by arithmetic in the renderers: 12 and 9 columns do not both divide
+# TABLE_WIDTH_PX evenly, and the traits table hides a column that must not claim
+# width. Measured off the rendered page for that reason, and pinned so adding or
+# dropping a column in either table cannot silently unbalance them.
+total_px <- function(g) {
+  h <- as.character(as_raw_html(g))
+  w <- as.numeric(gsub("[^0-9]", "", regmatches(h, gregexpr("width:[0-9]+px", h))[[1]]))
+  sum(w[w > 40])
+}
+tw <- total_px(baz$traits$g); rw <- total_px(baz$results$g)
+cat(sprintf("  traits %dpx | results %dpx | target %dpx\n", tw, rw, TABLE_WIDTH_PX))
+expect("traits table hits TABLE_WIDTH_PX",  tw, as.numeric(TABLE_WIDTH_PX))
+expect("results table hits TABLE_WIDTH_PX", rw, as.numeric(TABLE_WIDTH_PX))
+expect("the two tables are exactly equal",  tw == rw, TRUE)
+
 cat("\n=== note order is dagger, double dagger, grey ===\n")
 # Whichever panel carries the most notes, so the sortedness check has something
 # to sort. A panel with one note satisfies !is.unsorted() by having nothing to

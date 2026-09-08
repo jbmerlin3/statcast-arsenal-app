@@ -119,6 +119,14 @@
 # lost three columns. Any comparison of two column sets has to be run in both
 # directions or it only catches growth.
 
+# RECAPTURED 2026-09-08 for exact width matching. Column WIDTHS only: no cell
+# text moved and no column was added or dropped in any of the six variants.
+#
+# traits is unchanged, 960/12 dividing evenly at 80px. results went from a flat
+# 107px, which summed to 963 and left the stacked tables 3px apart, to 106px
+# with the pitch column absorbing the 6px remainder. Both now total exactly 960.
+# tests/step3_render.R pins that off the rendered page.
+
 suppressMessages({library(dplyr); library(tidyr); library(purrr); library(forcats)
                   library(ggplot2); library(gt); library(readr)})
 

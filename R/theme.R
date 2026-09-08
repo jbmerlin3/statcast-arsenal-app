@@ -672,6 +672,13 @@ DENOM_COLS <- c("pitches", "swings", "oz", "pa", "cut_pitches", "bbe")
 #
 # Named rather than written as a bare "pitches" at the comparison, because the
 # claim being made is about what the TABLE renders, not about the metric.
+# Total rendered width of the two characteristics tables, in px. They stack, so
+# a difference between them reads as a rendering fault rather than as a design,
+# and the difference is not a matter of taste: 12 columns and 9 columns cannot
+# both divide 960 evenly. gt_chassis() gives every column the floor and hands
+# the remainder to the first, so the totals are EQUAL rather than close.
+TABLE_WIDTH_PX <- 960L
+
 DENOM_SHOWN_AS_COUNT <- "pitches"
 
 MIN_REF_PITCHERS <- 20
