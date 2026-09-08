@@ -66,12 +66,40 @@ DEPLOY_STAMP <- "logs/deployed_through.txt"
 #' from, and it can advance on a day app_data does not: a pitcher's line posts
 #' to StatsAPI on a schedule of its own. Gating on app_data alone would have
 #' skipped exactly the redeploy that fixes a wrong IP.
+#' `content` closes a hole the dates and the commit both miss. Savant BACKFILLS:
+#' arm_angle is computed by a pose pipeline that lands days after the game, and a
+#' re-pull that collects it changes tens of thousands of VALUES while changing no
+#' date and no commit. Observed 2026-09-08: a repull_days=200 run refreshed
+#' 40,000+ arm angles into the store, the gate compared 2026-09-07 to 2026-09-07
+#' and b7379e8 to b7379e8, and skipped. The corrected data sat in the release
+#' asset and never reached the live app.
+#'
+#' Same species as the 2026-08-27 incident this gate was widened for, one level
+#' down: that was a code change invisible to a data-only stamp, this is a data
+#' change invisible to a date-only stamp.
+#'
+#' A digest rather than a row count, because a backfill does not change row
+#' count either. Hashing the frame is cheap next to the bundle upload it guards.
 data_dates <- function() {
   gl <- tryCatch(max(readRDS("data/game_logs.rds")$game_date),
                  error = function(e) NA_character_)
-  c(app_data = max(readRDS("data/app_data.rds")$game_date),
+  ad <- readRDS("data/app_data.rds")
+  c(app_data = max(ad$game_date),
     game_logs = gl,
-    code      = code_version())
+    code      = code_version(),
+    content   = substr(digest_or_na(ad), 1, 12))
+}
+
+
+#' A digest of the data a deploy would carry, or "unknown"
+#'
+#' "unknown" compares unequal to anything and therefore deploys, which is the
+#' right direction to fail: a redundant deploy costs one instance wake-up, a
+#' skipped one ships nothing. digest is already in the lockfile via other
+#' dependencies, but this degrades rather than erroring if it is ever absent.
+digest_or_na <- function(x) {
+  if (!requireNamespace("digest", quietly = TRUE)) return("unknown")
+  tryCatch(digest::digest(x, algo = "xxhash64"), error = function(e) "unknown")
 }
 
 
@@ -103,8 +131,12 @@ deployed_dates <- function(path = DEPLOY_STAMP) {
   # A stamp written before `code` existed is unusable rather than a match, so
   # the first run after this change deploys instead of trusting a record that
   # could not have known what code was live.
-  if (is.null(kv) || !all(c("app_data", "game_logs", "code") %in% names(kv))) return(NULL)
-  kv[c("app_data", "game_logs", "code")]
+  # A stamp written before `content` existed is unusable rather than a match, so
+  # the first run after this change deploys instead of trusting a record that
+  # could not have known what data was live.
+  if (is.null(kv) || !all(c("app_data", "game_logs", "code", "content") %in% names(kv)))
+    return(NULL)
+  kv[c("app_data", "game_logs", "code", "content")]
 }
 
 
