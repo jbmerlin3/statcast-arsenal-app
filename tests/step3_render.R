@@ -173,27 +173,25 @@ expect("two distinct grains would be caught", got, "stopped")
 
 cat("\n=== NULL paths on the two functions phase1_check cannot guard ===\n")
 # plot_movement sits in EXPECTED_DIFFS, so the regression reports "differs
-# (expected)" whatever happens inside it. These compare the two call shapes
-# against each other instead, which needs no historical baseline.
+# (expected)" whatever happens inside it. This builds it instead, which needs no
+# historical baseline.
 pm <- build_pitch_level(ad, 702070) |> filter(game_date >= "2026-08-04", game_date <= "2026-08-17")
 pspec <- function(p) tryCatch({
   b <- suppressMessages(suppressWarnings(ggplot2::ggplot_build(p)))
   list(data = b$data, theme = b$plot$theme)
 }, error = function(e) paste("BUILD FAILED:", conditionMessage(e)))
-expect("plot_movement ref=NULL equals no ref",
-       isTRUE(all.equal(pspec(plot_movement(pm)), pspec(plot_movement(pm, ref = NULL)))), TRUE)
-expect("plot_movement with a ref actually differs",
-       isTRUE(all.equal(pspec(plot_movement(pm)), pspec(plot_movement(pm, ref = ref)))), FALSE)
+expect("plot_movement builds", is.list(pspec(plot_movement(pm))), TRUE)
 
-# Every reference mark carries the n it was built from. Asserted because
-# deleting the label layer passed every other check in this file.
-mref <- movement_ref(ref, levels(droplevels(pm$pitch_type)), pm$p_throws[1])
-mb   <- suppressMessages(suppressWarnings(ggplot2::ggplot_build(plot_movement(pm, ref = ref))))
+# The league reference marks were removed on 2026-09-09 by request: a cross and
+# an "n=" label per pitch type, drawn from movement_ref(), which is gone with
+# them. This asserts they stayed gone, because the layers are additive and a
+# future edit restoring a reference layer would not fail anything else here.
+mb   <- suppressMessages(suppressWarnings(ggplot2::ggplot_build(plot_movement(pm))))
 labs <- unlist(lapply(mb$data, function(d) if ("label" %in% names(d)) as.character(d$label)))
-ns   <- grep("^n=[0-9]+$", labs, value = TRUE)
-expect("one n label per reference mark", length(ns), nrow(mref))
-expect("the n labels are the reference pitcher counts",
-       sort(as.integer(sub("^n=", "", ns))), sort(as.integer(mref$n_pitchers)))
+expect("no n= labels on the movement chart",
+       length(grep("^n=[0-9]+$", labs, value = TRUE)), 0L)
+shapes <- unlist(lapply(mb$data, function(d) if ("shape" %in% names(d)) unique(d$shape)))
+expect("and no cross-shaped marks", any(shapes == 3), FALSE)
 
 # M7 removed count_usage_gt's early return, so ref = NULL flowed into the context
 # block and died on nrow(NULL). Nothing can make that call succeed: the function
@@ -237,8 +235,8 @@ for (fn in c("plot_movement", "plot_velo", "plot_usage")) {
   cat(sprintf("  %-14s visible: %s\n", fn, vis))
   expect(paste(fn, "returns visibly"), vis, TRUE)
 }
-expect("plot_movement returns visibly with a ref too",
-       withVisible(plot_movement(pd, ref = ref))$visible, TRUE)
+expect("plot_movement returns visibly",
+       withVisible(plot_movement(pd))$visible, TRUE)
 # plot_heatmap takes a hand argument, so it is checked separately.
 expect("plot_heatmap returns visibly",
        withVisible(plot_heatmap(pd, "R"))$visible, TRUE)
@@ -266,7 +264,7 @@ draws <- function(p) tryCatch({
   print(p)
   TRUE
 }, error = function(e) paste("ERROR:", conditionMessage(e)))
-expect("plot_movement draws with margin() masked", draws(plot_movement(pd, ref = ref)), TRUE)
+expect("plot_movement draws with margin() masked", draws(plot_movement(pd)), TRUE)
 expect("plot_heatmap draws with margin() masked", draws(plot_heatmap(pd, "R")), TRUE)
 rm(margin)
 

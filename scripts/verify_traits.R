@@ -119,7 +119,7 @@ want <- sc |> filter(pitcher %in% elig, !is.na(pitch_type), pitch_type != "") |>
   group_by(pitcher, pitch_type) |>
   summarise(w_velocity = round(mean(release_speed, na.rm = TRUE), 1),
             w_ivb  = round(mean(pfx_z, na.rm = TRUE) * 12, 1),
-            w_hb   = round(mean(-pfx_x * 12, na.rm = TRUE) * arm_side_sign(p_throws[1]), 1),
+            w_hb   = round(mean(-pfx_x * 12, na.rm = TRUE), 1),
             w_vaa  = round(mean(v, na.rm = TRUE), 1),
             w_spin = round(mean(release_spin_rate, na.rm = TRUE), 0),
             w_ext  = round(mean(release_extension, na.rm = TRUE), 1),

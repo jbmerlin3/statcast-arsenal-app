@@ -295,22 +295,35 @@ expect("and a slider reads glove-side negative for both",
        lg_cell(ref, "hb", "SL", "R", "All", "All Counts")$row$mean[[1]] < 0 &&
        lg_cell(ref, "hb", "SL", "L", "All", "All Counts")$row$mean[[1]] < 0, TRUE)
 
-# The chart converts back. Without this the lefty cross sits mirrored across the
-# vertical axis, nowhere near the pitches it is meant to describe.
-mv_r <- movement_ref(ref, c("SI"), "R")$hb[1]
-mv_l <- movement_ref(ref, c("SI"), "L")$hb[1]
-cat(sprintf("  movement chart sinker cross: RHP %+.1f, LHP %+.1f\n", mv_r, mv_l))
-expect("the chart puts the righty cross arm side, positive",  mv_r > 0, TRUE)
-expect("and the lefty cross arm side, which is NEGATIVE there", mv_l < 0, TRUE)
-expect("the round trip is exact for a lefty", mv_l, -si_l)
-
-# The table agrees with league_ref, not with the chart. A lefty's sinker must
-# come out positive here or the percentile is being read off the wrong scale.
-lhp_si <- arsenal_table(filter(build_pitch_level(ad, 702070), pitch_type == "SI"),
-                        "All", tibble::tibble(pitch_type = character(),
-                                              stuff_plus = numeric(), fg_exact = logical()))
+# The table shows the RAW sign, the same one the movement chart draws, so a
+# lefty's sinker reads negative here. It used to read positive, arm-side
+# normalised, and the cost was that the same pitch carried opposite signs on
+# two tabs under one label. Changed 2026-09-09.
+lhp <- filter(build_pitch_level(ad, 702070), pitch_type == "SI")
+no_stuff <- tibble::tibble(pitch_type = character(), stuff_plus = numeric(),
+                           fg_exact = logical())
+lhp_si <- arsenal_table(lhp, "All", no_stuff)
 cat(sprintf("  a LHP sinker in the table reads HB %+.1f\n", lhp_si$hb[1]))
-expect("the table shows a lefty's sinker as arm-side POSITIVE", lhp_si$hb[1] > 0, TRUE)
+expect("the table shows a lefty's sinker with the chart's RAW sign, negative",
+       lhp_si$hb[1] < 0, TRUE)
+
+# ...and the ranking is still arm-side mirrored, which is the half of this that
+# has no visible symptom. Delete the mirror in resolve_table() and the numbers
+# above still read correctly while every left-hander's HB column shades
+# backwards. So this asserts the percentile came from the MIRRORED value and
+# could not have come from the raw one.
+lhp_cells <- resolve_table(traits_tbl(lhp_si), arsenal_denoms(lhp, "All"),
+                           ref, "L", "All")$cells
+hb_cell <- lhp_cells[lhp_cells$metric == "hb", ][1, ]
+p_mirrored <- lg_pctile(ref, -lhp_si$hb[1], "hb", "SI", "L", "All", "All Counts")$pctile
+p_raw      <- lg_pctile(ref,  lhp_si$hb[1], "hb", "SI", "L", "All", "All Counts")$pctile
+cat(sprintf("  lefty SI hb percentile: shown %d, mirrored %d, raw %d\n",
+            as.integer(hb_cell$pctile), as.integer(p_mirrored), as.integer(p_raw)))
+expect("the percentile is read off the arm-side mirrored value",
+       as.integer(hb_cell$pctile), as.integer(p_mirrored))
+# Guards the guard: if these two ever coincide the check above proves nothing.
+expect("and the raw value would have ranked differently",
+       identical(as.integer(p_mirrored), as.integer(p_raw)), FALSE)
 
 cat("\n=== which metrics claim a direction, and which refuse ===\n")
 # Pinned as literals because direction is the least visible thing in this whole
