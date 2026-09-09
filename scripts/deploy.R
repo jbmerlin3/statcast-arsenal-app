@@ -99,7 +99,52 @@ data_dates <- function() {
 #' dependencies, but this degrades rather than erroring if it is ever absent.
 digest_or_na <- function(x) {
   if (!requireNamespace("digest", quietly = TRUE)) return("unknown")
-  tryCatch(digest::digest(x, algo = "xxhash64"), error = function(e) "unknown")
+  tryCatch(digest::digest(canon_frame(x), algo = "xxhash64"),
+           error = function(e) "unknown")
+}
+
+
+#' A frame in canonical form, so equal data hashes equal
+#'
+#' The digest must answer "did any VALUE change", and it was answering "did the
+#' file change", which is a different and much noisier question. Two things make
+#' an unchanged frame hash differently.
+#'
+#' ROW ORDER. update_data.R folds with `bind_rows(new_clean, sc)`, new rows
+#' first, and that ordering is load-bearing: it is the whole mechanism by which
+#' a re-pulled revision beats the stored copy under distinct(). The side effect
+#' is that every row inside the re-pull window is lifted to the front in
+#' whatever order Savant returned it. When that response order shifts, tens of
+#' thousands of rows move and nothing about the data changes.
+#'
+#' Measured 2026-09-09 on the run artifacts for 10:15 and 15:05, both carrying
+#' app_data through 2026-09-08 at commit a518008. The frames are 641,065 x 33
+#' and identical up to row order: sorted, zero cells differ in any column;
+#' unsorted, 33 of 33 columns differ, peaking at 88,954 cells, about one 21-day
+#' re-pull window of pitches. The gate read that as new data and redeployed
+#' twice for a byte-identical dataset. That is the same cost the 2026-09-08
+#' stamp bug caused, reintroduced by the fix for it.
+#'
+#' ROW NAMES. `[` carries the original positions through as a row.names
+#' attribute and digest() hashes attributes, so sorting alone still produces two
+#' different hashes for the same rows. Normalising to compact 1:n is what makes
+#' the two runs above agree on 4c02f7dfd270.
+#'
+#' Ordered by every column rather than by a key, because app_data.rds has none:
+#' game_pk, at_bat_number and pitch_number live in the store and are not in
+#' APP_DATA_COLS. Costs 2.2s on 641k rows against a 39 MB bundle upload, so it
+#' is free next to the deploy it guards.
+#'
+#' Not a fix for the row-order churn itself, which is still there in the store
+#' and still invisible to everything else. This only stops the gate reacting to
+#' it. Sorting at the source in update_data.R would fix both and would also
+#' stabilise the rds bytes, but it touches the fold whose ordering the revision
+#' path depends on, so it was kept out of this change deliberately.
+canon_frame <- function(d) {
+  if (!is.data.frame(d) || !nrow(d) || !ncol(d)) return(d)
+  d <- d[do.call(order, unname(as.list(d))), , drop = FALSE]
+  attr(d, "row.names") <- .set_row_names(nrow(d))
+  d
 }
 
 
@@ -186,13 +231,19 @@ deploy_app <- function(force = FALSE) {
 
   mb <- sum(file.size(app_files)) / 1024^2
   message(sprintf("Bundling %d files, %.1f MB", length(app_files), mb))
+  # `content` is printed too. It was the one field the gate compared and never
+  # showed, which is why an order-sensitive digest redeployed for months of
+  # unchanged data without leaving a trace in any log. A gate that does not say
+  # which field disagreed cannot be debugged from a run log.
   message("  app_data through ", have[["app_data"]],
           ", game_logs through ", have[["game_logs"]],
-          ", code ", have[["code"]])
+          ", code ", have[["code"]],
+          ", content ", have[["content"]])
   message("  live bundle carries ",
           if (is.null(live)) "unknown, no usable stamp"
           else paste0("app_data ", live[["app_data"]], ", game_logs ",
-                      live[["game_logs"]], ", code ", live[["code"]]))
+                      live[["game_logs"]], ", code ", live[["code"]],
+                      ", content ", live[["content"]]))
 
   rsconnect::deployApp(
     appDir      = ".",
