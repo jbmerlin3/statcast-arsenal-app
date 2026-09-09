@@ -117,7 +117,9 @@ if (!is.null(hit)) {
   expect("fallback grain is NOT the finest cut",
          grepl("stand", fb$grain, fixed = TRUE), FALSE)
   expect("fallback marker",      fb$marker,      "\u2020")
-  expect("fallback weight",      fb$font_weight, "bold")
+  # Not bold. The dagger is the whole signal; bold made the least certain cell
+  # the loudest one. See the note above CELL_STATE_STYLE.
+  expect("fallback is NOT bold",  fb$font_weight, "normal")
   expect("fallback is filled",   fb$fill != PCTILE_UNFILLED, TRUE)
   expect("fallback has_ref",     fb$has_ref,     TRUE)
   expect("fallback quotes a real pitcher count", fb$n_pitchers >= MIN_REF_PITCHERS, TRUE)

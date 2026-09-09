@@ -82,7 +82,11 @@ cell <- tds(f$panel$g, fb$column)[fb$row]
 cat("  [", f$which, "] ", fb$column, " row ", fb$row, ": ", txt(cell), "\n", sep = "")
 expect("fallback cell text ends with the dagger", grepl("†$", txt(cell)), TRUE)
 expect("fallback cell is filled, not white", grepl("#FFFFFF", cell, ignore.case = TRUE), FALSE)
-expect("fallback cell is bold", grepl("font-weight: bold", cell), TRUE)
+# Not bold, as of 2026-09-09. Asserted at the RENDERED html rather than only in
+# CELL_STATE_STYLE, because the weight reaches the page through tab_style() and
+# a stray bold added there would not show up in the style table.
+expect("fallback cell is NOT bold", grepl("font-weight: bold", cell), FALSE)
+expect("but it still carries the dagger", grepl("\u2020", txt(cell)), TRUE)
 
 cat("\n=== below floor renders unfilled, grey, italic, with its n ===\n")
 # whiff_pct: its denominator is swings, so it is one of the three that still

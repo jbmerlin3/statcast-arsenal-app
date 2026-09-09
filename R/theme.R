@@ -608,14 +608,29 @@ PCTILE_UNFILLED <- "#FFFFFF"
 # separated on three channels that all survive it.
 #
 #   filled      splits {exact, fallback} from {below_floor, no_reference}
-#   font_weight splits exact from fallback
-#   marker/n    splits below_floor from no_reference
+#   marker/n    splits exact from fallback, and below_floor from no_reference
 #
-# Volume drives the weights, and the two rare-vs-common cases pull opposite
-# ways. Fallback is 126 cells across all 802 pitchers, so bold plus a dagger
-# costs nothing and it should be seen. Below floor is about half the cells in a
-# two-week window, so it stays unbolded and unmarked: a half-grey table that
-# shouts trains you to ignore it.
+# Below floor is about half the cells in a two-week window, so it stays
+# unbolded and unmarked: a half-grey table that shouts trains you to ignore it.
+#
+# Fallback used to carry font_weight = "bold" as WELL as its dagger, on the
+# argument that it is rare (126 cells across 802 pitchers) so a second channel
+# costs nothing. Dropped 2026-09-09. Two problems with that argument.
+#
+# Weight is not a neutral channel, it reads as emphasis. Bolding fallback made
+# the least certain shaded cell the most prominent thing in its column, which
+# states the opposite of what the dagger says. And the channel budget above
+# exists so a state never depends on HUE; a dagger is a printed character, so
+# it already satisfies that on its own and the bold was buying nothing the
+# marker was not already buying.
+#
+# Measured before removing, over 54,187 resolved cells for the 536 pitchers
+# with 300+ pitches: fallback is 0.59% of cells overall and 0.00% on the
+# default "vs All Batters" view, reaching 1.05% vs LHH. It is worth marking,
+# which is why the dagger stays, and far too rare to be worth shouting.
+#
+# The "all four differ on non-hue channels" assertion in tests/step2_states.R
+# is what proves the marker alone still separates exact from fallback.
 #
 # Markers are a family with a grammar. The dagger pair says something about the
 # LEAGUE reference, single for a coarser one and double for none at all. A
@@ -647,7 +662,7 @@ CELL_STATE_STYLE <- data.frame(
   filled      = c(TRUE,    TRUE,        TRUE,          FALSE),
   text_color  = c("#000000", "#000000", "#000000",     PCTILE_GREY),
   font_style  = c("normal", "normal",   "normal",      "italic"),
-  font_weight = c("normal", "bold",     "normal",      "normal"),
+  font_weight = c("normal", "normal",   "normal",      "normal"),
   # below_floor's marker is built at runtime, since it carries its own n.
   marker      = c("",       "\u2020",   "",            "\u2021"),
   stringsAsFactors = FALSE
