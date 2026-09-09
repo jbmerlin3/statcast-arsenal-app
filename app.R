@@ -325,9 +325,13 @@ server <- function(input, output, session) {
       #
       # The range the grid was carrying moves into the label, where it reads
       # better anyway: it names the population rather than the axis.
-      column(4, sliderInput(paste0("s_", rg$trait[i]),
-                            paste0(spec$label, ": ", fmt_bound(rg$lo[i], spec$digits),
-                                   " to ", fmt_bound(rg$hi[i], spec$digits)),
+      # Label is the trait NAME only, as of 2026-09-08. It used to carry the
+      # population range too, "Velocity (mph): 84.3 to 101.5", which was where
+      # the range went when ticks = FALSE removed the grid. But ionRangeSlider
+      # prints both handle values in bubbles directly below, and at full extent
+      # those bubbles ARE the range, so the label was restating the two numbers
+      # sitting an inch under it.
+      column(4, sliderInput(paste0("s_", rg$trait[i]), spec$label,
                             min = rg$lo[i], max = rg$hi[i], ticks = FALSE,
                             value = c(rg$lo[i], rg$hi[i]), step = spec$step))
     })
