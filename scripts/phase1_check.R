@@ -44,17 +44,22 @@ WORKER   <- file.path(REPO, "tests/phase1_artifacts.R")
 # and each named column is asserted to ACTUALLY differ, so reverting the change
 # fails the check instead of quietly satisfying it. That is the one limitation
 # recorded below, closed for these two.
+# hb was sanctioned here until 2026-09-09 and is not any more. The app used to
+# arm-side normalise it, the original script did not, and the fixture pitcher is
+# a LHP, so every hb cell flipped. The traits table now prints the raw sign like
+# the original and like the movement chart, so the two agree again and the
+# sanction had to go: this list asserts each named column ACTUALLY differs, so a
+# stale entry fails rather than passing quietly. It did exactly that when the
+# sign changed, which is the behaviour it was built for.
 EXPECTED_COL_DIFFS <- list(
   arsenal_table_R = c(
                       whiff_pct = "foul_tip and missed_bunt are whiffs, bunt attempts are swings. Savant, 0.032 MAE over 105 pitchers",
                       csw_pct   = "same numerator: whiff_desc is the whiff half of CSW%",
-                      chase_pct = "same swing set: a bunt attempt out of the zone is a chase. Savant, 0.060 MAE",
-                      hb        = "arm-side normalised, so positive is arm side for both hands. The fixture pitcher is a LHP, so every hb flips sign against the original"),
+                      chase_pct = "same swing set: a bunt attempt out of the zone is a chase. Savant, 0.060 MAE"),
   arsenal_table_L = c(
                       whiff_pct = "foul_tip and missed_bunt are whiffs, bunt attempts are swings. Savant, 0.032 MAE over 105 pitchers",
                       csw_pct   = "same numerator: whiff_desc is the whiff half of CSW%",
-                      chase_pct = "same swing set: a bunt attempt out of the zone is a chase. Savant, 0.060 MAE",
-                      hb        = "arm-side normalised, so positive is arm side for both hands. The fixture pitcher is a LHP, so every hb flips sign against the original")
+                      chase_pct = "same swing set: a bunt attempt out of the zone is a chase. Savant, 0.060 MAE")
 )
 
 # Columns the new side ADDS to an artifact the original also produces. Separate

@@ -16,6 +16,23 @@
 # the original script. Baseline captured at 9694276, the commit before
 # resolve_table() and the ref argument landed.
 #
+# RECAPTURED 2026-09-09 for the HB sign. The traits table now prints RAW
+# horizontal break, the same sign the movement chart draws, instead of the
+# arm-side normalised one. The fixture pitcher is a LEFT-hander, so every hb
+# cell in it flips; a righty fixture would have shown nothing.
+#
+# Diffed by column in both directions before rewriting, per the rule below.
+# Columns dropped: none. Columns added: none. Cells moved: 6 in traits_R, 6 in
+# traits_L, 6 in traits_footnote, 6 in traits_window, all of them in `hb` and
+# all of them an exact negation (12.6 -> -12.6, -2.4 -> 2.4). results_R and
+# results_L: no cell changed, which is the check that this stayed a traits-only
+# change. Nothing but hb moved, in any artifact.
+#
+# What this baseline does NOT protect: the percentile the shading is read off.
+# resolve_table() mirrors hb back to arm-side before the lookup, and every
+# render here passes ref = NULL by construction, so the mirror is invisible to
+# this file. tests/step2_states.R carries that assertion instead.
+
 # RE-ANCHORED 2026-08-31 for the Characteristics tab split, and that word is not
 # "recaptured" on purpose. Every earlier entry below recaptured the SAME artifact
 # after a change to its contents. This one is different in kind: arsenal_gt() no

@@ -48,10 +48,23 @@ arsenal_table <- function(df, hand, stuff_all) {
       pitch_pct = round(n() / nrow(df) * 100, 1),
       velocity = round(mean(release_speed, na.rm = TRUE), 1),
       ivb = round(mean(ivb, na.rm = TRUE), 1),
-      # Arm-side normalised, so a positive number means arm-side run whichever
-      # hand threw it. The movement chart keeps the raw sign, because there the
-      # direction is the picture. See arm_side_sign() in theme.R.
-      hb = round(mean(hb, na.rm = TRUE) * arm_side_sign(p_throws[1]), 1),
+      # RAW sign, the same one the movement chart draws. It used to be arm-side
+      # normalised here so that a positive number meant arm-side run whichever
+      # hand threw it, and that is a defensible convention on its own. What it
+      # is not is defensible NEXT TO the movement tab: the same pitch read
+      # -9.7 on the chart and +9.7 in this column for every left-hander, under
+      # one label, with nothing on the page saying they were different
+      # conventions. Reported 2026-09-09 on Payton Tolle, where the FF read
+      # +9.7 here and sat at -9.7 on the chart, and his cutter did the reverse.
+      #
+      # The arm-side orientation did not go away, it moved to where it is
+      # actually load-bearing. league_ref still stores HB arm-side positive and
+      # PITCH_SHAPE_DIRECTION still reads it that way, so resolve_table()
+      # mirrors this column back before it looks a percentile up. Displaying
+      # raw while ranking mirrored is the whole point: the number matches the
+      # chart, the colour still means what it meant. See the note in
+      # resolve_table().
+      hb = round(mean(hb, na.rm = TRUE), 1),
       # Raw approach angle, always negative, derived per pitch in
       # add_pitch_features() rather than shipped by Savant. One decimal: the
       # league spread across pitch types is about five degrees and within one

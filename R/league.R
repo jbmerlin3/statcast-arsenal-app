@@ -379,9 +379,28 @@ resolve_table <- function(tbl, denoms, ref, p_throws, stand, count_bucket = "All
   stopifnot("every pitch type in the table needs a denominator row" = !anyNA(idx))
   dn <- as.data.frame(denoms)[idx, intersect(DENOM_COLS, names(denoms)), drop = FALSE]
 
+  # hb is the one column whose DISPLAYED sign and RANKED sign differ, and the
+  # split is deliberate. The traits table prints raw HB so it agrees with the
+  # movement chart, while league_ref stores HB arm-side positive for both hands
+  # because that is the only orientation in which one percentile, and one
+  # PITCH_SHAPE_DIRECTION entry, means the same thing for a righty and a lefty.
+  # So the value is mirrored back here, on the way into the lookup and nowhere
+  # else.
+  #
+  # For a right-hander arm_side_sign() is 1 and this is a no-op. For a
+  # left-hander, dropping it would rank every arm-side fastball against the
+  # league as though it were glove-side, inverting the shading on the column
+  # for half the pitchers in the app. That is a worse defect than the display
+  # mismatch this was introduced to fix, and it would be invisible: the numbers
+  # would still look right, only the colours would be backwards.
+  rank_value <- function(metric, v) {
+    if (identical(metric, "hb")) v * arm_side_sign(p_throws) else v
+  }
+
   cells <- do.call(rbind, lapply(seq_along(cols), function(k) {
     col <- names(cols)[k]
-    out <- resolve_column(ref, tbl[[col]], unname(cols[k]), pt,
+    out <- resolve_column(ref, rank_value(unname(cols[k]), tbl[[col]]),
+                          unname(cols[k]), pt,
                           p_throws, stand, count_bucket, dn)
     cbind(column = col, metric = unname(cols[k]), row = seq_along(pt),
           out, stringsAsFactors = FALSE)
@@ -474,42 +493,6 @@ col_notes_for <- function(cols) {
   cn[!is.na(cn)]
 }
 
-
-#' League mean movement for each pitch type, for the reference marks
-#'
-#' stand is "All" because the movement chart pools both batter sides, and
-#' p_throws is passed through and never pooled: hb is not arm-side normalised,
-#' so a righty's and a lefty's sliders sit on opposite sides of zero and their
-#' mean is a point neither of them throws. See CLAUDE.md.
-#'
-#' Returns NULL rows for pitch types with no usable reference rather than
-#' inventing one, and carries n_pitchers so every mark can state what it is
-#' built from.
-movement_ref <- function(ref, pitch_types, p_throws) {
-  rows <- lapply(as.character(pitch_types), function(pt) {
-    hb  <- lg_cell(ref, "hb",  pt, p_throws, "All", "All Counts")
-    ivb <- lg_cell(ref, "ivb", pt, p_throws, "All", "All Counts")
-    if (is.null(hb) || is.null(ivb)) return(NULL)
-    data.frame(pitch_type = pt,
-               # Converted BACK out of arm-side normalisation. league_ref stores
-               # HB arm-side positive for both hands, because that is the only
-               # way a percentile means the same thing for a righty and a lefty.
-               # The movement chart is the one consumer that wants the true
-               # direction: a lefty's slider really does sweep the other way,
-               # and the league cross has to land where his pitches are. Without
-               # this the mark would sit mirrored across the vertical axis for
-               # every left-hander.
-               hb = hb$row$mean[[1]] * arm_side_sign(p_throws),
-               ivb = ivb$row$mean[[1]],
-               # Both means come from the same grain and the same contributing
-               # pitchers, so one n describes the mark.
-               n_pitchers = min(hb$row$n_pitchers[[1]], ivb$row$n_pitchers[[1]]),
-               stringsAsFactors = FALSE)
-  })
-  rows <- rows[!vapply(rows, is.null, logical(1))]
-  if (!length(rows)) return(NULL)
-  do.call(rbind, rows)
-}
 
 
 #' Resolve the usage-by-count table
