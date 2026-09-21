@@ -184,6 +184,23 @@ METRIC_SPEC <- data.frame(
   floor  = c(rep(25, 8),
              rep(50, 4),
              50, 50, 50, 25),
+  # Which end is BETTER FOR THE PITCHER, for the Context tab's panels only.
+  #
+  # A separate column from `direction` on purpose, and the difference is not
+  # cosmetic. `direction` says which end renders red on the percentile ramp,
+  # and for ivb and hb it is a documented placeholder that nothing reads,
+  # because ride is the point of a four-seam and the death of a sinker: that
+  # lives in PITCH_SHAPE_DIRECTION, per pitch type. Overloading `direction`
+  # here would mean reading a field the comment two blocks down says is a bug
+  # to read.
+  #
+  # "none" is a real answer and the common one. Only the outcome metrics and
+  # velocity have an unambiguous good end across every pitch type. More break
+  # is not better, it is different, and a tab that tinted it green would be
+  # asserting something about a sinker it cannot support.
+  context_better = c("high", "none", "none", "none", "none", "high", "none", "none",
+                     "high", "high", "none", "none",
+                     "high", "high", "low",  "high"),
   # NOTE: the direction here is NOT used for ivb or hb. Those two are looked up
   # per pitch type in PITCH_SHAPE_DIRECTION, because more ride is the point of a
   # four-seam and the death of a sinker. The entries below are kept so the frame
@@ -763,3 +780,16 @@ swing_only <- c("swinging_strike","swinging_strike_blocked","foul","foul_tip","h
 # with it by design rather than by accident.
 whiff_desc <- c("swinging_strike","swinging_strike_blocked","foul_tip",
                 "missed_bunt","bunt_foul_tip")
+
+
+#' Which end of a metric is better for the pitcher, on the Context tab
+#'
+#' Reads METRIC_SPEC$context_better and nothing else, so the answer lives in one
+#' table rather than in whichever renderer asked. Returns "none" for a metric
+#' with no good end, which the callers must treat as a real answer and not as a
+#' missing one.
+context_better <- function(metric) {
+  spec <- METRIC_SPEC[METRIC_SPEC$metric == metric, ]
+  if (nrow(spec) != 1) stop("unknown metric: ", metric, call. = FALSE)
+  spec$context_better
+}

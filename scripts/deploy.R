@@ -221,13 +221,23 @@ deploy_app <- function(force = FALSE) {
 
   data_files <- list.files("data", pattern = "\\.rds$", full.names = TRUE)
   fg_files   <- list.files("fg_stuff", pattern = "\\.csv$", full.names = TRUE)
+  # Static season lookups, currently listed pitcher heights for the Context
+  # tab's release model. Tracked in git and refreshed by hand, unlike data/,
+  # so this ships whatever is committed. Without it load_pitcher_heights()
+  # warns and the Context tab loses its expected-release column while every
+  # other tab is unaffected: a degraded tab, not a failed boot.
+  lookup_files <- list.files("lookups", pattern = "\\.csv$", full.names = TRUE)
+  if (!length(lookup_files)) {
+    warning("No lookups/*.csv, the Context tab will have no listed heights. ",
+            "Build with: Rscript scripts/build_pitcher_heights.R", call. = FALSE)
+  }
   if (!length(fg_files)) {
     warning("No FanGraphs export in fg_stuff/, the Stuff+ column will be blank.",
             call. = FALSE)
   }
 
   app_files <- c("app.R", list.files("R", pattern = "\\.R$", full.names = TRUE),
-                 data_files, fg_files)
+                 data_files, fg_files, lookup_files)
 
   mb <- sum(file.size(app_files)) / 1024^2
   message(sprintf("Bundling %d files, %.1f MB", length(app_files), mb))
