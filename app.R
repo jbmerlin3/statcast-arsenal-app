@@ -66,6 +66,13 @@ FG_EXPORT <- tryCatch(resolve_fg_export("fg_stuff"), error = function(e) {
   NULL
 })
 
+# Listed height per MLBAM id, for the Context tab's release model. A tracked
+# CSV rather than chain-built data, for the reason in
+# scripts/build_pitcher_heights.R. NULL degrades the Context tab's residual
+# columns to blank rather than taking the app down; every other tab is
+# unaffected, and the cohort engine still works on release height and extension.
+PITCHER_HEIGHTS <- load_pitcher_heights()
+
 # The stuff_all contract, three columns, as load_fg_stuff() returns on no match.
 # arsenal_table() takes this as an argument and never learns where it came from,
 # which is the seam that lets the v4 model replace FanGraphs later without
@@ -86,6 +93,32 @@ preset_buttons <- if (is.null(HALVES$first)) {
 
 
 ui <- fluidPage(
+  # ---- One visual language for every tab ----------------------------------
+  #
+  # Normalised 2026-09-21. Each tab had grown its own spacing, its own grey,
+  # and its own way of writing a note under a chart; Context had been restyled
+  # and the rest had not, so moving between tabs felt like moving between apps.
+  # Every tab now opens with the same section header and writes notes the same
+  # way, and those rules live HERE, once, rather than in each tab.
+  #
+  # Page-level only, deliberately. The gt tables keep their own internal
+  # styling, because tests/step3_null_identical.R pins their rendered HTML byte
+  # for byte and a stylesheet that reached inside them would move every
+  # baseline for a cosmetic reason.
+  tags$head(tags$style(HTML(paste0(
+    "body{color:#1a1a1a;}",
+    ".nav-tabs{margin-bottom:4px;}",
+    ".nav-tabs>li>a{font-size:14px;padding:9px 16px;}",
+    ".nav-tabs>li.active>a{font-weight:700;}",
+    ".sec,.ctx-sec{margin-top:26px;}",
+    ".sec-h,.ctx-h{font-size:18px;font-weight:800;color:#111;margin:0 0 12px 0;",
+    "padding-left:10px;border-left:4px solid #1f3a5f;line-height:1.1;}",
+    ".sec-sub{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px;",
+    "margin:-6px 0 10px 14px;}",
+    ".sec-note,.ctx-note{font-size:11.5px;color:#888;margin:8px 0 0 0;max-width:900px;",
+    "line-height:1.45;}",
+    ".app-codes{font-size:11.5px;color:#999;margin:2px 0 6px 0;}"
+  )))),
   # The deploy bundles the rds files rather than fetching them at startup, so
   # the page has to say how current they are. Read off app_data itself and not
   # a build-time constant: a redeploy that ships stale data then shows the
@@ -130,45 +163,175 @@ ui <- fluidPage(
       # open, rather than only on the one that would have crashed. It stays here
       # and does not follow the results panel into the sidebar: it describes
       # what the CHARTS dropped, not how the pitcher performed.
-      uiOutput("pitch_code_note"),
+      div(class = "app-codes", uiOutput("pitch_code_note")),
       tabsetPanel(
         id = "tabs",
-        tabPanel("Movement", plotOutput("movement", height = "620px")),
+        # Every tab opens with the same section header (.sec-h, defined once at
+        # the top of the page) and writes notes the same way (.sec-note).
+        tabPanel("Movement",
+                 div(class = "sec",
+                     div(class = "sec-h", "Movement profile"),
+                     div(class = "sec-sub", "Induced vertical vs horizontal break, catcher's view"),
+                     plotOutput("movement", height = "620px"))),
         tabPanel("Usage",
-                 plotOutput("usage", height = "420px"),
-                 # Said out loud because the batter side control is visible and
-                 # this chart deliberately ignores it. Without the note the
-                 # toggle looks broken on this tab.
-                 helpText("The usage chart always shows both batter sides. ",
-                          "The table below follows the Batter side selector."),
-                 gt::gt_output("usage_table")),
+                 div(class = "sec",
+                     div(class = "sec-h", "Pitch usage"),
+                     plotOutput("usage", height = "420px"),
+                     # Said out loud because the batter side control is visible
+                     # and this chart deliberately ignores it. Without the note
+                     # the toggle looks broken on this tab.
+                     div(class = "sec-note",
+                         "The chart always shows both batter sides. The table below follows the Batter side selector.")),
+                 div(class = "sec",
+                     div(class = "sec-h", "Usage by count"),
+                     gt::gt_output("usage_table"))),
         # Two tables, traits above results, from one arsenal_table() pass. The
         # order is deliberate: what the pitch IS reads before what it DID, so a
         # reader who stops after the first table has still learned the arsenal.
         tabPanel("Characteristics",
-                 gt::gt_output("traits_table"),
-                 br(),
-                 gt::gt_output("results_table")),
+                 div(class = "sec",
+                     div(class = "sec-h", "Pitch traits"),
+                     gt::gt_output("traits_table")),
+                 div(class = "sec",
+                     div(class = "sec-h", "Pitch results"),
+                     gt::gt_output("results_table"))),
         tabPanel("Heat Maps",
-                 # Taller than the other outputs: facet_grid lays out three
-                 # situations by however many pitch types the window holds, and
-                 # coord_fixed keeps each panel square.
-                 plotOutput("heatmap", height = "700px"),
-                 helpText("Three coarse count buckets, not the six in the usage ",
-                          "table. A density estimate needs a larger per-panel ",
-                          "sample than a usage percentage does. Panels under ",
-                          KDE_MIN_N, " pitches show the raw locations ",
-                          "as white dots instead of a smoothed surface.")),
-        # Last, deliberately. The first four tabs are all views of the one
-        # pitcher in the selector and read left to right as a report; this one
-        # searches the league and writes BACK to that selector, so it sits after
-        # them rather than interrupting them.
+                 div(class = "sec",
+                     div(class = "sec-h", "Location by count"),
+                     # Taller than the other outputs: facet_grid lays out three
+                     # situations by however many pitch types the window holds,
+                     # and coord_fixed keeps each panel square.
+                     plotOutput("heatmap", height = "700px"),
+                     div(class = "sec-note", paste0(
+                       "Three coarse count buckets, not the six in the usage table. A density ",
+                       "estimate needs a larger per-panel sample than a usage percentage does. ",
+                       "Panels under ", KDE_MIN_N, " pitches show the raw locations as white ",
+                       "dots instead of a smoothed surface.")))),
+        # ---- Context: one pitcher, read the way a coach reads him ----------
+        #
+        # Laid out 2026-09-21 around two questions: is he funky (the percentile
+        # chart, left, and the release profile, right) and what do his pitches
+        # do (full width below). An attack plan sat on the right until later
+        # that day and was cut by request: it was too simple, and how to attack
+        # a pitcher depends on the hitter, which this page does not know. A location strip was tried and removed the same
+        # day: the Heat Maps tab already draws every pitch's location, and this
+        # tab duplicating it is the clutter it was rebuilt to get rid of. Everything that feeds the
+        # analyst's view, including every control that only affects it, lives
+        # in Details.
+        tabPanel("Context",
+                 tags$style(HTML(paste0(
+                   ".ctx-wrap{max-width:1380px;margin-top:12px;}",
+                   ".ctx-top{display:flex;align-items:flex-end;gap:18px;margin-bottom:6px;}",
+                   ".ctx-top .form-group{margin-bottom:0;}",
+                   ".ctx-card{background:#fff;border:1px solid #ececec;border-radius:6px;",
+                   "padding:16px 18px;}",
+                   # stat row
+                   ".ctx-stats{display:flex;flex-wrap:wrap;gap:6px 30px;margin:2px 0 14px 0;}",
+                   ".ctx-stat{min-width:96px;}",
+                   ".ctx-stat-v{font-size:21px;font-weight:800;line-height:1.2;color:#111;}",
+                   ".ctx-stat-l{font-size:10px;color:#888;text-transform:uppercase;",
+                   "letter-spacing:.5px;margin-top:2px;}",
+                   ".ctx-sub{color:#999;font-weight:400;font-size:13px;}",
+                   ".ctx-flag{flex-basis:100%;margin-top:6px;padding:7px 10px;",
+                   "background:#FAF6EC;border-left:3px solid #C9A227;font-size:12px;color:#5a4a1e;}",
+                   # percentile chart
+                   ".ctx-pk{font-size:10.5px;color:#888;text-transform:uppercase;",
+                   "letter-spacing:.5px;margin:4px 0 8px 0;}",
+                   ".ctx-prow{display:flex;align-items:center;gap:14px;padding:6px 0;}",
+                   ".ctx-pl{width:118px;font-size:11px;color:#555;text-transform:uppercase;",
+                   "letter-spacing:.4px;}",
+                   ".ctx-pv{width:78px;font-size:14px;font-weight:700;text-align:right;color:#111;}",
+                   ".ctx-pt-wrap{flex:1;position:relative;height:26px;}",
+                   ".ctx-ptrack{position:absolute;left:0;right:0;top:12px;height:3px;",
+                   "background:#e9e9e9;border-radius:2px;}",
+                   ".ctx-pfill{position:absolute;left:0;top:12px;height:3px;border-radius:2px;}",
+                   ".ctx-pdot{position:absolute;top:0;width:26px;height:26px;border-radius:50%;",
+                   "transform:translateX(-50%);color:#fff;font-size:11px;font-weight:800;",
+                   "display:flex;align-items:center;justify-content:center;",
+                   "box-shadow:0 1px 2px rgba(0,0,0,.18);}",
+                   ".ctx-pend{display:flex;justify-content:space-between;font-size:9.5px;",
+                   "color:#aaa;text-transform:uppercase;letter-spacing:.4px;margin-top:-2px;}",
+                   # arsenal
+                   ".ctx-arow{display:grid;grid-template-columns:44px 58px 1fr 1fr;",
+                   "align-items:center;gap:0 26px;padding:8px 0;border-bottom:1px solid #f3f3f3;}",
+                   ".ctx-ahead{border-bottom:1px solid #ddd;padding:0 0 6px 0;}",
+                   ".ctx-ahead div{font-size:10px;color:#888;font-weight:700;",
+                   "text-transform:uppercase;letter-spacing:.5px;}",
+                   ".ctx-pt{font-weight:800;font-size:14px;}",
+                   ".ctx-use{display:flex;align-items:center;gap:6px;font-size:12px;color:#666;}",
+                   ".ctx-usebar{height:6px;background:#c9ced6;border-radius:3px;}",
+                   ".ctx-cell{display:flex;align-items:center;gap:10px;}",
+                   ".ctx-bar-val{width:66px;font-size:13px;font-weight:700;text-align:right;}",
+                   ".ctx-bar{flex:1;max-width:300px;margin:0 14px;}",
+                   # profile, stacked in the side column
+                   ".ctx-side .ctx-stats{display:grid;grid-template-columns:1fr 1fr;gap:16px 24px;}",
+                   ".ctx-side .ctx-flag{grid-column:1 / -1;}",
+                   ".ctx-line{color:#444;font-size:13px;margin:0 0 4px 0;}",
+                   # details
+                   ".ctx-details{margin-top:34px;border-top:1px solid #ddd;padding-top:14px;}",
+                   ".ctx-details summary{cursor:pointer;font-weight:700;font-size:14px;color:#555;}",
+                   ".ctx-dctl{background:#f7f7f7;border-radius:6px;padding:12px 16px 2px 16px;",
+                   "margin:14px 0 16px 0;}"))),
+
+                 div(class = "ctx-wrap",
+                   # The only control on the visible page. Pitcher, dates and
+                   # batter side are global; the cohort controls below it only
+                   # ever changed the Details section, so that is where they
+                   # went. A control that moves nothing visible teaches the
+                   # reader the page is broken.
+                   div(class = "ctx-top",
+                       selectInput("ctx_pitch", "Pitch type",
+                                   choices = names(pitch_colors), selected = "FF",
+                                   width = "150px")),
+
+                   fluidRow(
+                     column(7,
+                       div(class = "ctx-sec",
+                           div(class = "ctx-h", "Percentile rankings"),
+                           uiOutput("ctx_league_block"))),
+                     column(5,
+                       div(class = "ctx-sec ctx-side",
+                           div(class = "ctx-h", "Profile"),
+                           uiOutput("ctx_release_card")))
+                   ),
+
+                   div(class = "ctx-sec",
+                       div(class = "ctx-h", "Arsenal"),
+                       uiOutput("ctx_arsenal")),
+
+                   tags$details(class = "ctx-details",
+                     tags$summary("Details: peer groups, baselines, comparables"),
+                     div(class = "ctx-dctl",
+                       fluidRow(
+                         column(4, radioButtons("ctx_mode", "Peer group",
+                                                choices = c("25 nearest" = "fixed_k",
+                                                            "Fixed window" = "window"),
+                                                selected = "fixed_k", inline = TRUE)),
+                         column(3, checkboxInput("ctx_adjust", "Control for velo", value = TRUE))
+                       ),
+                       conditionalPanel(
+                         condition = "input.ctx_mode == 'window'",
+                         fluidRow(
+                           column(4, sliderInput("ctx_tol_z", "Release-height window (± ft)",
+                                                 min = 0.05, max = 0.50, value = 0.15, step = 0.01)),
+                           column(4, sliderInput("ctx_tol_arm", "Arm-angle window (± deg)",
+                                                 min = 1, max = 20, value = 5, step = 0.5))
+                         ))),
+                     div(style = "max-width:940px;",
+                         plotOutput("ctx_space", height = "300px")),
+                     uiOutput("ctx_line_release"),
+                     br(),
+                     gt::gt_output("ctx_baselines"),
+                     br(),
+                     gt::gt_output("ctx_comparables"))
+                 )),
         tabPanel("Search",
                  # The one tab that owns its own inputs. The pitcher selector,
                  # the dates and the batter side stay global and still apply:
                  # the dates and the side narrow the population searched, and
                  # the pitcher selector is where a result LANDS.
-                 div(style = "margin-top:10px;",
+                 div(class = "sec",
+                   div(class = "sec-h", "Find pitchers by shape"),
                    fluidRow(
                      column(2, selectInput("s_throws", "Pitcher hand",
                                            choices = c("RHP" = "R", "LHP" = "L"))),
@@ -565,6 +728,332 @@ server <- function(input, output, session) {
     tbl <- results_tbl(p$tbl)
     results_gt(tbl, input$hand,
                ref = resolve_table(tbl, p$denoms, league_ref, p$p_throws, input$hand))
+  })
+
+  # ---- Context tab ---------------------------------------------------------
+  #
+  # One reactive builds the league-wide profile and one builds the shape table,
+  # and every block on the tab projects from those two. Split them and a future
+  # edit to one filter silently desynchronises the explorer from the cohorts,
+  # which is the same failure chars_parts() exists to prevent.
+  #
+  # Both are scoped by the GLOBAL date range, so the explorer answers "unusual
+  # over the window I am looking at" rather than always over the season. That
+  # also means arm angle thins out on a short recent window, which is why
+  # n_arm rides along and the note above the table reports it.
+  ctx_window <- reactive({
+    req(input$dates)
+    from <- as.character(input$dates[1]); to <- as.character(input$dates[2])
+    d <- app_data |> filter(game_date >= from, game_date <= to)
+    validate(need(nrow(d) > 0, "No pitches in the selected window."))
+    d
+  })
+
+  # The single source of truth for handedness on this tab. Read from the
+  # pitcher's own rows rather than from ctx_profile(), so it still resolves when
+  # he is below the Context minimum and the profile has dropped him.
+  ctx_hand <- reactive({
+    req(input$pitcher)
+    h <- app_data$p_throws[app_data$pitcher == as.integer(input$pitcher)]
+    validate(need(length(h) > 0, "No pitches for this pitcher."))
+    as.character(h[1])
+  })
+
+
+
+  # Hardcoded, not inputs. 100 matches the Search tab's own minimum so the two
+  # surfaces agree on who counts as a real pitcher, and 0.75 SD is the radius
+  # the rarity counts were calibrated against.
+  CTX_MIN_PITCHES <- 100
+  CTX_RARITY_RADIUS <- 0.75
+
+  ctx_profile <- reactive({
+    pitcher_release_profile(ctx_window(), PITCHER_HEIGHTS,
+                            min_pitches = CTX_MIN_PITCHES) |>
+      expected_release_height() |>
+      release_rarity(radius = CTX_RARITY_RADIUS)
+  })
+
+  # Scoped to the global batter-side selector, because the outcome rates it now
+  # carries describe a split. Release point is NOT split this way: it is a
+  # property of the pitcher, so ctx_profile() takes the whole window.
+  ctx_shape <- reactive(pitch_shape(ctx_window(), hand = input$hand))
+
+  ctx_mode <- reactive(input$ctx_mode %||% "fixed_k")
+
+  # The sliders do not exist in fixed-K mode, so their inputs are NULL and the
+  # defaults have to hold. %||% alone is not enough: a conditionalPanel that has
+  # been shown once leaves the input behind at its last value, so this also has
+  # to tolerate a stale number rather than assume NULL.
+  ctx_tol <- reactive({
+    t <- COHORT_TOLERANCES
+    z <- suppressWarnings(as.numeric(input$ctx_tol_z))
+    a <- suppressWarnings(as.numeric(input$ctx_tol_arm))
+    if (length(z) == 1 && is.finite(z)) t$release_height <- z
+    if (length(a) == 1 && is.finite(a)) t$arm_angle      <- a
+    t
+  })
+
+  # A row of figures, no sentence. The verdict line above it ("releases the ball
+  # about where a 6-3 pitcher from a high 3/4 slot normally does") and the
+  # rounding caveat under it were both removed on 2026-09-18: the figures say
+  # the same thing in a third of the space, and a caveat nobody can act on is
+  # furniture on a page a coach reads in twenty seconds. The rounding is still
+  # real and still documented in expected_release_height().
+  output$ctx_release_card <- renderUI({
+    p <- ctx_profile(); id <- as.integer(input$pitcher)
+    r <- p[p$pitcher == id, ]
+    if (!nrow(r)) return(div(class = "ctx-line", style = "color:#777;",
+      "Widen the date range to bring this pitcher into the pool."))
+    if (!is.finite(r$rel_z_resid[1])) return(div(class = "ctx-line", style = "color:#777;",
+      "No release comparison: missing a listed height or an arm angle in this window."))
+
+    slot <- arm_slot_label(r$arm[1])
+    ht   <- sprintf("%d-%d", r$height_in[1] %/% 12, r$height_in[1] %% 12)
+    gap  <- 12 * r$rel_z_resid[1]
+    band <- 12 * (r$resid_hi[1] - r$rel_z_resid[1])
+
+    box <- function(v, lab, sub = NULL) div(
+      class = "ctx-stat",
+      div(class = "ctx-stat-v", HTML(v)),
+      div(class = "ctx-stat-l", lab))
+
+    # EXPECTED and VS EXPECTED were two tiles until 2026-09-21 and neither said
+    # expected by WHAT, once the explanatory caveat was cut. One tile, labelled
+    # with its own basis. The expected height itself is still in the profile
+    # for anyone who opens Details.
+    div(class = "ctx-stats",
+      box(ht, "listed height"),
+      box(sprintf("%s <span class='ctx-sub'>%.0f\u00b0</span>", slot, r$arm[1]), "arm slot"),
+      box(sprintf("%.2f <span class='ctx-sub'>ft</span>", r$rel_z[1]), "releases at"),
+      box(if (abs(gap) <= band) "as predicted" else
+            sprintf("%+.1f <span class='ctx-sub'>in</span>", gap), "vs slot + height"),
+      box(sprintf("%s <span class='ctx-sub'>%d of %d</span>",
+                  rarity_label(r$rarity_n[1]), r$rarity_n[1], r$rarity_pool[1]), "release point"),
+      if (isTRUE(r$low_support[1])) div(
+        class = "ctx-flag",
+        sprintf("Only %d other %s throw from within %g\u00b0 of this slot, so there is no reliable normal for it.",
+                r$arm_support[1],
+                if (identical(r$p_throws[1], "R")) "right-handers" else "left-handers",
+                r$support_window[1])) else NULL)
+  })
+
+  # The league percentile, said out loud. Reads the SAME league_ref the
+  # Characteristics tab shades from, through the same lg_pctile(), so a sentence
+  # here and a fill there can never disagree. What is new is only that it is a
+  # sentence: "lower than 84% of LHP four-seams" is the unit a scouting report
+  # repeats, and no surface in this app produced one.
+  #
+  # Ordered by distance from the 50th rather than by a fixed list, so the
+  # unusual traits lead. A writeup opens with the thing that stands out, not
+  # with velocity because velocity is first in the schema.
+  # One percentile track: a faint fill to the percentile and a numbered dot on
+  # it. Shared by the percentile chart and the Arsenal so the two read as one
+  # scale. Near the 50th the app's ramp is nearly white, so white text on it
+  # vanished: an extension at the 31st and a velocity at the 38th rendered as
+  # blank circles. Light fills get dark text and a rim. faded marks a sample
+  # under the floor.
+  pctile_bubble <- function(q, faded = FALSE) {
+    col <- pctile_fill(q, "high")
+    rgb <- grDevices::col2rgb(col)[, 1]
+    light <- (0.299 * rgb[1] + 0.587 * rgb[2] + 0.114 * rgb[3]) > 170
+    dot_style <- sprintf("left:%.0f%%;background:%s;%s%s", q, col,
+                         if (light) "color:#333;border:1px solid #bbb;" else "",
+                         if (faded) "opacity:.45;" else "")
+    div(class = "ctx-pt-wrap",
+        div(class = "ctx-ptrack"),
+        div(class = "ctx-pfill", style = sprintf("width:%.0f%%;background:%s;opacity:.35;", q, col)),
+        div(class = "ctx-pdot", style = dot_style, sprintf("%.0f", q)))
+  }
+
+  output$ctx_league_block <- renderUI({
+    id  <- as.integer(input$pitcher)
+    shp <- ctx_shape()
+    r   <- shp[shp$pitcher == id & as.character(shp$pitch_type) == input$ctx_pitch, , drop = FALSE]
+    if (!nrow(r)) return(div(class = "ctx-note",
+      sprintf("He does not throw enough %s in this window to rank.", input$ctx_pitch)))
+    lp <- league_percentiles(r, league_ref, stand = input$hand,
+                             metrics = c("velo","ivb","hb","vaa","spin","ext","rel_ht"))
+    if (is.null(lp)) return(NULL)
+    lp <- lp[order(-abs(lp$pctile - 50)), , drop = FALSE]
+    hand_word <- if (identical(r$p_throws[1], "R")) "RHP" else "LHP"
+
+    # ---- A percentile chart, not seven sentences ----
+    #
+    # The block was seven lines ending "...of LHP FFs", which is the problem
+    # Savant's percentile-ranking chart was designed to solve and a format every
+    # coach already reads. The dot sits at the RAW percentile, so right is
+    # always "more of this trait" and the two end labels say what more means.
+    #
+    # Colour only where one end is better for the pitcher, per
+    # METRIC_SPEC$context_better: velocity and extension. Ride, run, approach
+    # angle, spin and release height are shapes, not grades, and a red dot on a
+    # sinker's low ride would assert something the data cannot support. Those
+    # render slate, and the note says why.
+    ends <- function(m) {
+      ph <- LEAGUE_PHRASE[[m]]
+      c(sub(" than$", "", ph$low), sub(" than$", "", ph$high))
+    }
+    row <- function(i) {
+      m   <- lp$metric[i]
+      raw <- lp$pctile[i]
+      # Red above the league, blue below, on every trait. Slate was tried for
+      # the shape traits (ride, run, approach angle, spin, release height) on the
+      # grounds that more of them is not better, and dropped 2026-09-21 by
+      # request: the chart reads as one scale, and "red means more" is already
+      # what the Characteristics tab's IVB and HB shading means.
+      e   <- ends(m)
+      val <- sprintf(paste0("%.", lp$digits[i], "f%s"), lp$value[i], lp$unit[i])
+      div(class = "ctx-prow",
+          div(class = "ctx-pl", lp$label[i],
+              if (!lp$exact[i]) tags$span(style = "color:#aaa;", title = "coarser league cut", " \u2020")),
+          div(class = "ctx-pv", val),
+          div(style = "flex:1;",
+              pctile_bubble(raw),
+              # The high end only. The low end is its opposite and the reader
+              # supplies it; printing both doubled the text under every track.
+              div(class = "ctx-pend", style = "justify-content:flex-end;", tags$span(e[2]))))
+    }
+    tagList(
+      div(class = "ctx-pk", sprintf("Percentile vs every %s %s", hand_word, input$ctx_pitch)),
+      lapply(seq_len(nrow(lp)), row),
+      div(class = "ctx-note", "Red is above the league, blue below."))
+  })
+
+  # His whole arsenal over the window and batter side on screen, not just the
+  # selected pitch type. The pitch-type selector still drives the percentile
+  # block above, which is a per-pitch question; these two blocks are about the
+  # pitcher.
+  ctx_arsenal_rows <- reactive({
+    shp <- ctx_shape()
+    shp[shp$pitcher == as.integer(input$pitcher), , drop = FALSE]
+  })
+
+  # NOT a table. The Characteristics tab already prints every one of these
+  # numbers in a grid, and repeating a grid here made the page read as two
+  # tables stacked. Two results per pitch, drawn as the same percentile bubbles
+  # as the chart above (bars until 2026-09-21, changed by request so the page
+  # reads as one scale).
+  #
+  # ---- Dot POSITION is "better for the pitcher", on every row ----
+  #
+  # The first version filled each bar to the raw league percentile. For whiff%
+  # that is right, since more is better. For xwOBA it is backwards: a .370
+  # four-seam sits at the 75th percentile of contact damage, so it drew a LONG
+  # bar, and a long bar reads as "good" before anyone looks at the colour. The
+  # colour said bad and the length said good, which is why the panel looked
+  # inverted even though every colour on it was correct.
+  #
+  # So each bar now fills to the PITCHER percentile: the raw percentile for a
+  # high-is-good metric, 100 minus it for a low-is-good one. Longer and redder
+  # both mean better for him on every row, and the number beside the bar is that
+  # same pitcher percentile. It is the convention Savant's own percentile
+  # rankings use, for the same reason.
+  #
+  # The direction comes from METRIC_SPEC$context_better, not from this code.
+  pitcher_pct <- function(p, metric) {
+    if (!is.finite(p)) return(NA_real_)
+    if (identical(context_better(metric), "low")) 100 - p else p
+  }
+
+  output$ctx_arsenal <- renderUI({
+    d <- ctx_arsenal_rows()
+    validate(need(nrow(d) > 0, "No pitch types clear the minimum in this window."))
+    d <- d[order(-d$pitches), , drop = FALSE]
+    tot <- sum(d$pitches, na.rm = TRUE)
+
+    raw_pct <- function(i, m) {
+      lp <- league_percentiles(d[i, , drop = FALSE], league_ref, stand = input$hand, metrics = m)
+      if (is.null(lp) || !nrow(lp)) NA_real_ else lp$pctile[1]
+    }
+    fl <- function(m) METRIC_SPEC$floor[METRIC_SPEC$metric == m]
+
+    bar <- function(q, val, thin) {
+      if (!is.finite(q)) return(div(class = "ctx-cell",
+        div(class = "ctx-bar-val", style = "color:#bbb;", val)))
+      div(class = "ctx-cell",
+          div(class = "ctx-bar-val", style = if (thin) "color:#999;font-style:italic;" else "", val),
+          div(class = "ctx-bar", pctile_bubble(q, faded = thin)))
+    }
+
+    head <- div(class = "ctx-arow ctx-ahead",
+                div("Pitch"), div("Usage"),
+                div(style = "text-align:center;", "Whiff%"),
+                div(style = "text-align:center;", "xwOBA"))
+
+    rows <- lapply(seq_len(nrow(d)), function(i) {
+      pt  <- as.character(d$pitch_type[i])
+      col <- if (pt %in% names(pitch_text_colors)) pitch_text_colors[[pt]] else "#333"
+      tw  <- is.finite(d$swings[i]) && d$swings[i] < fl("whiff_pct")
+      tx  <- is.finite(d$pa[i])     && d$pa[i]     < fl("xwoba")
+      wv  <- if (is.finite(d$whiff_pct[i]))
+               paste0(sprintf("%.1f", d$whiff_pct[i]), if (tw) sprintf(" (%g)", d$swings[i]) else "") else "\u2014"
+      xv  <- if (is.finite(d$xwoba[i]))
+               paste0(sub("^0", "", sprintf("%.3f", d$xwoba[i])), if (tx) sprintf(" (%g)", d$pa[i]) else "") else "\u2014"
+      u <- 100 * d$pitches[i] / tot
+      div(class = "ctx-arow",
+          div(class = "ctx-pt", style = sprintf("color:%s;", col), pt),
+          # Usage drawn, not just printed, so the row's weight is visible: a 45%
+          # four-seam and a 3% changeup should not look like equals.
+          div(class = "ctx-use",
+              div(class = "ctx-usebar", style = sprintf("width:%.0fpx;", max(2, u * 0.5))),
+              sprintf("%.0f%%", u)),
+          bar(pitcher_pct(raw_pct(i, "whiff_pct"), "whiff_pct"), wv, tw),
+          bar(pitcher_pct(raw_pct(i, "xwoba"), "xwoba"), xv, tx))
+    })
+
+    tagList(
+      div(class = "ctx-card", head, rows),
+      div(class = "ctx-note", sprintf(
+        "Percentile vs every %s throwing that pitch, scored so further right and redder is better for him. (n) = sample under the floor.",
+        if (identical(ctx_hand(), "R")) "RHP" else "LHP")))
+  })
+
+  ctx_cohort <- reactive({
+    build_cohort(ctx_shape(), ctx_profile(), as.integer(input$pitcher),
+                 input$ctx_pitch,
+                 match_on = c("release_height", "arm_angle"),
+                 tolerances = ctx_tol(), mode = ctx_mode(), k = COHORT_K)
+  })
+
+  output$ctx_baselines <- gt::render_gt({
+    id <- as.integer(input$pitcher)
+    prof <- ctx_profile()
+    validate(need(id %in% prof$pitcher,
+                  "Selected pitcher is below the minimum pitch count in this window."))
+    # Both metrics, always. The metric dropdown made the reader choose before
+    # he had seen anything, and velo and IVB both fit.
+    fb <- nested_baselines(ctx_shape(), prof, id, input$ctx_pitch,
+                           metrics = c("velo", "ivb", "whiff_pct", "chase_pct", "xwoba"),
+                           control_for = if (isTRUE(input$ctx_adjust)) "velo" else NULL,
+                           tolerances = ctx_tol(), mode = ctx_mode(), k = COHORT_K)
+    validate(need(!is.null(fb), "No cohort: this pitcher does not throw that pitch type enough in this window."))
+    # mode and k already ride on fb from nested_baselines(); member_ids do too,
+    # and baselines_gt() reads them for the overlap line.
+    baselines_gt(fb, input$ctx_pitch,
+                 if (identical(ctx_hand(), "R")) "RHP" else "LHP")
+  })
+
+  # Scoped to the SELECTED pitcher's hand, not the explorer's hand filter. The
+  # explorer above browses either hand; this block is the drill-down on whoever
+  # is in the pitcher selector, and drawing the righty cloud under a lefty
+  # target puts the highlighted point outside its own population. It renders
+  # cleanly and says something false, which is the worst failure a chart here
+  # can have.
+  output$ctx_space <- renderPlot({
+    id   <- as.integer(input$pitcher)
+    prof <- ctx_profile() |> filter(p_throws == ctx_hand())
+    validate(need(nrow(prof) > 2, "Not enough pitchers to draw release space."))
+    plot_release_space(prof, target_id = id,
+                       cohort = ctx_cohort_rel(), pitch_type = input$ctx_pitch)
+  })
+
+  output$ctx_comparables <- gt::render_gt({
+    co <- ctx_cohort()
+    validate(need(!is.null(co) && nrow(co$members) > 0, paste0(
+      "No comparables inside these windows. Widen the release-height or ",
+      "arm-angle window above; the app will not widen them for you.")))
+    comparables_gt(co)
   })
 }
 
