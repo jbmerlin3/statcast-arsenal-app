@@ -73,6 +73,18 @@ search_aggregate <- function(df, hand, team = "All") {
       # Raw release height. No sign convention and no normalisation, unlike hb
       # two lines up, because height has no arm side to mirror.
       rel_ht    = mean(release_pos_z,      na.rm = TRUE),
+      # vaa and zone_pct joined the aggregate on 2026-09-18 for the Context
+      # tab's cohorts, and they are ADDITIVE: the Search table selects its
+      # columns by name, so it neither shows nor notices them. Computed here
+      # rather than in a second aggregator beside this one, because the whole
+      # point of the Context tab reading search_aggregate() is that there is one
+      # definition of a pitcher-by-pitch-type row in this app, not two.
+      #
+      # vaa is the flatness of the approach, always negative, and the single
+      # most distinguishing trait a low-slot power arm has. league_ref has
+      # carried it since the reference was built; nothing was asking for it.
+      vaa       = mean(vaa,                na.rm = TRUE),
+      zone_pct  = pct_or_na(sum(in_zone == 1), n()),
       whiff_pct = pct_or_na(sum(description %in% whiff_desc),
                             sum(description %in% swing_only)),
       chase_pct = pct_or_na(sum(in_zone == 0 & description %in% swing_only),
