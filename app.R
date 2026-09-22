@@ -70,7 +70,7 @@ FG_EXPORT <- tryCatch(resolve_fg_export("fg_stuff"), error = function(e) {
 # CSV rather than chain-built data, for the reason in
 # scripts/build_pitcher_heights.R. NULL degrades the Context tab's residual
 # columns to blank rather than taking the app down; every other tab is
-# unaffected, and the cohort engine still works on release height and extension.
+# unaffected.
 PITCHER_HEIGHTS <- load_pitcher_heights()
 
 # The stuff_all contract, three columns, as load_fg_stuff() returns on no match.
@@ -213,11 +213,11 @@ ui <- fluidPage(
         # chart, left, and the release profile, right) and what do his pitches
         # do (full width below). An attack plan sat on the right until later
         # that day and was cut by request: it was too simple, and how to attack
-        # a pitcher depends on the hitter, which this page does not know. A location strip was tried and removed the same
-        # day: the Heat Maps tab already draws every pitch's location, and this
-        # tab duplicating it is the clutter it was rebuilt to get rid of. Everything that feeds the
-        # analyst's view, including every control that only affects it, lives
-        # in Details.
+        # a pitcher depends on the hitter, which this page does not know. A
+        # location strip was tried and removed the same day: the Heat Maps tab
+        # already draws every pitch's location. A collapsed Details section
+        # (peer-group controls, release scatter, baselines, comparables) was
+        # also cut by request, and the peer-group engine behind it deleted.
         tabPanel("Context",
                  tags$style(HTML(paste0(
                    ".ctx-wrap{max-width:1380px;margin-top:12px;}",
@@ -241,7 +241,7 @@ ui <- fluidPage(
                    ".ctx-pl{width:118px;font-size:11px;color:#555;text-transform:uppercase;",
                    "letter-spacing:.4px;}",
                    ".ctx-pv{width:78px;font-size:14px;font-weight:700;text-align:right;color:#111;}",
-                   ".ctx-pt-wrap{flex:1;position:relative;height:26px;}",
+                   ".ctx-pt-wrap{flex:1;position:relative;height:26px;margin:0 13px;}",
                    ".ctx-ptrack{position:absolute;left:0;right:0;top:12px;height:3px;",
                    "background:#e9e9e9;border-radius:2px;}",
                    ".ctx-pfill{position:absolute;left:0;top:12px;height:3px;border-radius:2px;}",
@@ -262,23 +262,15 @@ ui <- fluidPage(
                    ".ctx-usebar{height:6px;background:#c9ced6;border-radius:3px;}",
                    ".ctx-cell{display:flex;align-items:center;gap:10px;}",
                    ".ctx-bar-val{width:66px;font-size:13px;font-weight:700;text-align:right;}",
-                   ".ctx-bar{flex:1;max-width:300px;margin:0 14px;}",
+                   ".ctx-bar{flex:1;max-width:300px;}",
                    # profile, stacked in the side column
                    ".ctx-side .ctx-stats{display:grid;grid-template-columns:1fr 1fr;gap:16px 24px;}",
                    ".ctx-side .ctx-flag{grid-column:1 / -1;}",
-                   ".ctx-line{color:#444;font-size:13px;margin:0 0 4px 0;}",
-                   # details
-                   ".ctx-details{margin-top:34px;border-top:1px solid #ddd;padding-top:14px;}",
-                   ".ctx-details summary{cursor:pointer;font-weight:700;font-size:14px;color:#555;}",
-                   ".ctx-dctl{background:#f7f7f7;border-radius:6px;padding:12px 16px 2px 16px;",
-                   "margin:14px 0 16px 0;}"))),
+                   ".ctx-line{color:#444;font-size:13px;margin:0 0 4px 0;}"))),
 
                  div(class = "ctx-wrap",
-                   # The only control on the visible page. Pitcher, dates and
-                   # batter side are global; the cohort controls below it only
-                   # ever changed the Details section, so that is where they
-                   # went. A control that moves nothing visible teaches the
-                   # reader the page is broken.
+                   # The only control on the page. Pitcher, dates and batter
+                   # side are global.
                    div(class = "ctx-top",
                        selectInput("ctx_pitch", "Pitch type",
                                    choices = names(pitch_colors), selected = "FF",
@@ -297,33 +289,7 @@ ui <- fluidPage(
 
                    div(class = "ctx-sec",
                        div(class = "ctx-h", "Arsenal"),
-                       uiOutput("ctx_arsenal")),
-
-                   tags$details(class = "ctx-details",
-                     tags$summary("Details: peer groups, baselines, comparables"),
-                     div(class = "ctx-dctl",
-                       fluidRow(
-                         column(4, radioButtons("ctx_mode", "Peer group",
-                                                choices = c("25 nearest" = "fixed_k",
-                                                            "Fixed window" = "window"),
-                                                selected = "fixed_k", inline = TRUE)),
-                         column(3, checkboxInput("ctx_adjust", "Control for velo", value = TRUE))
-                       ),
-                       conditionalPanel(
-                         condition = "input.ctx_mode == 'window'",
-                         fluidRow(
-                           column(4, sliderInput("ctx_tol_z", "Release-height window (± ft)",
-                                                 min = 0.05, max = 0.50, value = 0.15, step = 0.01)),
-                           column(4, sliderInput("ctx_tol_arm", "Arm-angle window (± deg)",
-                                                 min = 1, max = 20, value = 5, step = 0.5))
-                         ))),
-                     div(style = "max-width:940px;",
-                         plotOutput("ctx_space", height = "300px")),
-                     uiOutput("ctx_line_release"),
-                     br(),
-                     gt::gt_output("ctx_baselines"),
-                     br(),
-                     gt::gt_output("ctx_comparables"))
+                       uiOutput("ctx_arsenal"))
                  )),
         tabPanel("Search",
                  # The one tab that owns its own inputs. The pitcher selector,
@@ -734,8 +700,8 @@ server <- function(input, output, session) {
   #
   # One reactive builds the league-wide profile and one builds the shape table,
   # and every block on the tab projects from those two. Split them and a future
-  # edit to one filter silently desynchronises the explorer from the cohorts,
-  # which is the same failure chars_parts() exists to prevent.
+  # edit to one filter silently desynchronises the blocks on the tab, which is
+  # the same failure chars_parts() exists to prevent.
   #
   # Both are scoped by the GLOBAL date range, so the explorer answers "unusual
   # over the window I am looking at" rather than always over the season. That
@@ -777,22 +743,13 @@ server <- function(input, output, session) {
   # Scoped to the global batter-side selector, because the outcome rates it now
   # carries describe a split. Release point is NOT split this way: it is a
   # property of the pitcher, so ctx_profile() takes the whole window.
-  ctx_shape <- reactive(pitch_shape(ctx_window(), hand = input$hand))
-
-  ctx_mode <- reactive(input$ctx_mode %||% "fixed_k")
-
-  # The sliders do not exist in fixed-K mode, so their inputs are NULL and the
-  # defaults have to hold. %||% alone is not enough: a conditionalPanel that has
-  # been shown once leaves the input behind at its last value, so this also has
-  # to tolerate a stale number rather than assume NULL.
-  ctx_tol <- reactive({
-    t <- COHORT_TOLERANCES
-    z <- suppressWarnings(as.numeric(input$ctx_tol_z))
-    a <- suppressWarnings(as.numeric(input$ctx_tol_arm))
-    if (length(z) == 1 && is.finite(z)) t$release_height <- z
-    if (length(a) == 1 && is.finite(a)) t$arm_angle      <- a
-    t
-  })
+  #
+  # No floor here. Every pitch he threw is a row, and the percentile chart fades
+  # a trait whose own METRIC_SPEC$shape_floor the count misses. It was
+  # pitch_shape()'s default of 50 until 2026-09-21, left over from the deleted
+  # peer groups, and the chart refused to rank Tolle's 43 FF vs LHH over the 2H
+  # while the Arsenal listed them.
+  ctx_shape <- reactive(pitch_shape(ctx_window(), hand = input$hand, min_pitches = 1))
 
   # A row of figures, no sentence. The verdict line above it ("releases the ball
   # about where a 6-3 pitcher from a high 3/4 slot normally does") and the
@@ -820,8 +777,7 @@ server <- function(input, output, session) {
 
     # EXPECTED and VS EXPECTED were two tiles until 2026-09-21 and neither said
     # expected by WHAT, once the explanatory caveat was cut. One tile, labelled
-    # with its own basis. The expected height itself is still in the profile
-    # for anyone who opens Details.
+    # with its own basis.
     div(class = "ctx-stats",
       box(ht, "listed height"),
       box(sprintf("%s <span class='ctx-sub'>%.0f\u00b0</span>", slot, r$arm[1]), "arm slot"),
@@ -871,11 +827,22 @@ server <- function(input, output, session) {
     shp <- ctx_shape()
     r   <- shp[shp$pitcher == id & as.character(shp$pitch_type) == input$ctx_pitch, , drop = FALSE]
     if (!nrow(r)) return(div(class = "ctx-note",
-      sprintf("He does not throw enough %s in this window to rank.", input$ctx_pitch)))
+      sprintf("No %s in this window and batter side.", input$ctx_pitch)))
+    n_pitches <- r$pitches[1]
     lp <- league_percentiles(r, league_ref, stand = input$hand,
-                             metrics = c("velo","ivb","hb","vaa","spin","ext","rel_ht"))
+                             metrics = c("velo","ivb","hb","vaa","spin",
+                                         "ext","rel_ht","rel_side"))
     if (is.null(lp)) return(NULL)
-    lp <- lp[order(-abs(lp$pctile - 50)), , drop = FALSE]
+    # Ordered by distance from the 50th so the unusual traits lead, with one
+    # exception: the three release traits stay together, as a block, at the
+    # position their most extreme member earns. Where he lets go of the ball is
+    # one idea read across three numbers, and splitting them across the chart
+    # made the reader reassemble it.
+    REL_GROUP <- c("ext", "rel_ht", "rel_side")
+    dev <- abs(lp$pctile - 50)
+    in_rel <- lp$metric %in% REL_GROUP
+    if (any(in_rel)) dev[in_rel] <- max(dev[in_rel])
+    lp <- lp[order(-dev, ifelse(in_rel, match(lp$metric, REL_GROUP), 0L)), , drop = FALSE]
     hand_word <- if (identical(r$p_throws[1], "R")) "RHP" else "LHP"
 
     # ---- A percentile chart, not seven sentences ----
@@ -904,29 +871,58 @@ server <- function(input, output, session) {
       # what the Characteristics tab's IVB and HB shading means.
       e   <- ends(m)
       val <- sprintf(paste0("%.", lp$digits[i], "f%s"), lp$value[i], lp$unit[i])
+      # Per trait, not per pitch: they settle at very different rates, so one
+      # count can leave release height solid and approach angle faded on the
+      # same row of pitches. See METRIC_SPEC$shape_floor.
+      fl   <- shape_floor(m)
+      thin <- is.finite(fl) && n_pitches < fl
       div(class = "ctx-prow",
           div(class = "ctx-pl", lp$label[i],
               if (!lp$exact[i]) tags$span(style = "color:#aaa;", title = "coarser league cut", " \u2020")),
-          div(class = "ctx-pv", val),
+          div(class = "ctx-pv", style = if (thin) "color:#999;font-style:italic;" else "", val),
           div(style = "flex:1;",
-              pctile_bubble(raw),
+              pctile_bubble(raw, faded = thin),
               # The high end only. The low end is its opposite and the reader
               # supplies it; printing both doubled the text under every track.
               div(class = "ctx-pend", style = "justify-content:flex-end;", tags$span(e[2]))))
     }
     tagList(
-      div(class = "ctx-pk", sprintf("Percentile vs every %s %s", hand_word, input$ctx_pitch)),
+      div(class = "ctx-pk", sprintf("Percentile vs every %s %s", hand_word, input$ctx_pitch),
+          tags$span(style = "text-transform:none;color:#aaa;",
+                    sprintf(" \u00b7 %d pitches", n_pitches))),
       lapply(seq_len(nrow(lp)), row),
-      div(class = "ctx-note", "Red is above the league, blue below."))
+      div(class = "ctx-note", paste0(
+        "Red is above the league, blue below. A faded trait has too few pitches ",
+        "here to place precisely: release height and side settle in 4, velocity ",
+        "in 13, ride in 31, run in 50, approach angle in 148.")))
   })
 
   # His whole arsenal over the window and batter side on screen, not just the
   # selected pitch type. The pitch-type selector still drives the percentile
   # block above, which is a per-pitch question; these two blocks are about the
   # pitcher.
+  #
+  # Read from ctx_shape(), which has no pitch floor, so every pitch he threw is
+  # a row and usage divides by all of them. Until 2026-09-21 the shape table was
+  # floored at 50 and this panel hid Tolle's 43 FF and 19 CU vs LHH over the 2H,
+  # reading his sinker as 58% instead of 38%.
   ctx_arsenal_rows <- reactive({
     shp <- ctx_shape()
     shp[shp$pitcher == as.integer(input$pitcher), , drop = FALSE]
+  })
+
+  # The selector offers what he actually threw in this window and batter side,
+  # most-used first, rather than every pitch code in the app. Picking a pitch he
+  # has never thrown answered with an empty chart, and a control that can select
+  # nothing teaches the reader the page is broken. isolate() on the current
+  # value so this reacts to the window changing, not to its own update.
+  observe({
+    d  <- ctx_arsenal_rows()
+    ch <- as.character(d$pitch_type[order(-d$pitches)])
+    if (!length(ch)) return()
+    cur <- isolate(input$ctx_pitch)
+    updateSelectInput(session, "ctx_pitch", choices = ch,
+                      selected = if (isTRUE(cur %in% ch)) cur else ch[1])
   })
 
   # NOT a table. The Characteristics tab already prints every one of these
@@ -1007,53 +1003,6 @@ server <- function(input, output, session) {
       div(class = "ctx-note", sprintf(
         "Percentile vs every %s throwing that pitch, scored so further right and redder is better for him. (n) = sample under the floor.",
         if (identical(ctx_hand(), "R")) "RHP" else "LHP")))
-  })
-
-  ctx_cohort <- reactive({
-    build_cohort(ctx_shape(), ctx_profile(), as.integer(input$pitcher),
-                 input$ctx_pitch,
-                 match_on = c("release_height", "arm_angle"),
-                 tolerances = ctx_tol(), mode = ctx_mode(), k = COHORT_K)
-  })
-
-  output$ctx_baselines <- gt::render_gt({
-    id <- as.integer(input$pitcher)
-    prof <- ctx_profile()
-    validate(need(id %in% prof$pitcher,
-                  "Selected pitcher is below the minimum pitch count in this window."))
-    # Both metrics, always. The metric dropdown made the reader choose before
-    # he had seen anything, and velo and IVB both fit.
-    fb <- nested_baselines(ctx_shape(), prof, id, input$ctx_pitch,
-                           metrics = c("velo", "ivb", "whiff_pct", "chase_pct", "xwoba"),
-                           control_for = if (isTRUE(input$ctx_adjust)) "velo" else NULL,
-                           tolerances = ctx_tol(), mode = ctx_mode(), k = COHORT_K)
-    validate(need(!is.null(fb), "No cohort: this pitcher does not throw that pitch type enough in this window."))
-    # mode and k already ride on fb from nested_baselines(); member_ids do too,
-    # and baselines_gt() reads them for the overlap line.
-    baselines_gt(fb, input$ctx_pitch,
-                 if (identical(ctx_hand(), "R")) "RHP" else "LHP")
-  })
-
-  # Scoped to the SELECTED pitcher's hand, not the explorer's hand filter. The
-  # explorer above browses either hand; this block is the drill-down on whoever
-  # is in the pitcher selector, and drawing the righty cloud under a lefty
-  # target puts the highlighted point outside its own population. It renders
-  # cleanly and says something false, which is the worst failure a chart here
-  # can have.
-  output$ctx_space <- renderPlot({
-    id   <- as.integer(input$pitcher)
-    prof <- ctx_profile() |> filter(p_throws == ctx_hand())
-    validate(need(nrow(prof) > 2, "Not enough pitchers to draw release space."))
-    plot_release_space(prof, target_id = id,
-                       cohort = ctx_cohort_rel(), pitch_type = input$ctx_pitch)
-  })
-
-  output$ctx_comparables <- gt::render_gt({
-    co <- ctx_cohort()
-    validate(need(!is.null(co) && nrow(co$members) > 0, paste0(
-      "No comparables inside these windows. Widen the release-height or ",
-      "arm-angle window above; the app will not widen them for you.")))
-    comparables_gt(co)
   })
 }
 

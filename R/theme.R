@@ -184,6 +184,24 @@ METRIC_SPEC <- data.frame(
   floor  = c(rep(25, 8),
              rep(50, 4),
              50, 50, 50, 25),
+  # How many pitches before a trait's PERCENTILE is stable, for the Context
+  # tab's percentile chart only. NA for the rates, which keep `floor`.
+  #
+  # One floor for every shape trait was wrong in both directions. Measured over
+  # 2026 on the 16 hand-by-pitch-type cells with 20+ qualified pitchers: take
+  # the median within-pitcher SD of a trait, divide by the SD of pitcher means
+  # in that cell, and ask how many pitches make one standard error worth about
+  # five percentile points (40 points per SD near the middle, so n = (8r)^2).
+  # Release height settles in 4 pitches and approach angle needs 148, because
+  # approach angle is as much about where he threw it as how he threw it. A flat
+  # 25 called a one-start velocity unreliable and a season of VAA reliable.
+  #
+  # These are re-derived from app_data and checked in tests/step9_context.R, so
+  # a definition change on either side shows up as a failure rather than as a
+  # number nobody rechecks.
+  shape_floor = c(13, 31, 50, 148, 14, 10, 4, 4,
+                  rep(NA, 4),
+                  rep(NA, 4)),
   # Which end is BETTER FOR THE PITCHER, for the Context tab's panels only.
   #
   # A separate column from `direction` on purpose, and the difference is not
@@ -788,6 +806,17 @@ whiff_desc <- c("swinging_strike","swinging_strike_blocked","foul_tip",
 #' table rather than in whichever renderer asked. Returns "none" for a metric
 #' with no good end, which the callers must treat as a real answer and not as a
 #' missing one.
+#' Pitches needed before a shape trait's percentile is stable
+#'
+#' Reads METRIC_SPEC$shape_floor. NA for a metric that has none, which the
+#' caller must treat as "this floor does not apply", not as zero.
+shape_floor <- function(metric) {
+  spec <- METRIC_SPEC[METRIC_SPEC$metric == metric, ]
+  if (nrow(spec) != 1) stop("unknown metric: ", metric, call. = FALSE)
+  spec$shape_floor
+}
+
+
 context_better <- function(metric) {
   spec <- METRIC_SPEC[METRIC_SPEC$metric == metric, ]
   if (nrow(spec) != 1) stop("unknown metric: ", metric, call. = FALSE)

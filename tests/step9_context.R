@@ -2,7 +2,7 @@
 #
 #   Rscript tests/step9_context.R
 #
-# The Context tab's engine: R/release_context.R and R/cohorts.R.
+# The Context tab's engine: R/release_context.R and R/pitch_shape.R.
 #
 # What this file is guarding, in order of how quietly each would fail:
 #
@@ -12,12 +12,9 @@
 #  2. Low-support arms are FLAGGED, never dropped and never capped. The tab
 #     exists to surface strange release points, so deleting the strangest ones
 #     would defeat it while looking tidier.
-#  3. A cohort never contains its own target. Leaving it in shrinks every delta
-#     toward zero by 1/n, in a known direction, invisibly.
-#  4. min_n is reported, never reached by widening. Auto-widening would turn an
-#     honest "no peer group" into a confident wrong answer.
-#  5. The velocity control actually changes something. A control that silently
-#     no-ops is worse than no control, because the footnote claims it ran.
+#  3. A lefty's HB is mirrored before it is ranked. league_ref stores hb
+#     arm-side positive, so an unmirrored lookup ranks him at an extreme.
+#  4. Every percentile agrees with an independent recompute of the league.
 suppressMessages({library(dplyr);library(tidyr);library(purrr);library(forcats)
                   library(ggplot2);library(gt);library(readr);library(tibble)})
 invisible(lapply(sort(list.files("R", full.names = TRUE)), source))
@@ -91,116 +88,7 @@ expect("a traded pitcher is one row", nrow(mar), 1L)
 mar_raw <- ad |> filter(grepl("Marinaccio", player_name), pitch_type == "FF") |> nrow()
 expect("and carries every pitch from both clubs", mar$pitches[1], mar_raw)
 
-cat("\n=== cohorts ===\n")
-tid <- prof$pitcher[which(prof$p_throws == "L" & prof$n > 800)[1]]
-co  <- build_cohort(shp, prof, tid, "FF", match_on = c("release_height", "arm_angle"))
-expect("a cohort is returned", !is.null(co), TRUE)
-expect("the target is NOT in its own cohort", tid %in% co$members$pitcher, FALSE)
-expect("every member shares the target's hand",
-       all(co$members$p_throws == co$hand), TRUE)
-expect("members are sorted nearest first", !is.unsorted(co$members$distance), TRUE)
-tp <- prof[prof$pitcher == tid, ]
-
-# In WINDOW mode membership is the stated tolerance and nothing else. A cohort
-# that quietly reaches past its window to find friends is the failure this pins,
-# and the mode is named explicitly rather than relied on as the default, which
-# is exactly what broke this assertion when fixed_k became the default.
-cw <- build_cohort(shp, prof, tid, "FF", match_on = c("release_height","arm_angle"),
-                   mode = "window")
-expect("window mode: every member is inside the release-height window",
-       all(abs(cw$members$rel_z - tp$rel_z) <= COHORT_TOLERANCES$release_height), TRUE)
-expect("window mode: every member is inside the arm-angle window",
-       all(abs(cw$members$arm - tp$arm) <= COHORT_TOLERANCES$arm_angle), TRUE)
-expect("window mode reports its units", cw$distance_units, "tolerance widths")
-
-# In FIXED_K mode the point is that the rungs are the same size, so the sizes
-# are what get pinned. Equal N across matched baselines is the property the
-# whole mode exists to provide: without it the delta column is partly a
-# statement about window width.
-expect("fixed_k is the default", co$mode, "fixed_k")
-expect("fixed_k mode reports its units", co$distance_units, "pooled SDs")
-ck <- build_cohort(shp, prof, tid, "FF", match_on = "arm_angle", mode = "fixed_k", k = 25)
-expect("fixed_k returns exactly K peers", nrow(ck$members), 25L)
-kb <- nested_baselines(shp, prof, tid, "FF", metrics = "ivb", mode = "fixed_k", k = 25)
-expect("every matched baseline is the same size", length(unique(kb$cohort_n[2:3])), 1L)
-# League matches on nothing, so every same-hand peer is equally near and taking
-# an arbitrary K would be taking an arbitrary K. It stays the whole league.
-expect("League is NOT truncated to K", kb$cohort_n[1] > 25, TRUE)
-expect("and League is identical across modes",
-       kb$cohort_n[1],
-       nested_baselines(shp, prof, tid, "FF", metrics = "ivb", mode = "window")$cohort_n[1])
-# A K larger than the pool must return the pool, not error and not recycle.
-big <- build_cohort(shp, prof, tid, "FF", match_on = "arm_angle",
-                    mode = "fixed_k", k = 10000)
-expect("K past the pool size returns the pool", nrow(big$members) < 10000, TRUE)
-expect("an unknown match_on stops",
-       tryCatch({build_cohort(shp, prof, tid, "FF", match_on = "wingspan"); "no error"},
-                error = function(e) "stopped"), "stopped")
-
-cat("\n=== the nested baselines ===\n")
-fb <- nested_baselines(shp, prof, tid, "FF", metrics = "ivb")
-expect("three rows, one per baseline", nrow(fb), 3L)
-expect("ordered least to most conditioned",
-       fb$baseline, c("League", "Release-height match", "Arm-angle match"))
-# Conditioning can only ever shrink a cohort. If a matched baseline is bigger
-# than League the filter ran backwards.
-expect("conditioning never grows the cohort", fb$cohort_n[1] >= max(fb$cohort_n[2:3]), TRUE)
-expect("a thin baseline keeps its row and is marked",
-       all(fb$below_min_n[fb$cohort_n < COHORT_MIN_N]), TRUE)
-expect("a thin baseline withholds its percentile",
-       all(is.na(fb$pctile[fb$cohort_n < 10])), TRUE)
-
-cat("\n=== the velocity control does something ===\n")
-adj <- nested_baselines(shp, prof, tid, "FF", metrics = "ivb", control_for = "velo")
-raw <- nested_baselines(shp, prof, tid, "FF", metrics = "ivb", control_for = NULL)
-cat(sprintf("  league IVB delta: adjusted %+.2f, raw %+.2f\n", adj$delta[1], raw$delta[1]))
-expect("adjusting is flagged as having happened", adj$adjusted[1], TRUE)
-expect("and it changes the number", isTRUE(all.equal(adj$delta[1], raw$delta[1])), FALSE)
-# Controlling a metric on itself is a perfect fit and a zero delta, which would
-# render as a finding. Velo asked to control for velo must fall back to raw.
-v <- nested_baselines(shp, prof, tid, "FF", metrics = "velo", control_for = "velo")
-expect("velo is never controlled on itself", any(isTRUE(v$adjusted[1])), FALSE)
-expect("and its delta is not zeroed", abs(v$delta[1]) > 0, TRUE)
-
-cat("\n=== z is divided by the RIGHT spread ===\n")
-# An adjusted delta is a residual from a within-cohort fit, so it must be read
-# against the spread that fit LEAVES, not the spread it started with. Dividing
-# by the raw cohort SD made z depend on how much velocity variation happened to
-# be in that cohort, which is the one comparison the column exists to support.
-za <- nested_baselines(shp, prof, tid, "FF", metrics = "ivb", control_for = "velo")
-zr <- nested_baselines(shp, prof, tid, "FF", metrics = "ivb", control_for = NULL)
-cat(sprintf("  adjusted: cohort SD %.3f, z denominator %.3f\n",
-            za$cohort_sd[1], za$z_sd[1]))
-expect("adjusted z uses a denominator that is NOT the raw cohort SD",
-       isTRUE(all.equal(za$z_sd[1], za$cohort_sd[1])), FALSE)
-# Controlling removes variation, so the residual spread cannot exceed the raw
-# spread. If it does, the wrong quantity is being returned.
-expect("and it is smaller than the raw cohort SD", za$z_sd[1] < za$cohort_sd[1], TRUE)
-expect("unadjusted z still uses the raw cohort SD", zr$z_sd[1], zr$cohort_sd[1])
-expect("z is delta over its own denominator",
-       round(za$z[1], 6), round(za$delta[1] / za$z_sd[1], 6))
-
-cat("\n=== baselines report how far they are the same men ===\n")
-ovb <- nested_baselines(shp, prof, tid, "FF", metrics = "ivb", mode = "fixed_k")
-ov  <- baseline_overlap(ovb)
-expect("an overlap frame is returned", is.data.frame(ov), TRUE)
-cat(sprintf("  %s vs %s: %d shared of %d and %d\n",
-            ov$a[1], ov$b[1], ov$shared[1], ov$n_a[1], ov$n_b[1]))
-expect("League is excluded from the overlap", any(c(ov$a, ov$b) == "League"), FALSE)
-expect("shared cannot exceed either cohort",
-       ov$shared[1] <= min(ov$n_a[1], ov$n_b[1]), TRUE)
-
-cat("\n=== outcome metrics arrive with their denominators ===\n")
-ob <- nested_baselines(shp, prof, tid, "FF",
-                       metrics = c("whiff_pct", "chase_pct", "xwoba"))
-expect("three outcome metrics resolve", nrow(ob), 9L)
-expect("each carries the target's own denominator",
-       all(is.finite(ob$target_denom)), TRUE)
-# The floors must be the app's, not a second set invented here.
-expect("floors come from METRIC_SPEC",
-       sort(unique(ob$denom_floor)),
-       sort(unique(METRIC_SPEC$floor[METRIC_SPEC$metric %in%
-                                     c("whiff_pct","chase_pct","xwoba")])))
+cat("\n=== the shape table IS the Search tab's ===\n")
 # Reuse, not reimplementation: the shape table's rates must BE the Search tab's.
 sa <- search_aggregate(ad, hand = "All")
 sh <- pitch_shape(ad, hand = "All")
@@ -226,41 +114,9 @@ expect("every metric declares one", sum(is.na(METRIC_SPEC$context_better)), 0L)
 expect("and only from the allowed set",
        setdiff(unique(METRIC_SPEC$context_better), c("high","low","none")), character(0))
 
-cat("\n=== strip data is deterministic and holds the target ===\n")
-co25 <- build_cohort(shp, prof, tid, "FF", match_on = "release_height",
-                     mode = "fixed_k", k = 25)
-sd1 <- strip_data(co25, "velo"); sd2 <- strip_data(co25, "velo")
-# Deterministic because nearPoints() matches on DATA coordinates: a jittered
-# strip answers a hover with the wrong peer, and it also redraws on every
-# reactive tick and reads as the data moving.
-expect("identical across calls, no seed needed", identical(sd1, sd2), TRUE)
-expect("the target is in the frame", sum(sd1$is_target), 1L)
-expect("peers plus target", nrow(sd1), nrow(co25$members) + 1L)
-expect("every point carries a name", sum(is.na(sd1$player_name)), 0L)
-
-cat("\n=== verdicts are derived, and the middle third is not forced ===\n")
-v <- strip_verdict(co25, "velo", " mph")
-cat("  velo verdict:", v$verdict, "\n")
-expect("rank is within the frame", v$rank >= 1 && v$rank <= v$n, TRUE)
-expect("n counts the target too", v$n, nrow(co25$members) + 1L)
-expect("delta is target minus peer mean",
-       round(v$delta, 9), round(v$target - v$mean, 9))
-# A pitcher at the cohort median must NOT be called a yes or a no. Forcing a
-# binary there makes the header assert a difference the strip visibly denies.
-mid <- strip_verdict(co25, "ivb", " in", more = "More", less = "Less")
-pos <- (mid$rank - 0.5) / mid$n
-cat(sprintf("  ivb at position %.3f -> %s\n", pos, mid$word))
-expect("middle third reads 'about the same'",
-       if (pos > 1/3 && pos < 2/3) mid$word == "About the same as his peers"
-       else mid$word %in% c("More", "Less"), TRUE)
-# Ranking must follow the metric's better end, or xwOBA would rank backwards.
-vx <- strip_verdict(co25, "xwoba", "", digits = 3, strip_zero = TRUE)
-dx <- strip_data(co25, "xwoba")
-expect("low-is-better ranks ascending",
-       vx$rank, which(order(dx$x) == which(dx$is_target)))
-
 cat("\n=== league percentiles, said as a sentence ===\n")
 ref_lg <- readRDS("data/league_ref.rds")
+tid <- prof$pitcher[which(prof$p_throws == "L" & prof$n > 800)[1]]
 # The same reference the Characteristics tab shades from. If these ever stop
 # agreeing, one of the two surfaces is lying about the same pitcher.
 expect("league_ref carries every metric the phrases name",
@@ -304,7 +160,7 @@ expect("a righty's HB needs no mirror",
        lg_pctile(ref_lg, rhp$hb[1], "hb", "FF", "R", "All", "All Counts")$pctile,
        lpr$pctile[lpr$metric == "hb"])
 
-cat("\n=== vaa and zone_pct reach the cohort engine ===\n")
+cat("\n=== vaa and zone_pct reach the shape table ===\n")
 expect("vaa is in the shape table", "vaa" %in% names(shp), TRUE)
 expect("zone_pct is in the shape table", "zone_pct" %in% names(shp), TRUE)
 expect("vaa is negative, as an approach angle must be",
@@ -312,9 +168,55 @@ expect("vaa is negative, as an approach angle must be",
 expect("zone_pct is a percentage",
        all(shp$zone_pct[is.finite(shp$zone_pct)] >= 0 &
            shp$zone_pct[is.finite(shp$zone_pct)] <= 100), TRUE)
-vb <- nested_baselines(shp, prof, tid, "FF", metrics = c("vaa", "zone_pct"))
-expect("both resolve as cohort metrics", nrow(vb), 6L)
-expect("and carry finite cohort means", all(is.finite(vb$cohort_mean)), TRUE)
+
+cat("\n=== release side reaches the chart with the app's sign convention ===\n")
+expect("rel_side is in the shape table", "rel_side" %in% names(shp), TRUE)
+# Negated from Savant's catcher-view x exactly as tables.R and
+# build_league_ref.R do it, so a righty reads positive and a lefty negative. If
+# this ever flips, every release-side percentile ranks inside the wrong tail.
+rs <- shp |> group_by(p_throws) |> summarise(m = median(rel_side, na.rm = TRUE), .groups = "drop")
+cat(sprintf("  median rel_side: RHP %+.2f ft, LHP %+.2f ft\n",
+            rs$m[rs$p_throws == "R"], rs$m[rs$p_throws == "L"]))
+expect("a righty releases toward third", rs$m[rs$p_throws == "R"] > 0, TRUE)
+expect("a lefty toward first", rs$m[rs$p_throws == "L"] < 0, TRUE)
+expect("and it ranks", "rel_side" %in% league_percentiles(lhp, ref_lg)$metric, TRUE)
+
+cat("\n=== shape floors are derived from the data, not asserted ===\n")
+# METRIC_SPEC$shape_floor decides which traits the percentile chart fades. Each
+# is n = (8r)^2, where r is the median within-pitcher SD over the SD of pitcher
+# means: the count at which one standard error is worth about five percentile
+# points. Re-derived here so a change to either side of that ratio (a new
+# aggregator, a sign flip, a different population) fails loudly instead of
+# leaving a stale constant fading the wrong traits.
+fl_src <- c(velo = "release_speed", ivb = "ivb", hb = "hb", vaa = "vaa",
+            spin = "release_spin_rate", ext = "release_extension",
+            rel_ht = "release_pos_z", rel_side = "release_pos_x")
+fl_pt <- c("FF","SI","SL","CH","CU","FC","ST","KC","FS")
+for (mm in names(fl_src)) {
+  g <- ad |> filter(pitch_type %in% fl_pt) |>
+    group_by(pitcher, p_throws, pitch_type) |>
+    summarise(n = n(), w = sd(.data[[fl_src[[mm]]]], na.rm = TRUE),
+              mu = mean(.data[[fl_src[[mm]]]], na.rm = TRUE), .groups = "drop") |>
+    filter(n >= 100)
+  b <- g |> group_by(p_throws, pitch_type) |> filter(n() >= 20) |>
+    summarise(bsd = sd(mu), wsd = median(w), .groups = "drop")
+  hat <- ceiling((8 * median(b$wsd / b$bsd))^2)
+  have <- shape_floor(mm)
+  ratio <- have / hat
+  cat(sprintf("  %-9s stored %3d, data says %3d\n", mm, have, hat))
+  # A factor of 1.6 either way. Tight enough to catch a definition change, loose
+  # enough to survive a season's worth of new pitches moving the ratio.
+  expect(sprintf("%s floor matches the data", mm), ratio > 0.62 && ratio < 1.6, TRUE)
+}
+# The ORDER is the claim the chart makes: release traits settle fast, approach
+# angle does not. That must hold even if every floor drifts together.
+fo <- vapply(c("rel_ht","rel_side","ext","velo","spin","ivb","hb","vaa"), shape_floor, numeric(1))
+expect("release traits settle before velocity", max(fo[c("rel_ht","rel_side")]) < fo[["velo"]], TRUE)
+expect("and approach angle settles last", fo[["vaa"]], max(fo))
+expect("every shape metric declares a floor",
+       sum(is.na(METRIC_SPEC$shape_floor[METRIC_SPEC$kind == "mean"])), 0L)
+expect("and no rate does",
+       sum(!is.na(METRIC_SPEC$shape_floor[METRIC_SPEC$kind == "rate"])), 0L)
 
 cat("\n=== percentiles agree with an INDEPENDENT recomputation ===\n")
 # The one check that can catch search_aggregate() and build_league_ref.R

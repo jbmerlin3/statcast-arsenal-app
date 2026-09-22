@@ -58,8 +58,8 @@ load_pitcher_heights <- function(path = NULL, year = 2026) {
 #' scripts/verify_savant.R validates against at MAE 0.13 degrees.
 #'
 #' `min_pitches` matches the Search tab's existing minimum so the two surfaces
-#' agree on who counts as a real pitcher. A cohort built from cameo appearances
-#' is a cohort of noise.
+#' agree on who counts as a real pitcher. A league pool built from cameo appearances
+#' is a pool of noise.
 #'
 #' arm_angle carries a real NA band. It is computed by a pose pipeline that lands
 #' days after the game, so a short window ending today can be mostly NA even
@@ -123,9 +123,8 @@ pitcher_release_profile <- function(df, heights = NULL, min_pitches = 100) {
 #' +3.3 alone would overstate what the number can carry, so `resid_lo` and
 #' `resid_hi` are first-class outputs and the UI shows them.
 #'
-#' A KNN cohort is used elsewhere in this file for comparables, because a scout
-#' wants names. The fit is used HERE because a residual needs a smooth
-#' expectation, and a cohort mean over 20 neighbours is a noisier one.
+#' A fit rather than a nearest-neighbour mean, because a residual needs a
+#' smooth expectation and a mean over 20 neighbours is a noisier one.
 #' ---- Why low-support arms are FLAGGED and not capped or dropped ----
 #'
 #' The fit is linear in arm angle, and the arm-angle distribution has thin
@@ -282,6 +281,11 @@ LEAGUE_PHRASE <- list(
   spin   = list(label = "Spin",           high = "more spin than",   low = "less spin than",     digits = 0, unit = " rpm"),
   ext    = list(label = "Extension",      high = "further out than", low = "shorter than",       digits = 2, unit = " ft"),
   rel_ht = list(label = "Release height", high = "higher than",      low = "lower than",         digits = 2, unit = " ft"),
+  # Hand-neutral ends on purpose. Positive is toward third base for both hands,
+  # so "further out" would mean arm side for a righty and glove side for a
+  # lefty. The percentile is within hand, so the comparison is still to arms on
+  # his own side.
+  rel_side = list(label = "Release side",  high = "further toward third than", low = "further toward first than", digits = 2, unit = " ft"),
   zone_pct  = list(label = "In-zone rate", high = "in the zone more than", low = "in the zone less than", digits = 1, unit = "%"),
   whiff_pct = list(label = "Whiff rate",   high = "more whiffs than", low = "fewer whiffs than", digits = 1, unit = "%"),
   xwoba     = list(label = "xwOBA",        high = "more contact damage than", low = "less contact damage than", digits = 3, unit = "")
