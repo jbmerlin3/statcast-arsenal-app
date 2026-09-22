@@ -39,14 +39,20 @@ expect <- function(l, got, want) if (!identical(got, want))
 # rel_ht joined SEARCH_TRAITS on 2026-08-31. Defaulted like ext and spin so the
 # boundary cases below keep asserting what they were written to assert: a
 # constant cannot move a range test on velocity or HB.
+# vaa carries a default rather than being omitted. search_aggregate() gained it
+# on 2026-09-18 and this helper is meant to build a frame that satisfies the
+# same column contract real data does; a fixture missing a column the aggregator
+# reads fails with "object 'vaa' not found" from inside summarise(), several
+# frames from the line at fault. A fixture should break on the contract, not on
+# the implementation.
 arm <- function(id, name, throws, pt, k, velo, ivb, hb, stand = "R",
                 spin = 2300, ext = 6.5, rel_ht = 5.9, desc = "foul", iz = 1,
-                wd = NA_real_, team = "AAA") {
+                wd = NA_real_, team = "AAA", vaa = -4.5, rel_x = -1.8) {
   tibble::tibble(
     pitcher = id, player_name = name, p_throws = throws, pitch_type = pt,
     stand = rep(stand, k), release_speed = velo, ivb = ivb, hb = hb,
     release_spin_rate = spin, release_extension = ext, release_pos_z = rel_ht,
-    pitch_team = rep(team, k),
+    vaa = vaa, release_pos_x = rel_x, pitch_team = rep(team, k),
     description = rep(desc, k), in_zone = iz, woba_denom = wd,
     estimated_woba_using_speedangle = NA_real_)
 }
