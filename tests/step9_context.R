@@ -208,11 +208,17 @@ for (mm in names(fl_src)) {
   # enough to survive a season's worth of new pitches moving the ratio.
   expect(sprintf("%s floor matches the data", mm), ratio > 0.62 && ratio < 1.6, TRUE)
 }
-# The ORDER is the claim the chart makes: release traits settle fast, approach
-# angle does not. That must hold even if every floor drifts together.
+# The ORDER is the claim the chart makes: where he releases the ball is the
+# steadiest thing about him, and the break traits are the noisiest. That must
+# hold even if every floor drifts together.
+#
+# Approach angle WAS the loosest at 148 and is now 19, because VAA ships
+# location-adjusted as of 2026-09-22 and most of that 148 was his location mix
+# rather than his pitch. Run is the loosest trait now. See tests/step10_vaa_adj.R.
 fo <- vapply(c("rel_ht","rel_side","ext","velo","spin","ivb","hb","vaa"), shape_floor, numeric(1))
 expect("release traits settle before velocity", max(fo[c("rel_ht","rel_side")]) < fo[["velo"]], TRUE)
-expect("and approach angle settles last", fo[["vaa"]], max(fo))
+expect("run settles last", fo[["hb"]], max(fo))
+expect("and adjusting VAA moved it out of the loose end", fo[["vaa"]] < fo[["ivb"]], TRUE)
 expect("every shape metric declares a floor",
        sum(is.na(METRIC_SPEC$shape_floor[METRIC_SPEC$kind == "mean"])), 0L)
 expect("and no rate does",

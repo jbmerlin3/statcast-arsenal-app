@@ -79,15 +79,38 @@ add_pitch_features <- function(df) {
   # location through the trajectory, which is the known confound: the same
   # fastball crosses flatter at the top of the zone than at the knees.
   #
-  # Deliberately NOT residualised on plate_z here. sc_fit_vaa_adj() in stuffv4.R
-  # does that, per pitch type on a quadratic, and its output is already priced
-  # into the Stuff+ column that sits two cells away in the traits table. The raw
-  # angle is the scouting datapoint; the residual is the grade. Both are on the
-  # page and they are answering different questions.
+  # What ships is LOCATION-ADJUSTED, changed 2026-09-22. The raw angle moves
+  # with where the pitch finished, so a pitcher's average was partly a statement
+  # about his location mix: the same fastball crosses flatter at the top of the
+  # zone than at the knees. Measured over the 2026 store, raw VAA's median
+  # within-pitcher SD is 1.52 times the spread BETWEEN pitchers, the worst ratio
+  # of any trait the app shows, so a percentile needed 148 pitches to settle
+  # within five points and a reliever's whole season never got there.
+  #
+  # Adjusting drops that ratio to 0.53 and the count to 19, while the
+  # pitcher-level correlation with raw is 0.989 over 1,829 pitcher-by-pitch
+  # cells: the same trait, with the location noise taken out. It is not free.
+  # The median pitcher moves 8 percentile points against the raw ranking and the
+  # 90th moves 24, so a number memorised before this date may read differently.
+  # The page does not say so: the column stays titled VAA with no footnote, by
+  # request, and this comment is where the method is documented.
+  #
+  # Method, matching sc_fit_vaa_adj() in 02_StuffPlus/scripts/stuffv4.R: per
+  # pitch type, regress VAA on a quadratic in plate_z and take the residual.
+  # Then ADD BACK the fit at that pitch type's mean plate height, so the number
+  # stays an angle in degrees (four-seams -5.8 to -3.6) rather than a residual
+  # centred on zero. A residual is a grade; this page wants a trait.
+  #
+  # Fit on whatever frame is featurised, which in the chain is the whole season
+  # store, so app_data and the league_ref built from it share one fit by
+  # construction. A pitch type under VAA_ADJ_MIN_N is left RAW rather than
+  # fitted on a handful of rows, so fixtures and one-day frames pass through
+  # unchanged.
   if (all(c("vy0", "vz0", "ay", "az") %in% names(df))) {
     yf  <- 17 / 12
     tf  <- (-df$vy0 - sqrt(df$vy0^2 - 2 * df$ay * (50 - yf))) / df$ay
     df$vaa <- atan((df$vz0 + df$az * tf) / abs(df$vy0 + df$ay * tf)) * 180 / pi
+    df$vaa <- adjust_vaa_for_location(df)
   }
 
   # The pitching team, derived rather than looked up. Top of the inning means
@@ -105,6 +128,36 @@ add_pitch_features <- function(df) {
     df$pitch_team <- ifelse(df$inning_topbot == "Top", df$home_team, df$away_team)
   }
   df
+}
+
+
+VAA_ADJ_MIN_N <- 2000
+
+
+#' Strip the location component out of VAA, per pitch type
+#'
+#' Returns a vector the length of `df`: the fit at that pitch type's mean plate
+#' height plus this pitch's residual from the quadratic. Rows whose pitch type
+#' is under VAA_ADJ_MIN_N, and rows with no plate_z, keep the raw angle, so a
+#' thin frame degrades to the old behaviour rather than to a fit nobody should
+#' trust.
+#'
+#' Quadratic rather than linear because the relationship bends: the angle
+#' flattens faster toward the top of the zone than it steepens toward the knees.
+adjust_vaa_for_location <- function(df) {
+  out <- df$vaa
+  if (!"plate_z" %in% names(df)) return(out)
+  ok <- is.finite(df$vaa) & is.finite(df$plate_z)
+  pt <- as.character(df$pitch_type)
+  for (p in unique(pt[ok])) {
+    i <- which(ok & pt == p)
+    if (length(i) < VAA_ADJ_MIN_N) next
+    d   <- data.frame(vaa = df$vaa[i], plate_z = df$plate_z[i])
+    fit <- stats::lm(vaa ~ poly(plate_z, 2), data = d)
+    ref <- as.numeric(stats::predict(fit, newdata = data.frame(plate_z = mean(d$plate_z))))
+    out[i] <- d$vaa - stats::predict(fit) + ref
+  }
+  out
 }
 
 

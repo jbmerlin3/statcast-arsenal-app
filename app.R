@@ -894,7 +894,7 @@ server <- function(input, output, session) {
       div(class = "ctx-note", paste0(
         "Red is above the league, blue below. A faded trait has too few pitches ",
         "here to place precisely: release height and side settle in 4, velocity ",
-        "in 13, ride in 31, run in 50, approach angle in 148.")))
+        "in 13, spin in 14, approach angle in 19, ride in 31, run in 50.")))
   })
 
   # His whole arsenal over the window and batter side on screen, not just the

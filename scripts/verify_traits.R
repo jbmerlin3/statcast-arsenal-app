@@ -66,9 +66,17 @@ raw <- sc |>
             r_relht = release_pos_z,
             r_relsd = -release_pos_x,
             r_zone = in_zone_flag(plate_x, plate_z, sz_bot, sz_top),
+            pitch_type, plate_z,
             .t   = (-vy0 - sqrt(vy0^2 - 2 * ay * (50 - 17/12))) / ay,
-            r_vaa = atan((vz0 + az * .t) / abs(vy0 + ay * .t)) * 180 / pi) |>
+            r_vaa_raw = atan((vz0 + az * .t) / abs(vy0 + ay * .t)) * 180 / pi) |>
   select(-.t)
+# What ships is location-adjusted, since 2026-09-22. The fit runs over this same
+# frame, the whole filtered store, because that is the frame build_app_data()
+# featurises; fitting over a subset would be a different fit and a false FAIL.
+# This half uses my adjust_vaa_for_location(), so it checks the plumbing, not the
+# method. The method's own checks live in tests/step10_vaa_adj.R and tier C.
+raw$r_vaa <- adjust_vaa_for_location(
+  data.frame(vaa = raw$r_vaa_raw, plate_z = raw$plate_z, pitch_type = raw$pitch_type))
 
 # app_data carries no key columns, so join on the store rows it was built from.
 # Rebuilding it here rather than reading data/app_data.rds would compare the
@@ -111,10 +119,15 @@ got <- map_dfr(elig, function(id) {
 # unreconciled groupby compares a pitcher's CU against a DIFFERENT set of
 # pitches. The metrics that moved were exactly the ones whose rounding is fine
 # enough to notice one or two extra pitches in a mean.
-want <- sc |> filter(pitcher %in% elig, !is.na(pitch_type), pitch_type != "") |>
-  reconcile_pitch_codes() |>
+# VAA is adjusted over the WHOLE store, before narrowing to the sample and before
+# reconciling codes, because that is the order the chain runs in: the fit is per
+# raw Savant code, over every pitcher.
+want <- sc |> filter(!is.na(pitch_type), pitch_type != "") |>
   mutate(.t = (-vy0 - sqrt(vy0^2 - 2*ay*(50 - 17/12))) / ay,
-         v = atan((vz0 + az*.t)/abs(vy0 + ay*.t)) * 180/pi) |>
+         vaa = atan((vz0 + az*.t)/abs(vy0 + ay*.t)) * 180/pi)
+want$v <- adjust_vaa_for_location(want)
+want <- want |> filter(pitcher %in% elig) |>
+  reconcile_pitch_codes() |>
   mutate(pitch_type = as.character(pitch_type)) |>
   group_by(pitcher, pitch_type) |>
   summarise(w_velocity = round(mean(release_speed, na.rm = TRUE), 1),
@@ -207,12 +220,19 @@ chk("no NA in pitcher-level release means",
 sgn <- mean(sign(p$relsd) == ifelse(p$p_throws == "R", 1, -1))
 chk("rel side sign tracks handedness", sgn > 0.98, sprintf("%.1f%% of arms", sgn*100))
 
-# Higher pitches arrive flatter. This is the location confound the raw metric is
-# known to carry, and its PRESENCE is evidence the number is a real approach
-# angle rather than a shape statistic wearing its name.
+# Higher pitches arrive flatter. This is the location confound the RAW angle
+# carries, and its presence is evidence the raw number is a real approach angle
+# rather than a shape statistic wearing its name. The shipped angle is adjusted
+# for exactly this, so the two halves assert opposite things: the confound is
+# there in the physics (r > 0.4) and gone from what ships (|r| < 0.05). This
+# check asserted r > 0.4 on the shipped column until 2026-09-23 and failed on
+# correct data the day the adjustment landed.
+ffj <- j |> filter(pitch_type == "FF", is.finite(r_vaa_raw), is.finite(plate_z))
+r_raw <- cor(ffj$plate_z, ffj$r_vaa_raw)
+r_adj <- cor(ffj$plate_z, ffj$vaa)
+chk("higher plate_z -> flatter RAW VAA", r_raw > 0.4, sprintf("r = %.2f", r_raw))
+chk("shipped VAA carries no plate_z confound", abs(r_adj) < 0.05, sprintf("r = %.3f", r_adj))
 ff <- ad |> filter(pitch_type == "FF", !is.na(vaa), !is.na(ivb))
-r_pz <- cor(ff$plate_z, ff$vaa)
-chk("higher plate_z -> flatter VAA", r_pz > 0.4, sprintf("r = %.2f", r_pz))
 
 # THE STRONGEST CHECK IN THIS FILE, and it took three tries to state correctly.
 #

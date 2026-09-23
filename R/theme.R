@@ -199,7 +199,7 @@ METRIC_SPEC <- data.frame(
   # These are re-derived from app_data and checked in tests/step9_context.R, so
   # a definition change on either side shows up as a failure rather than as a
   # number nobody rechecks.
-  shape_floor = c(13, 31, 50, 148, 14, 10, 4, 4,
+  shape_floor = c(13, 31, 50, 19, 14, 10, 4, 4,
                   rep(NA, 4),
                   rep(NA, 4)),
   # Which end is BETTER FOR THE PITCHER, for the Context tab's panels only.
@@ -284,6 +284,9 @@ METRIC_SPEC <- data.frame(
 # what the number is rather than apologising for what it is not. The raw signed
 # value still lives in app_data and still drives the movement chart.
 METRIC_NOTES <- c(
+  # No note for vaa, by request 2026-09-22. It ships location-adjusted and the
+  # column is still titled VAA; the method is documented where it is computed,
+  # in adjust_vaa_for_location() in features.R.
   hb = paste("HB is arm-side normalized: positive is arm-side run for both",
              "hands, so a lefty and a righty with the same shape read the same.",
              "The movement chart keeps the true direction instead."),
