@@ -28,9 +28,10 @@ library(purrr)
 
 #' Pitch types too rare in this window to draw, per CHART_MIN_SHARE and CHART_MIN_N
 #'
-#' Measured over the whole frame, both batter sides, so the Movement chart and
-#' the two-sided usage chart hide the same types, and a times-through view of
-#' the same window hides what the Overall view hides.
+#' Measured over the whole frame, both batter sides, so the Movement chart, the
+#' two-sided usage chart and the heat maps hide the same types whichever batter
+#' side is selected, and a times-through view hides what Overall hides. One
+#' definition of "in the arsenal" on every chart.
 chart_hidden_types <- function(df, min_share = CHART_MIN_SHARE, min_n = CHART_MIN_N) {
   n <- table(as.character(df$pitch_type))
   sort(names(n)[n / sum(n) < min_share & n < min_n])
@@ -208,7 +209,11 @@ plot_velo <- function(df) {
 #' Panels below KDE_MIN_N fall back to a white-dot scatter. A density surface
 #' fitted to a handful of pitches invents structure, so the thin panel is shown
 #' as what it is rather than smoothed.
-plot_heatmap <- function(df, hand) {
+#'
+#' `hide` names pitch types to leave out, per chart_hidden_types(). They are
+#' dropped AFTER the per-panel usage strips are computed, so "Usage 24%" on
+#' every remaining panel still divides by all of his pitches in that count.
+plot_heatmap <- function(df, hand, hide = character()) {
   situations <- list("0-0"=c("0-0"), "Hitter Ahead"=c("1-0","2-0","3-0","2-1","3-1"),
                      "Two Strikes"=c("0-2","1-2","2-2","3-2"))
   sit_levels <- names(situations)
@@ -230,7 +235,18 @@ plot_heatmap <- function(df, hand) {
     summarise(n = n(), iz = mean(in_zone, na.rm = TRUE) * 100, .groups = "drop") |>
     group_by(situation) |> mutate(usage = n / sum(n) * 100) |> ungroup() |>
     mutate(strip = sprintf("Usage %.0f%%   IZ %.0f%%", usage, iz))
+  # A pitch he never threw in a count got no strip, so its panel rendered as a
+  # blank frame, which reads as a rendering fault. It is a finding: Harris
+  # throws no cutter with two strikes. Found on the page 2026-09-23. Label it
+  # 0%, with no IZ, since a zone rate over no pitches does not exist.
+  strips <- tidyr::complete(strips, situation, pitch_type) |>
+    mutate(strip = if_else(is.na(n), "Usage 0%", strip))
   hm <- hm |> add_count(situation, pitch_type, name = "panel_n")
+  if (length(hide)) {
+    hm     <- hm     |> filter(!pitch_type %in% hide) |> mutate(pitch_type = droplevels(pitch_type))
+    strips <- strips |> filter(!pitch_type %in% hide) |>
+      mutate(pitch_type = factor(as.character(pitch_type), levels = levels(hm$pitch_type)))
+  }
   dense  <- filter(hm, panel_n >= KDE_MIN_N)
   sparse <- filter(hm, panel_n <  KDE_MIN_N)
   # Drawing coordinates for the zone outline and the plate. These are rendering
@@ -240,12 +256,16 @@ plot_heatmap <- function(df, hand) {
   plate <- data.frame(x = c(-0.71,0.71,0.71,0,-0.71), y = c(0.05,0.05,0.20,0.30,0.20))
   ggplot(hm, aes(plate_x, plate_z)) +
     stat_density_2d_filled(data = dense, contour_var = "ndensity", bins = 10, h = KDE_BW) +
-    geom_point(data = sparse, color = "white", size = 1.8, alpha = 0.9) +
     geom_text(data = strips, aes(x = 0, y = 4.7, label = strip), inherit.aes = FALSE,
               color = "white", fontface = "bold", size = 4.2) +
     geom_polygon(data = plate, aes(x, y), inherit.aes = FALSE, fill = "white", color = "black", linewidth = 0.4) +
     geom_rect(data = sz, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
               inherit.aes = FALSE, fill = NA, color = "black", linewidth = 0.6) +
+    # The dots paint LAST, over the zone outline. Drawn before it, a pitch on
+    # the edge had the black line through it and read as a glyph: Harris's
+    # FC at x -0.84 against an edge at -0.83 rendered as a quote mark. A pitch
+    # on the black is the one a coach most wants to see whole.
+    geom_point(data = sparse, color = "white", size = 1.8, alpha = 0.9) +
     scale_fill_viridis_d(option = "viridis", guide = "none") +
     coord_fixed(xlim = c(-2.2, 2.2), ylim = c(0, 5)) +
     facet_grid(situation ~ pitch_type, switch = "y") +

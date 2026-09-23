@@ -119,11 +119,17 @@ hand_label <- function(hand) {
 # metric, by METRIC_SPEC's floors and the below_floor state.
 MIN_PITCH_COUNT <- 5
 
-# A pitch type is left off the Movement and usage CHARTS when it is under both
-# of these in the window: under 1% of his pitches AND under 10 of them. Added
+# A pitch type is left off the Movement, usage and heat map CHARTS when it is
+# under both of these in the window: under 1% of his pitches AND under 10 of them. Added
 # 2026-09-23 for the stray labels Savant's classifier files separately, Hogan
 # Harris's 4 slurves among 1,203 pitches being the example. Tables keep every
-# type, and the note above the tabs names what the charts left out.
+# type, and the note above the tabs names what the charts left out. Heat maps
+# joined 2026-09-23: 4 slurves were a whole column of three panels of dots.
+#
+# Deliberately NOT a higher cut for heat maps alone. Where a show-me pitch goes
+# (a 15-pitch cutter only 0-0 to lefties) is real advance information, and the
+# white-dot fallback under KDE_MIN_N already says the sample is thin. One
+# threshold on every chart beats a tuned threshold per chart.
 #
 # BOTH, not either. Share alone would hide a real pitch on a long season (a
 # 15-pitch cutter at 1.2% stays); a count alone would hide a real pitch on one
