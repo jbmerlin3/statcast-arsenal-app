@@ -446,8 +446,8 @@ server <- function(input, output, session) {
   })
 
   # Types too rare to draw in this window, per CHART_MIN_SHARE and CHART_MIN_N.
-  # One reactive so the Movement chart, the usage chart and the note can never
-  # disagree about what was left off.
+  # One reactive so the Movement chart, the usage chart, the heat maps and the
+  # note can never disagree about what was left off.
   chart_hide <- reactive(chart_hidden_types(pitcher_data()))
 
   output$pitch_code_note <- renderUI({
@@ -681,7 +681,7 @@ server <- function(input, output, session) {
   })
 
   output$heatmap <- renderPlot({
-    plot_heatmap(pitcher_data(), input$hand)
+    plot_heatmap(pitcher_data(), input$hand, hide = chart_hide())
   }, width = sized_width("heatmap"))
 
   # Two sources, two rows, deliberately not merged. The Statcast half reads
