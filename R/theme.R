@@ -119,6 +119,25 @@ hand_label <- function(hand) {
 # metric, by METRIC_SPEC's floors and the below_floor state.
 MIN_PITCH_COUNT <- 5
 
+# A pitch type is left off the Movement and usage CHARTS when it is under both
+# of these in the window: under 1% of his pitches AND under 10 of them. Added
+# 2026-09-23 for the stray labels Savant's classifier files separately, Hogan
+# Harris's 4 slurves among 1,203 pitches being the example. Tables keep every
+# type, and the note above the tabs names what the charts left out.
+#
+# BOTH, not either. Share alone would hide a real pitch on a long season (a
+# 15-pitch cutter at 1.2% stays); a count alone would hide a real pitch on one
+# start (Fuentes's 3 sliders of 19 are 16%, which is exactly the lie the old
+# MIN_PITCH_COUNT row filter told).
+#
+# Measured before adding, over the 536 pitchers with 300+ pitches: 160 carry a
+# type under 2%, and only 14% of those pitches sit inside the cluster of one of
+# his main pitches, so these are mostly real outliers (a firm curve, a cut
+# fastball) rather than mislabels. That is why the rule hides them from the
+# picture and does NOT relabel them.
+CHART_MIN_SHARE <- 0.01
+CHART_MIN_N     <- 10
+
 # Bandwidth for the heatmap KDE, in feet, x then z.
 KDE_BW <- c(1.0, 1.2)
 

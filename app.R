@@ -136,7 +136,22 @@ ui <- fluidPage(
     "margin:-6px 0 10px 14px;}",
     ".sec-note,.ctx-note{font-size:11.5px;color:#888;margin:8px 0 0 0;max-width:900px;",
     "line-height:1.45;}",
-    ".app-codes{font-size:11.5px;color:#999;margin:2px 0 6px 0;}"
+    ".app-codes{font-size:11.5px;color:#999;margin:2px 0 6px 0;}",
+    # Times-through toggle on the Usage tab. The radio circles are hidden and the
+    # span after each is the pill, so the selected and disabled looks come from
+    # the input's own state and cannot disagree with the value Shiny reads.
+    ".tto-bar{display:flex;align-items:center;gap:14px;margin:14px 0 -8px 0;}",
+    ".tto-lab{font-size:10.5px;color:#888;text-transform:uppercase;letter-spacing:.5px;}",
+    ".tto-pills{display:flex;gap:6px;margin:0;}",
+    ".tto-pill{margin:0;font-weight:400;cursor:pointer;}",
+    ".tto-pill input{position:absolute;opacity:0;pointer-events:none;}",
+    ".tto-pill span{display:inline-block;padding:4px 13px;border:1px solid #cfd5dd;",
+    "border-radius:14px;font-size:12.5px;color:#1f3a5f;background:#fff;}",
+    ".tto-pill .tto-n{font-weight:400;color:#8a94a3;margin-left:6px;font-size:11px;}",
+    ".tto-pill input:checked+span{background:#1f3a5f;border-color:#1f3a5f;color:#fff;}",
+    ".tto-pill input:checked+span .tto-n{color:#c8d3e3;}",
+    ".tto-pill input:focus-visible+span{outline:2px solid #1f3a5f;outline-offset:2px;}",
+    ".tto-pill input:disabled+span{opacity:.4;cursor:not-allowed;}"
   )))),
   # The deploy bundles the rds files rather than fetching them at startup, so
   # the page has to say how current they are. Read off app_data itself and not
@@ -166,8 +181,10 @@ ui <- fluidPage(
       # which described behaviour that is gone. Every pitch type is charted now;
       # what varies is whether a RATE off it is trustworthy, which the table
       # already says per cell in grey with its denominator.
-      helpText("Every pitch type is shown. Rates from small samples are greyed",
-               " and carry their own denominator."),
+      # "are greyed" until 2026-09-23, which had been false since 2026-09-08,
+      # when thin cells went from grey to shaded with their n kept.
+      helpText("Every pitch type is in the tables. Rates from small samples carry",
+               " their own denominator."),
       # Under the controls rather than over the tabs. The panel describes the
       # whole selection, which is what this column already is, and moving it
       # here fills the dead space below the inputs and lets the tabs start at
@@ -193,6 +210,9 @@ ui <- fluidPage(
                      div(class = "sec-sub", "Induced vertical vs horizontal break, catcher's view"),
                      plotOutput("movement", height = "620px"))),
         tabPanel("Usage",
+                 # Empty unless the window holds something beyond the first time
+                 # through, so a reliever's Usage tab is exactly what it was.
+                 uiOutput("tto_toggle"),
                  div(class = "sec",
                      div(class = "sec-h", "Pitch usage"),
                      plotOutput("usage", height = "420px"),
@@ -425,13 +445,21 @@ server <- function(input, output, session) {
                        game_date <= as.character(input$dates[2]))
   })
 
+  # Types too rare to draw in this window, per CHART_MIN_SHARE and CHART_MIN_N.
+  # One reactive so the Movement chart, the usage chart and the note can never
+  # disagree about what was left off.
+  chart_hide <- reactive(chart_hidden_types(pitcher_data()))
+
   output$pitch_code_note <- renderUI({
-    note <- pitch_code_note(pitcher_data())
-    if (is.null(note)) return(NULL)
-    # paste0 rather than passing three arguments to div(), which inserts
-    # whitespace between them and left a space before the full stop.
+    d <- pitcher_data()
+    codes <- pitch_code_note(d)
+    parts <- c(if (!is.null(codes)) paste0("Pitch codes: ", codes),
+               chart_hidden_note(d, chart_hide()))
+    if (!length(parts)) return(NULL)
+    # One string. Passing pieces as separate div() arguments inserts whitespace
+    # between them, which once left a space before the full stop.
     div(style = "color:#666; font-size:12px; margin-bottom:6px;",
-        paste0("Pitch codes: ", note, "."))
+        paste0(paste(parts, collapse = ". "), "."))
   })
 
   # ---- Pitch trait search ----------------------------------------------------
@@ -608,15 +636,35 @@ server <- function(input, output, session) {
   output$movement <- renderPlot({
     # league_ref was wired into the characteristics table in Phase 5 but not
     # here, so the reference marks existed and never reached the page.
-    plot_movement(pitcher_data())
+    plot_movement(pitcher_data(), hide = chart_hide())
   }, width = sized_width("movement"))
 
+  # ---- Usage tab: times through the order --------------------------------
+  #
+  # Three reactives. tto_n() counts the window's pitches by time through for the
+  # batter side on screen. tto() is the view actually APPLIED: the reader's pick
+  # when it has pitches, Overall otherwise. The chart and the table read tto()
+  # and never input$tto, because the input keeps its last value when the toggle
+  # is hidden, so a "2nd" picked on a starter would otherwise follow the reader
+  # to a reliever who has no second time through. Rules live in R/tto.R.
+  tto_n <- reactive(tto_counts(pitcher_data(), input$hand))
+  tto   <- reactive(tto_effective(input$tto, tto_n()))
+
+  # isolate() so a click does not rebuild the control it came from. It rebuilds
+  # when the counts change, and at that point takes whatever tto() resolved to,
+  # which is how a pick the new window cannot honour falls back to Overall
+  # visibly rather than silently.
+  output$tto_toggle <- renderUI(tto_toggle_ui(tto_n(), isolate(tto())))
+
   output$usage <- renderPlot({
-    plot_usage(pitcher_data())
+    d <- filter_tto(pitcher_data(), tto())
+    validate(need(nrow(d) > 0, "No pitches in this view."))
+    plot_usage(d, hide = chart_hide())
   }, width = sized_width("usage"))
 
   output$usage_table <- gt::render_gt({
-    count_usage_gt(count_usage_tbl(pitcher_data(), input$hand), input$hand)
+    count_usage_gt(count_usage_tbl(pitcher_data(), input$hand, tto()), input$hand,
+                   label = tto_table_label(input$hand, tto()))
   })
 
   # Stuff+ for the selected pitcher. The read is about 11 ms, so it runs per

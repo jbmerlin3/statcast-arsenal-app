@@ -26,12 +26,35 @@ library(forcats)
 library(purrr)
 
 
+#' Pitch types too rare in this window to draw, per CHART_MIN_SHARE and CHART_MIN_N
+#'
+#' Measured over the whole frame, both batter sides, so the Movement chart and
+#' the two-sided usage chart hide the same types, and a times-through view of
+#' the same window hides what the Overall view hides.
+chart_hidden_types <- function(df, min_share = CHART_MIN_SHARE, min_n = CHART_MIN_N) {
+  n <- table(as.character(df$pitch_type))
+  sort(names(n)[n / sum(n) < min_share & n < min_n])
+}
+
+
+#' "4 SV", or NULL when nothing was left off
+chart_hidden_note <- function(df, hidden) {
+  if (!length(hidden)) return(NULL)
+  n <- table(as.character(df$pitch_type))[hidden]
+  paste0(paste(sprintf("%d %s", as.integer(n), hidden), collapse = ", "),
+         " left off the charts, under 1% of pitches; still in the tables")
+}
+
+
 #' Two-sided usage bars, LHH left and RHH right
 #'
 #' complete() fills pitch types a hitter side never saw with zero. Without it the
 #' bar is absent rather than empty, and a pitch he simply never throws to lefties
 #' reads the same as one he does not throw at all.
-plot_usage <- function(df) {
+#'
+#' `hide` drops bars AFTER the shares are computed, so a hidden type stays in
+#' the denominator and every other bar reads the same as it did with it drawn.
+plot_usage <- function(df, hide = character()) {
   usage <- df |>
     count(pitch_type, stand) |>
     complete(pitch_type, stand, fill = list(n = 0)) |>
@@ -41,13 +64,22 @@ plot_usage <- function(df) {
     # Negative values mirror the left half of the diverging bar. Labels use
     # abs() below so the axis reads as a percentage on both sides.
     mutate(plot_pct = if_else(stand == "L", -pct, pct))
+  if (length(hide)) {
+    usage <- usage |> filter(!pitch_type %in% hide) |> mutate(pitch_type = droplevels(pitch_type))
+  }
+  # The label sits OUTSIDE the bar end, so a bar near 100% pushed it past the
+  # old fixed limit of 105 and it rendered clipped, "100'". Rare on a season,
+  # common on one outing or one time through the order, where a reliever can
+  # throw one pitch to one side. The axis widens only when a label needs it,
+  # so every chart that fit before is drawn exactly as before.
+  lim <- max(105, max(usage$pct, na.rm = TRUE) + 25)
   ggplot(usage, aes(plot_pct, fct_rev(pitch_type), fill = pitch_type)) +
     geom_vline(xintercept = seq(-75, 75, 25), linetype = "dashed", color = "gray80", linewidth = 0.4) +
     geom_col(width = 0.6) +
     geom_text(aes(label = paste0(round(abs(plot_pct), 1), "%"),
                   hjust = if_else(stand == "L", 1.15, -0.15)),
               size = 7, fontface = "bold", color = "gray20") +
-    scale_x_continuous(limits = c(-105, 105), breaks = seq(-100, 100, 25),
+    scale_x_continuous(limits = c(-lim, lim), breaks = seq(-100, 100, 25),
                        labels = \(x) paste0(abs(x), "%")) +
     scale_y_discrete(expand = expansion(add = c(0.9, 0.6))) +
     scale_fill_manual(values = pitch_colors) +
@@ -75,8 +107,13 @@ plot_usage <- function(df) {
 #' The value 3 is a deliberate choice, not a leftover. The source script used 42
 #' and it was changed on purpose, so do not tidy it back. Which seed does not
 #' matter, but changing it reshuffles every movement chart, so it stays put.
-plot_movement <- function(df) {
-  pitch_order <- levels(df$pitch_type)
+#'
+#' `hide` names types not to draw. Arm angle, extension and every type's share
+#' of the ~100 dots are still computed over the whole frame. The hidden types
+#' were the ones pmax(1, ...) below over-weighted: 4 slurves in 1,203 pitches
+#' got one dot in a hundred, about three times their share.
+plot_movement <- function(df, hide = character()) {
+  pitch_order <- setdiff(levels(df$pitch_type), hide)
   usage <- df |> count(pitch_type) |> mutate(k = pmax(1, round(n / sum(n) * 100)))
   set.seed(3)
   mv <- map_dfr(pitch_order, function(pt) {

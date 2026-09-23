@@ -317,7 +317,7 @@ build_pitch_level <- function(df, mlb_id) {
 #' and nothing in R/, scripts/ or app.R reads any of them. See APP_DATA_COLS.
 PL_TRIM_COLS <- c(
   "pitcher", "player_name", "game_date", "pitch_type", "pt_n", "pitch_team",
-  "stand", "p_throws", "balls", "strikes",
+  "stand", "p_throws", "balls", "strikes", "n_thruorder_pitcher",
   "release_speed", "release_extension", "release_spin_rate", "pfx_x", "pfx_z", "arm_angle",
   "release_pos_x", "release_pos_z",
   "plate_x", "plate_z", "sz_bot", "sz_top", "hb", "ivb", "vaa", "in_zone",
@@ -358,6 +358,11 @@ PL_TRIM_COLS <- c(
 #' the derivation lives in features.R rather than in tables.R.
 #' AMENDED AGAIN 2026-09-08. bb_type came back when GB% landed, so the only
 #' entries left are the seven trajectory columns vaa is derived from.
+#'
+#' 2026-09-23: n_thruorder_pitcher joined PL_TRIM_COLS, and so ships, for the
+#' Usage tab's times-through toggle. An integer column, about 2.5 MB resident.
+#' No missing values in the 2026 store. The first chain run after it merges
+#' changes the content digest and redeploys, which is expected.
 APP_DATA_UNREAD <- c(
   # Trajectory. vaa is derived from these in add_pitch_features() and ships in
   # their place; nothing else reads them. Putting them back costs ~19 MB.
