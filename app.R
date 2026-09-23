@@ -93,6 +93,25 @@ preset_buttons <- if (is.null(HALVES$first)) {
 
 
 ui <- fluidPage(
+  # ---- Say when the app is working -----------------------------------------
+  #
+  # Switching pitcher or window leaves the previous pitcher's numbers on screen
+  # for a second or two while the reactives rebuild. Stale figures under a new
+  # name read as the app being WRONG rather than busy, which is the worst
+  # second a page can spend with a reader who is evaluating it.
+  #
+  # Shiny's own indicators rather than a package: a spinner over each output
+  # that is recalculating, and a pulse at the top of the page while anything is
+  # in flight. No new dependency in the bundle, and nothing in the server code
+  # has to know about it.
+  shiny::useBusyIndicators(spinners = TRUE, pulse = TRUE),
+  # The spinner says "working"; fading what it sits on says "do not read this
+  # yet". Held at 0.35 rather than hidden so the layout cannot jump, and the
+  # delay means a fast recalculation never flickers.
+  tags$style(HTML(paste0(
+    ".recalculating{opacity:.35 !important;transition:opacity .15s ease-in .25s;}",
+    ".shiny-busy-pulse{--shiny-pulse-color:#1f3a5f;}"))),
+
   # ---- One visual language for every tab ----------------------------------
   #
   # Normalised 2026-09-21. Each tab had grown its own spacing, its own grey,
