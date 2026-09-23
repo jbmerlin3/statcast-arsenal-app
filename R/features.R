@@ -149,6 +149,17 @@ adjust_vaa_for_location <- function(df) {
   if (!"plate_z" %in% names(df)) return(out)
   ok <- is.finite(df$vaa) & is.finite(df$plate_z)
   pt <- as.character(df$pitch_type)
+  # Fit on the codes the app RANKS by, not Savant's raw codes. Until 2026-09-23
+  # KC was fit on its own and folded into CU afterwards, so a knuckle curve was
+  # re-centred at KC's mean plate height (1.65 ft) and then ranked among curves
+  # centred at CU's (1.76 ft). That read knuckle curves about 0.1 degrees
+  # steeper, which is better for a curve: 40 of 230 curveball pitchers moved a
+  # median 3 percentile points, at most 7.6. CS and FO were worse in kind,
+  # under VAA_ADJ_MIN_N on their own, so they shipped raw inside an adjusted
+  # CU and FS. Same map as reconcile_pitch_codes(), read from the same table.
+  maps <- PITCH_CODE_RULES[PITCH_CODE_RULES$action == "map", ]
+  hit  <- match(pt, maps$code)
+  pt[!is.na(hit)] <- maps$target[hit[!is.na(hit)]]
   for (p in unique(pt[ok])) {
     i <- which(ok & pt == p)
     if (length(i) < VAA_ADJ_MIN_N) next

@@ -104,6 +104,22 @@ if (!file.exists(store)) {
          cor(j$raw, j$z) > 0.25, TRUE)
 }
 
+cat("\n=== a knuckle curve is fit as the curve it is ranked as ===\n")
+# KC folds into CU before ranking, so it must fold in before fitting too, or a
+# knuckle curve is centred at its own mean height and ranked among curves
+# centred at another. Two probe pitches, one KC and one CU, identical in angle
+# and height, must come out identical. Literal fixture: 2,500 CU and 500 KC,
+# so KC alone is under the 2,000-row minimum and fitting it separately leaves
+# it raw, which is exactly what makes the two probes differ if this regresses.
+set.seed(11)
+fx <- data.frame(pitch_type = c(rep("CU", 2500), rep("KC", 500), "CU", "KC"),
+                 plate_z = c(runif(2500, 0.8, 2.8), runif(500, 0.6, 2.4), 2.5, 2.5))
+fx$vaa <- -9.5 + 1.0 * (fx$plate_z - 1.8) + rnorm(nrow(fx), 0, 0.3)
+fx$vaa[3001:3002] <- -8.8
+a <- adjust_vaa_for_location(fx)
+expect("KC and CU probes with the same angle and height match", a[3001], a[3002])
+expect("and both were actually adjusted, not left raw", a[3002] != -8.8, TRUE)
+
 cat("\n", strrep("-", 60), "\n", sep = "")
 if (length(fails)) { cat("FAILURES:\n"); for (f in fails) cat("  ", f, "\n") }
 cat("STEP 10 VAA ADJ: ", if (!length(fails)) "PASS" else "FAIL", "\n", sep = "")
