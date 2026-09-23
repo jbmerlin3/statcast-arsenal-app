@@ -728,11 +728,15 @@ computes it from the trajectory primitives at a fixed 17/12 ft plane, and it is
 what ships so the seven primitives do not have to. Same formula as
 `sc_add_trajectory()` in `02_StuffPlus/scripts/stuffv4.R`, kept in step by hand.
 
-It is **raw**, not residualised on `plate_z`, which is a deliberate choice rather
-than an oversight. The residual already exists: `sc_fit_vaa_adj()` fits it per
-pitch type on a quadratic and its output is priced into the Stuff+ column two
-cells away. The raw angle is the scouting datapoint, the residual is the grade,
-and both are on the page answering different questions.
+It is **location-adjusted**, changed 2026-09-22; it was raw until then. The raw
+angle moves with where the pitch finished, so its within-pitcher spread was 1.52
+times the spread between pitchers and a percentile needed 148 pitches to settle.
+`adjust_vaa_for_location()` takes the residual from a per-pitch-type quadratic in
+`plate_z` and adds back the fit at that type's mean plate height, so it still
+reads in degrees. Same fit as `sc_fit_vaa_adj()` in stuffv4.R. The column stays
+titled VAA with no footnote, by request. `scripts/verify_traits.R` asserts both
+halves: the raw angle carries the plate height confound and the shipped one does
+not.
 
 VAA's direction lives in `PITCH_SHAPE_DIRECTION`, not `METRIC_SPEC`, and tracks
 `ivb` code for code. Flat is the point on a four-seam and steep is the point on a

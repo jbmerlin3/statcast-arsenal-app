@@ -79,15 +79,38 @@ add_pitch_features <- function(df) {
   # location through the trajectory, which is the known confound: the same
   # fastball crosses flatter at the top of the zone than at the knees.
   #
-  # Deliberately NOT residualised on plate_z here. sc_fit_vaa_adj() in stuffv4.R
-  # does that, per pitch type on a quadratic, and its output is already priced
-  # into the Stuff+ column that sits two cells away in the traits table. The raw
-  # angle is the scouting datapoint; the residual is the grade. Both are on the
-  # page and they are answering different questions.
+  # What ships is LOCATION-ADJUSTED, changed 2026-09-22. The raw angle moves
+  # with where the pitch finished, so a pitcher's average was partly a statement
+  # about his location mix: the same fastball crosses flatter at the top of the
+  # zone than at the knees. Measured over the 2026 store, raw VAA's median
+  # within-pitcher SD is 1.52 times the spread BETWEEN pitchers, the worst ratio
+  # of any trait the app shows, so a percentile needed 148 pitches to settle
+  # within five points and a reliever's whole season never got there.
+  #
+  # Adjusting drops that ratio to 0.53 and the count to 19, while the
+  # pitcher-level correlation with raw is 0.989 over 1,829 pitcher-by-pitch
+  # cells: the same trait, with the location noise taken out. It is not free.
+  # The median pitcher moves 8 percentile points against the raw ranking and the
+  # 90th moves 24, so a number memorised before this date may read differently.
+  # The page does not say so: the column stays titled VAA with no footnote, by
+  # request, and this comment is where the method is documented.
+  #
+  # Method, matching sc_fit_vaa_adj() in 02_StuffPlus/scripts/stuffv4.R: per
+  # pitch type, regress VAA on a quadratic in plate_z and take the residual.
+  # Then ADD BACK the fit at that pitch type's mean plate height, so the number
+  # stays an angle in degrees (four-seams -5.8 to -3.6) rather than a residual
+  # centred on zero. A residual is a grade; this page wants a trait.
+  #
+  # Fit on whatever frame is featurised, which in the chain is the whole season
+  # store, so app_data and the league_ref built from it share one fit by
+  # construction. A pitch type under VAA_ADJ_MIN_N is left RAW rather than
+  # fitted on a handful of rows, so fixtures and one-day frames pass through
+  # unchanged.
   if (all(c("vy0", "vz0", "ay", "az") %in% names(df))) {
     yf  <- 17 / 12
     tf  <- (-df$vy0 - sqrt(df$vy0^2 - 2 * df$ay * (50 - yf))) / df$ay
     df$vaa <- atan((df$vz0 + df$az * tf) / abs(df$vy0 + df$ay * tf)) * 180 / pi
+    df$vaa <- adjust_vaa_for_location(df)
   }
 
   # The pitching team, derived rather than looked up. Top of the inning means
@@ -105,6 +128,47 @@ add_pitch_features <- function(df) {
     df$pitch_team <- ifelse(df$inning_topbot == "Top", df$home_team, df$away_team)
   }
   df
+}
+
+
+VAA_ADJ_MIN_N <- 2000
+
+
+#' Strip the location component out of VAA, per pitch type
+#'
+#' Returns a vector the length of `df`: the fit at that pitch type's mean plate
+#' height plus this pitch's residual from the quadratic. Rows whose pitch type
+#' is under VAA_ADJ_MIN_N, and rows with no plate_z, keep the raw angle, so a
+#' thin frame degrades to the old behaviour rather than to a fit nobody should
+#' trust.
+#'
+#' Quadratic rather than linear because the relationship bends: the angle
+#' flattens faster toward the top of the zone than it steepens toward the knees.
+adjust_vaa_for_location <- function(df) {
+  out <- df$vaa
+  if (!"plate_z" %in% names(df)) return(out)
+  ok <- is.finite(df$vaa) & is.finite(df$plate_z)
+  pt <- as.character(df$pitch_type)
+  # Fit on the codes the app RANKS by, not Savant's raw codes. Until 2026-09-23
+  # KC was fit on its own and folded into CU afterwards, so a knuckle curve was
+  # re-centred at KC's mean plate height (1.65 ft) and then ranked among curves
+  # centred at CU's (1.76 ft). That read knuckle curves about 0.1 degrees
+  # steeper, which is better for a curve: 40 of 230 curveball pitchers moved a
+  # median 3 percentile points, at most 7.6. CS and FO were worse in kind,
+  # under VAA_ADJ_MIN_N on their own, so they shipped raw inside an adjusted
+  # CU and FS. Same map as reconcile_pitch_codes(), read from the same table.
+  maps <- PITCH_CODE_RULES[PITCH_CODE_RULES$action == "map", ]
+  hit  <- match(pt, maps$code)
+  pt[!is.na(hit)] <- maps$target[hit[!is.na(hit)]]
+  for (p in unique(pt[ok])) {
+    i <- which(ok & pt == p)
+    if (length(i) < VAA_ADJ_MIN_N) next
+    d   <- data.frame(vaa = df$vaa[i], plate_z = df$plate_z[i])
+    fit <- stats::lm(vaa ~ poly(plate_z, 2), data = d)
+    ref <- as.numeric(stats::predict(fit, newdata = data.frame(plate_z = mean(d$plate_z))))
+    out[i] <- d$vaa - stats::predict(fit) + ref
+  }
+  out
 }
 
 
@@ -264,7 +328,7 @@ build_pitch_level <- function(df, mlb_id) {
 #' and nothing in R/, scripts/ or app.R reads any of them. See APP_DATA_COLS.
 PL_TRIM_COLS <- c(
   "pitcher", "player_name", "game_date", "pitch_type", "pt_n", "pitch_team",
-  "stand", "p_throws", "balls", "strikes",
+  "stand", "p_throws", "balls", "strikes", "n_thruorder_pitcher",
   "release_speed", "release_extension", "release_spin_rate", "pfx_x", "pfx_z", "arm_angle",
   "release_pos_x", "release_pos_z",
   "plate_x", "plate_z", "sz_bot", "sz_top", "hb", "ivb", "vaa", "in_zone",
@@ -305,6 +369,11 @@ PL_TRIM_COLS <- c(
 #' the derivation lives in features.R rather than in tables.R.
 #' AMENDED AGAIN 2026-09-08. bb_type came back when GB% landed, so the only
 #' entries left are the seven trajectory columns vaa is derived from.
+#'
+#' 2026-09-23: n_thruorder_pitcher joined PL_TRIM_COLS, and so ships, for the
+#' Usage tab's times-through toggle. An integer column, about 2.5 MB resident.
+#' No missing values in the 2026 store. The first chain run after it merges
+#' changes the content digest and redeploys, which is expected.
 APP_DATA_UNREAD <- c(
   # Trajectory. vaa is derived from these in add_pitch_features() and ships in
   # their place; nothing else reads them. Putting them back costs ~19 MB.

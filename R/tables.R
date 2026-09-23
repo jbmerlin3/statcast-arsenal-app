@@ -449,23 +449,31 @@ results_gt <- function(tbl, hand, label = hand_label(hand), ref = NULL) {
 #' partition. They do not sum to 100 across a row and must not be presented as
 #' if they do. The heatmaps use three coarser buckets instead, since a KDE needs
 #' a bigger per-panel sample. See CLAUDE.md, count buckets.
-count_usage_tbl <- function(df, hand) {
+count_usage_tbl <- function(df, hand, tto = "All") {
   # "All" pools both batter sides rather than selecting a third one, so the
   # filter is skipped entirely. For "L" and "R" this is identical to before.
   if (hand != "All") df <- filter(df, stand == hand)
   df <- df |> mutate(pitch_type = droplevels(pitch_type))
-  buckets <- list("All Counts"=NULL, "Early Count"=c("0-0","0-1","1-0"),
-                  "Pitcher Ahead"=c("0-1","0-2","1-2","2-2"),
-                  "Pitcher Behind"=c("1-0","2-0","3-0","2-1","3-1"),
-                  "Pre Two Strikes"=c("0-0","0-1","1-0","1-1","2-1","3-1"),
-                  "Two Strikes"=c("0-2","1-2","2-2","3-2"))
+  # The time-through cut comes AFTER droplevels, so the rows are fixed by the
+  # whole window on this side and every view prints the same pitches. A slider
+  # he stops throwing the third time through reads 0.0%, which is the finding,
+  # rather than vanishing from the table, which reads as a rendering fault.
+  df <- filter_tto(df, tto)
+  # COUNT_BUCKETS, not a local copy. This function wrote the six buckets out by
+  # hand until 2026-09-23 while count_usage_denoms() read the shared list and
+  # claimed the two could not drift.
   base <- df |> mutate(cnt = paste(balls, strikes, sep = "-"))
   bucket_usage <- function(counts) {
     d <- if (is.null(counts)) base else filter(base, cnt %in% counts)
-    d |> count(pitch_type, name = "n") |> mutate(pct = round(n / sum(n) * 100, 1)) |>
+    # .drop = FALSE keeps a zero row for every level, which is what holds a
+    # pitch's row when a time-through view has none of it. An empty bucket
+    # divides 0 by 0, and replace_na() below turns that NaN into 0 exactly as
+    # it turned the old missing row into 0.
+    d |> count(pitch_type, name = "n", .drop = FALSE) |>
+      mutate(pct = round(n / sum(n) * 100, 1)) |>
       select(pitch_type, pct)
   }
-  imap(buckets, \(counts, nm) bucket_usage(counts) |> rename(!!nm := pct)) |>
+  imap(COUNT_BUCKETS, \(counts, nm) bucket_usage(counts) |> rename(!!nm := pct)) |>
     reduce(full_join, by = "pitch_type") |>
     arrange(pitch_type) |>
     # A pitch absent from a bucket is 0% usage in that situation, not unknown.

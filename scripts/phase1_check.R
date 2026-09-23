@@ -158,7 +158,10 @@ if (!file.exists(FIXTURE)) {
   # name rather than by taking whatever intersection happens to exist: an
   # intersection would also swallow a column the split dropped by accident,
   # which is the failure this check exists to catch.
-  ADDED <- "pitch_team"
+  #
+  # n_thruorder_pitcher is a deliberate ADDITION as of 2026-09-23, for the Usage
+  # tab's times-through toggle. Savant's own column, passed through unchanged.
+  ADDED <- c("pitch_team", "n_thruorder_pitcher")
   nz <- as.data.frame(new_fix); oz <- as.data.frame(old_fix)
   stopifnot("the fixture grew a column that is not sanctioned here" =
               setequal(setdiff(names(nz), names(oz)), ADDED))
