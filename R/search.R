@@ -20,6 +20,16 @@
 library(dplyr)
 
 
+# Every column search_aggregate() reads. Adding a trait to the summarise means
+# adding its source column here, or the narrow subset drops it and the mean
+# comes back NaN.
+SEARCH_AGG_COLS <- c("pitcher", "player_name", "p_throws", "pitch_type",
+                     "pitch_team", "stand", "description", "in_zone",
+                     "woba_denom", "release_speed", "ivb", "hb",
+                     "release_spin_rate", "release_extension", "release_pos_z",
+                     "vaa", "release_pos_x", "estimated_woba_using_speedangle")
+
+
 #' Aggregate every pitcher in the frame to one row per pitch type
 #'
 #' This is the expensive half of the search and the reason the tab is usable at
@@ -37,8 +47,18 @@ library(dplyr)
 #' is given and orders the factor by usage within it; given the whole league
 #' that would filter on league-wide counts and order by league-wide usage, when
 #' what the search needs is a per-pitcher floor it takes as an argument.
-search_aggregate <- function(df, hand, team = "All") {
-  if (hand != "All") df <- filter(df, stand == hand)
+search_aggregate <- function(df, hand, team = "All", from = NULL, to = NULL) {
+  # ONE row mask and ONE narrow copy, measured 2026-09-24. Chaining filter()
+  # calls over the 34-column app_data copied the whole frame three times (date,
+  # batter side, pitch type), about 150 MB each, and the live app died with
+  # "oom (out of memory)" on the free tier every time the Search tab opened.
+  # The mask runs over bare vectors; the one subset keeps only the columns the
+  # summarise below reads. `from`/`to` exist so callers can hand over app_data
+  # itself instead of a date-filtered copy of it. Output is identical.
+  keep <- !is.na(df$pitch_type) & df$pitch_type != ""
+  if (!is.null(from)) keep <- keep & df$game_date >= from
+  if (!is.null(to))   keep <- keep & df$game_date <= to
+  if (hand != "All")  keep <- keep & df$stand %in% hand
   # Team is filtered here, beside the batter side, and deliberately NOT added to
   # the group_by. 96 pitchers threw for more than one club in 2026, 89 of them
   # for two and 7 for three or more, several with 2,400+ pitches. Grouping by
@@ -47,9 +67,16 @@ search_aggregate <- function(df, hand, team = "All") {
   # floor. Filtering first means "TB sliders" reads as the shape he threw while
   # he was a Ray, and "All teams" is byte for byte what the tab did before the
   # filter existed.
-  if (team != "All") df <- filter(df, pitch_team == team)
-  df <- df |> filter(!is.na(pitch_type), pitch_type != "")
-  df <- reconcile_pitch_codes(df)
+  if (team != "All") keep <- keep & df$pitch_team %in% team
+  # reconcile_pitch_codes() stays the single choke point for pitch codes, but it
+  # runs on the code column plus a row id, not on the frame: given the frame it
+  # copies it twice more (the remap and the drop). Its surviving row ids then
+  # drive the one real subset.
+  idx <- which(keep)
+  rc  <- reconcile_pitch_codes(data.frame(pitch_type = df$pitch_type[idx],
+                                          .row = idx, stringsAsFactors = FALSE))
+  df  <- df[rc$.row, intersect(SEARCH_AGG_COLS, names(df)), drop = FALSE]
+  df$pitch_type <- rc$pitch_type
 
   df |>
     group_by(pitcher, player_name, p_throws, pitch_type) |>
