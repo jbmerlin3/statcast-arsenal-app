@@ -475,8 +475,7 @@ server <- function(input, output, session) {
     req(input$dates, input$s_team)
     from <- as.character(input$dates[1])
     to   <- as.character(input$dates[2])
-    search_aggregate(filter(app_data, game_date >= from, game_date <= to),
-                     input$hand, input$s_team)
+    search_aggregate(app_data, input$hand, input$s_team, from = from, to = to)
   })
 
   search_bounds <- reactive({
