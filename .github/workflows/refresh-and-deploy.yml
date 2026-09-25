@@ -69,7 +69,9 @@ concurrency:
 jobs:
   chain:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Up to 7 chain attempts 20 minutes apart (see "Run the chain"), each
+    # about 10 minutes: 2 hours of waiting plus 70 of work, with margin.
+    timeout-minutes: 240
 
     # The default GITHUB_TOKEN is read-only on contents, and pushing the
     # refreshed store back is a release-asset write. Without this the whole
@@ -171,8 +173,34 @@ jobs:
       # a fresh runner, so step 5 always deploys rather than gating on a date
       # change. That is the behaviour we want here: the whole point is that the
       # live bundle matches the data every morning.
+      # Savant usually has last night's games by 06:15 ET, but not always. On
+      # 2026-09-25 it had not posted 09-24 yet, step 1's guard failed the run as
+      # designed, and the scheduled backups arrived hours late (GitHub delays
+      # cron by 4 to 8 hours on this repo), so the app sat a day stale until
+      # 11:00. The run now waits for Savant itself: ONLY the "did not advance"
+      # failure is retried, every 20 minutes for up to 2 hours. Any other error
+      # fails immediately, as before. Step 1 stops before saving, so a retry
+      # starts from the same store.
       - name: Run the chain
-        run: Rscript scripts/update_data.R
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          for attempt in 1 2 3 4 5 6 7; do
+            if Rscript scripts/update_data.R 2>&1 | tee logs/chain-attempt-$attempt.log; then
+              exit 0
+            fi
+            if ! grep -q "did not advance past" logs/chain-attempt-$attempt.log; then
+              echo "::error::Chain failed for a reason other than Savant lag. Not retrying."
+              exit 1
+            fi
+            if [ "$attempt" -eq 7 ]; then
+              echo "::error::Savant still has not posted after 2 hours of retries."
+              exit 1
+            fi
+            echo "::warning::Savant has not posted the latest games yet (attempt $attempt of 7). Retrying in 20 minutes."
+            sleep 1200
+          done
 
       - name: Push the refreshed store back
         env:
