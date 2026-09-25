@@ -46,6 +46,11 @@ player_index <- build_player_index(app_data)
 # a team the store does have. Sorted so the dropdown is alphabetical.
 TEAM_CODES   <- sort(unique(app_data$pitch_team))
 HALVES       <- season_halves(app_data)
+# League-wide Search and Context tables for the preset windows, built by the
+# daily chain (step 6). NULL when missing or built for other data or code, in
+# which case both tabs compute live. See R/league_pool.R for why this exists:
+# computing them on a click ran the 1 GB instance out of memory.
+LEAGUE_POOL  <- load_league_pool(app_data)
 
 # game_date is stored as character. Keep the bounds as Date for the input widget
 # and convert back at comparison time, see pitcher_data() below.
@@ -475,6 +480,10 @@ server <- function(input, output, session) {
     req(input$dates, input$s_team)
     from <- as.character(input$dates[1])
     to   <- as.character(input$dates[2])
+    # A preset window with All teams is read from the pool; anything else, a
+    # typed date range or one club, is computed live on the lean path.
+    hit <- if (identical(input$s_team, "All")) pool_search(LEAGUE_POOL, from, to, input$hand)
+    if (!is.null(hit)) return(hit)
     search_aggregate(app_data, input$hand, input$s_team, from = from, to = to)
   })
 
@@ -773,12 +782,15 @@ server <- function(input, output, session) {
   # over the window I am looking at" rather than always over the season. That
   # also means arm angle thins out on a short recent window, which is why
   # n_arm rides along and the note above the table reports it.
-  ctx_window <- reactive({
+  # The window as two strings, not as a copy of its rows. This used to return
+  # the filtered frame itself, a ~150 MB copy of app_data per visit that the
+  # 1 GB instance could not afford next to Search (see R/league_pool.R).
+  ctx_range <- reactive({
     req(input$dates)
     from <- as.character(input$dates[1]); to <- as.character(input$dates[2])
-    d <- app_data |> filter(game_date >= from, game_date <= to)
-    validate(need(nrow(d) > 0, "No pitches in the selected window."))
-    d
+    validate(need(any(app_data$game_date >= from & app_data$game_date <= to),
+                  "No pitches in the selected window."))
+    c(from, to)
   })
 
   # The single source of truth for handedness on this tab. Read from the
@@ -800,8 +812,17 @@ server <- function(input, output, session) {
   CTX_RARITY_RADIUS <- 0.75
 
   ctx_profile <- reactive({
-    pitcher_release_profile(ctx_window(), PITCHER_HEIGHTS,
-                            min_pitches = CTX_MIN_PITCHES) |>
+    r <- ctx_range()
+    prof <- pool_release(LEAGUE_POOL, r[1], r[2])
+    prof <- if (is.null(prof)) {
+      pitcher_release_profile(window_rows(app_data, r[1], r[2], RELEASE_PROFILE_COLS),
+                              PITCHER_HEIGHTS, min_pitches = CTX_MIN_PITCHES)
+    } else {
+      # The pool is built with min_pitches = 1; the floor is the function's
+      # last step, so applying it here gives the same rows.
+      prof[prof$n >= CTX_MIN_PITCHES, , drop = FALSE]
+    }
+    prof |>
       expected_release_height() |>
       release_rarity(radius = CTX_RARITY_RADIUS)
   })
@@ -815,7 +836,12 @@ server <- function(input, output, session) {
   # pitch_shape()'s default of 50 until 2026-09-21, left over from the deleted
   # peer groups, and the chart refused to rank Tolle's 43 FF vs LHH over the 2H
   # while the Arsenal listed them.
-  ctx_shape <- reactive(pitch_shape(ctx_window(), hand = input$hand, min_pitches = 1))
+  ctx_shape <- reactive({
+    r <- ctx_range()
+    agg <- pool_search(LEAGUE_POOL, r[1], r[2], input$hand)
+    if (is.null(agg)) agg <- search_aggregate(app_data, input$hand, from = r[1], to = r[2])
+    pitch_shape_finish(agg, min_pitches = 1)
+  })
 
   # A row of figures, no sentence. The verdict line above it ("releases the ball
   # about where a 6-3 pitcher from a high 3/4 slot normally does") and the

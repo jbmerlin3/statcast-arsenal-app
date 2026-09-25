@@ -27,8 +27,15 @@
 #' `hand` is the BATTER side, matching the global selector. `min_pitches`
 #' defaults to 50, the floor for ranking a pitch's shape; the Arsenal panel
 #' passes 1 so every pitch he threw is a row.
-pitch_shape <- function(df, hand = "All", min_pitches = 50) {
-  out <- search_aggregate(df, hand = hand)
+pitch_shape <- function(df, hand = "All", min_pitches = 50, from = NULL, to = NULL) {
+  pitch_shape_finish(search_aggregate(df, hand = hand, from = from, to = to), min_pitches)
+}
+
+#' The part of pitch_shape() that runs on an already-aggregated frame
+#'
+#' Split out so the Context tab can apply it to a precomputed search_aggregate()
+#' result from league_pool.rds, and get byte-for-byte what pitch_shape() returns.
+pitch_shape_finish <- function(out, min_pitches = 50) {
   # search_aggregate() joins every club he threw this pitch for inside the
   # window with a slash, which is the honest label for a row that averages both
   # halves of a trade.

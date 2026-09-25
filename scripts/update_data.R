@@ -7,6 +7,8 @@
 #   2. Rebuild data/league_ref.rds.
 #   4. Rebuild data/game_logs.rds, the only step allowed to fail soft.
 #   3. Write data/app_data.rds, the trimmed column set.
+#   6. Rebuild data/league_pool.rds, the league tables Search and Context read.
+#      Fails soft: the app computes live without it.
 #   5. Deploy, because the data rides inside the bundle.
 #
 # Steps 3 and 4 are numbered in the order they were written, not the order they
@@ -34,6 +36,7 @@ STORE_PATH <- Sys.getenv(
 APP_DATA_PATH   <- "data/app_data.rds"
 LEAGUE_REF_PATH <- "data/league_ref.rds"
 GAME_LOGS_PATH  <- "data/game_logs.rds"
+# LEAGUE_POOL_PATH is defined in R/league_pool.R, which the app shares.
 
 
 #' Write via a temp file and rename
@@ -471,6 +474,25 @@ run_chain <- function() {
   message("Wrote ", APP_DATA_PATH, ", ", format(nrow(ad), big.mark = ","), " rows x ", ncol(ad),
           " cols, ", round(file.size(APP_DATA_PATH) / 1024^2, 1), " MB")
   message("App date range is now ", min(ad$game_date), " to ", max(ad$game_date))
+
+  message("\n== Step 6: league_pool.rds ==")
+  # After step 3, because the pool is stamped with the app_data it was built
+  # from and the app rejects any other. Fails soft like step 4: without the pool
+  # the app still works, it just computes Search and Context live. The old file
+  # is REMOVED on failure rather than kept, so a stale pool can never ship; the
+  # app would reject it anyway, but a missing file says so in the log.
+  tryCatch({
+    pool <- build_league_pool(ad)
+    save_rds_atomic(pool, LEAGUE_POOL_PATH)
+    message("Wrote ", LEAGUE_POOL_PATH, ", ", length(pool$search), " search tables and ",
+            length(pool$release), " release tables, ",
+            round(file.size(LEAGUE_POOL_PATH) / 1024^2, 1), " MB")
+  }, error = function(e) {
+    if (file.exists(LEAGUE_POOL_PATH)) file.remove(LEAGUE_POOL_PATH)
+    warning("Step 6 failed, removed ", LEAGUE_POOL_PATH, ": ", conditionMessage(e), call. = FALSE)
+    message("Step 6 FAILED: ", conditionMessage(e))
+    message("  the app will compute Search and Context live")
+  })
 
   # The data files ship inside the bundle, so steps 1 to 4 do nothing for the
   # deployed link until this runs. It used to be a manual step, and the result
