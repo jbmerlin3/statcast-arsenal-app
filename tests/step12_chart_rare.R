@@ -70,8 +70,8 @@ expect("the note names it",
 expect("nothing hidden, no note", chart_hidden_note(h, character()), NULL)
 
 cat("\n=== heat maps ===\n")
-# Columns are pitch types; three count panels each. Harris's 4 SV were a whole
-# column of three panels of dots.
+# Columns are pitch types; two count panels each (Pre-2K, 2K). Harris's 4 SV
+# were a whole column of panels of dots.
 cols <- function(p) as.character(unique(ggplot2::ggplot_build(p)$layout$layout$pitch_type))
 strip_labels <- function(p) {
   l <- p$layers[[which(sapply(p$layers, function(x) inherits(x$geom, "GeomText")))]]$data
@@ -81,7 +81,7 @@ strip_labels <- function(p) {
 full <- plot_heatmap(h, "All"); cut <- plot_heatmap(h, "All", hide = "SV")
 expect("Harris heat map draws an SV column without the rule", "SV" %in% cols(full), TRUE)
 expect("and five columns, no SV, with it", cols(cut), c("FF", "CU", "SL", "CH", "FC"))
-expect("15 panels, not 18", nrow(ggplot2::ggplot_build(cut)$layout$layout), 15L)
+expect("10 panels, not 12", nrow(ggplot2::ggplot_build(cut)$layout$layout), 10L)
 expect("every remaining panel's usage label is unchanged, SV still divides",
        strip_labels(cut), strip_labels(full))
 # Harris alone cannot fail that check: 4 pitches in ~1,200 never move a label
@@ -93,15 +93,26 @@ hx <- data.frame(pitch_type = factor(c(rep("FF", 15), rep("SV", 5)), levels = c(
                  stand = "R", balls = 0L, strikes = 0L, in_zone = 1L,
                  plate_x = runif(20, -0.5, 0.5), plate_z = runif(20, 2, 3))
 lab <- function(p) { l <- p$layers[[which(sapply(p$layers, function(x) inherits(x$geom, "GeomText")))]]$data
-                     l$strip[l$pitch_type == "FF" & l$situation == "0-0"] }
+                     l$strip[l$pitch_type == "FF" & l$situation == "Pre-2K"] }
 expect("fixture: FF at 0-0 reads 75% with SV hidden, not 100%",
        grepl("Usage 75%", lab(plot_heatmap(hx, "All", hide = "SV")), fixed = TRUE), TRUE)
 # Harris threw no FC with two strikes. That panel used to render as a blank
 # frame with no label, which reads as broken; it must say 0%.
 hl <- cut$layers[[which(sapply(cut$layers, function(x) inherits(x$geom, "GeomText")))]]$data
-expect("every panel carries a usage label", nrow(hl), 15L)
-expect("Harris FC, Two Strikes: labelled 0%",
-       hl$strip[hl$pitch_type == "FC" & hl$situation == "Two Strikes"], "Usage 0%")
+expect("every panel carries a usage label", nrow(hl), 10L)
+expect("Harris FC, 2K: labelled 0%",
+       hl$strip[hl$pitch_type == "FC" & hl$situation == "2K"], "Usage 0%")
+# Pre-2K and 2K partition the counts. The old three panels skipped 0-1 and 1-1,
+# so a pitcher's 0-1 pitches were on no panel at all. Every located pitch must
+# now land on exactly one panel.
+pan <- ggplot2::ggplot_build(full)$data
+pts <- h[!is.na(h$plate_x) & !is.na(h$plate_z), ]
+cnt <- paste(pts$balls, pts$strikes, sep = "-")
+expect("0-1 and 1-1 pitches are on the Pre-2K panel",
+       all(c("0-1", "1-1") %in% cnt) && sum(cnt %in% c("0-1", "1-1")) > 0, TRUE)
+hm_rows <- full$data
+expect("every located pitch is on exactly one panel", nrow(hm_rows), nrow(pts))
+expect("panels are Pre-2K then 2K", levels(hm_rows$situation), c("Pre-2K", "2K"))
 # Dots paint over the zone outline, so a pitch on the edge shows whole. Pinned
 # here, not in phase1_check: both heat map artifacts sit in its EXPECTED_DIFFS
 # as whole-artifact sanctions, so it passed this reorder and would pass the

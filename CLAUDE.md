@@ -566,8 +566,10 @@ Tables use six overlapping buckets. All Counts, Early Count, Pitcher Ahead,
 Pitcher Behind, Pre Two Strikes, Two Strikes. They overlap by design, so they are
 situational views and not a partition. Do not sum across them expecting 100.
 
-Heatmaps use three coarser ones. 0-0, Hitter Ahead, Two Strikes. Coarser because
-a KDE needs a bigger per-panel sample than a usage table does.
+Heatmaps use two coarser ones, a partition of every count: Pre-2K (fewer than two
+strikes) and 2K. Coarser because a KDE needs a bigger per-panel sample than a usage
+table does. Changed 2026-09-25 from 0-0, Hitter Ahead, Two Strikes, which skipped
+0-1 and 1-1.
 
 ## Pitch types and codes
 

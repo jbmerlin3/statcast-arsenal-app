@@ -202,9 +202,11 @@ plot_velo <- function(df) {
 
 #' Location heat maps, situation by pitch type, for one batter side
 #'
-#' Uses the three coarse count buckets, not the six from the usage tables. A KDE
-#' needs a bigger per-panel sample than a usage percentage does, so the buckets
-#' are deliberately wider here. See CLAUDE.md, count buckets.
+#' Two count panels, Pre-2K and 2K, not the six buckets from the usage tables.
+#' A KDE needs a bigger per-panel sample than a usage percentage does, so the
+#' buckets are deliberately wide, and together they cover every count. Until
+#' 2026-09-25 this used three (0-0, Hitter Ahead, Two Strikes), which left 0-1
+#' and 1-1 out of the chart entirely. See CLAUDE.md, count buckets.
 #'
 #' Panels below KDE_MIN_N fall back to a white-dot scatter. A density surface
 #' fitted to a handful of pitches invents structure, so the thin panel is shown
@@ -214,8 +216,8 @@ plot_velo <- function(df) {
 #' dropped AFTER the per-panel usage strips are computed, so "Usage 24%" on
 #' every remaining panel still divides by all of his pitches in that count.
 plot_heatmap <- function(df, hand, hide = character()) {
-  situations <- list("0-0"=c("0-0"), "Hitter Ahead"=c("1-0","2-0","3-0","2-1","3-1"),
-                     "Two Strikes"=c("0-2","1-2","2-2","3-2"))
+  situations <- list("Pre-2K" = c("0-0","1-0","2-0","3-0","0-1","1-1","2-1","3-1"),
+                     "2K"     = c("0-2","1-2","2-2","3-2"))
   sit_levels <- names(situations)
   # "All" pools both batter sides. That roughly doubles per-panel n, so more
   # panels clear KDE_MIN_N and get a density surface instead of the white-dot
