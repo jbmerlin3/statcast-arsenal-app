@@ -137,6 +137,15 @@ only at render time would save nothing.
 The app never pulls from Savant and never rebuilds the league reference. It reads
 two rds files and renders.
 
+**The season is frozen after its last day.** `SEASON_LAST_DAY` in
+`scripts/update_data.R` (2026-09-27): once a run's date is past it and the store
+holds it, step 1 makes no Savant request, and no pull ever asks for a later date.
+Scheduled runs keep going as no-ops (the deploy gate sees unchanged data and
+skips), so a code change still ships on a `workflow_dispatch`. Postseason rows
+were never kept either way: `clean_statcast()` filters `game_type == "R"`.
+Multi-season handling (2027) is undecided; until then this date is the switch.
+`tests/step15_season_freeze.R`.
+
 Savant's endpoint uses `game_date_gt` / `game_date_lt`. Both are **inclusive**,
 despite the names, confirmed by probing the endpoint on 2026-08-19:
 `gt=2026-05-05&lt=2026-05-07` returns all three dates, and a single-day request

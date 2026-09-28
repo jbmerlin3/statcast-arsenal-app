@@ -288,6 +288,18 @@ schedule_final_games <- function(from, to, today = baseball_today()) {
 # season is REPULL_DAYS=200 on a workflow_dispatch.
 REPULL_DAYS <- as.integer(Sys.getenv("REPULL_DAYS", "7"))
 
+# The last day of the regular season. From the day after, the chain makes no
+# Savant request at all and the store stays as the season finished.
+#
+# Set 2026-09-28, the day after the 2026 regular season ended. Postseason rows
+# were never kept, since clean_statcast() filters game_type == "R", but without
+# this every run would still spend requests on October days whose rows can only
+# be thrown away, and the re-pull window would re-fetch the last three weeks of
+# September indefinitely. `through` is also capped here, so no pull can ask for
+# a date past it. How 2027 is handled is not decided; until it is, this date is
+# the one thing to change.
+SEASON_LAST_DAY <- as.Date("2026-09-27")
+
 refresh_store <- function(store_path = STORE_PATH, through = baseball_today(),
                           repull_days = REPULL_DAYS) {
   sc <- readRDS(store_path)
@@ -313,6 +325,17 @@ refresh_store <- function(store_path = STORE_PATH, through = baseball_today(),
   }
 
   message("Store holds ", format(nrow(sc), big.mark = ","), " rows through ", last)
+  # Season over and already held through its last day: nothing to ask Savant.
+  # Asked on `through`, the requested end date, which is today on every
+  # scheduled run.
+  if (as.Date(through) > SEASON_LAST_DAY && as.Date(last) >= SEASON_LAST_DAY) {
+    message("Regular season ended ", SEASON_LAST_DAY, " and the store holds it through ",
+            last, ". No pull until next season.")
+    return(refresh_derived(sc))
+  }
+  # Never request a date past the season, even on the run that fetches its
+  # last day late.
+  through <- min(as.Date(through), SEASON_LAST_DAY)
   if (start > through) {
     message("Nothing to pull, already current through ", through)
     return(refresh_derived(sc))
