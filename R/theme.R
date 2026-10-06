@@ -196,8 +196,8 @@ KDE_MIN_N <- 15
 METRIC_SPEC <- data.frame(
   metric = c("velo", "ivb", "hb", "vaa", "spin", "ext", "rel_ht", "rel_side",
              "strike_pct", "csw_pct", "zone_pct", "usage_pct",
-             "whiff_pct", "chase_pct", "xwoba", "gb_pct"),
-  kind   = c(rep("mean", 8), rep("rate", 8)),
+             "whiff_pct", "chase_pct", "xwoba", "gb_pct", "z_whiff_pct"),
+  kind   = c(rep("mean", 8), rep("rate", 9)),
   # usage_pct's denominator is the CUT's total pitches, not the pitch type's.
   # It is a share: its precision comes from how many pitches the share was
   # measured over, not from how many were of this type. Flooring it on the pitch
@@ -205,10 +205,10 @@ METRIC_SPEC <- data.frame(
   # uncommon, which is backwards.
   denom  = c(rep("pitches", 8),
              "pitches", "pitches", "pitches", "cut_pitches",
-             "swings", "oz", "pa", "bbe"),
+             "swings", "oz", "pa", "bbe", "z_swings"),
   floor  = c(rep(25, 8),
              rep(50, 4),
-             50, 50, 50, 25),
+             50, 50, 50, 25, 60),
   # How many pitches before a trait's PERCENTILE is stable, for the Context
   # tab's percentile chart only. NA for the rates, which keep `floor`.
   #
@@ -226,7 +226,7 @@ METRIC_SPEC <- data.frame(
   # number nobody rechecks.
   shape_floor = c(13, 31, 50, 19, 14, 10, 4, 4,
                   rep(NA, 4),
-                  rep(NA, 4)),
+                  rep(NA, 5)),
   # Which end is BETTER FOR THE PITCHER, for the Context tab's panels only.
   #
   # A separate column from `direction` on purpose, and the difference is not
@@ -243,7 +243,7 @@ METRIC_SPEC <- data.frame(
   # asserting something about a sinker it cannot support.
   context_better = c("high", "none", "none", "none", "none", "high", "none", "none",
                      "high", "high", "none", "none",
-                     "high", "high", "low",  "high"),
+                     "high", "high", "low",  "high", "high"),
   # NOTE: the direction here is NOT used for ivb or hb. Those two are looked up
   # per pitch type in PITCH_SHAPE_DIRECTION, because more ride is the point of a
   # four-seam and the death of a sinker. The entries below are kept so the frame
@@ -288,7 +288,7 @@ METRIC_SPEC <- data.frame(
   direction = c("high", "high", "high", "high", "high", "high",
                 "extreme", "extreme",
                 "high", "high", "high", "neutral",
-                "high", "high", "low", "high"),
+                "high", "high", "low", "high", "high"),
   stringsAsFactors = FALSE
 )
 
@@ -442,6 +442,7 @@ ARSENAL_METRIC_COLS <- c(
   # Results
   strike_pct = "strike_pct",
   whiff_pct  = "whiff_pct",
+  z_whiff_pct = "z_whiff_pct",
   csw_pct    = "csw_pct",
   zone_pct   = "zone_pct",
   chase_pct  = "chase_pct",
@@ -741,7 +742,20 @@ CELL_STATE_STYLE <- data.frame(
 # bbe = batted balls, added 2026-09-08 for GB%. It is the THINNEST denominator
 # on the table by a distance: a median of 17 per pitcher-pitch-type over a full
 # season against 99 pitches, so its parenthetical n does real work.
-DENOM_COLS <- c("pitches", "swings", "oz", "pa", "cut_pitches", "bbe")
+# z_swings = swings at in-zone pitches, added 2026-10-06 for Z-Whiff%. About
+# two thirds of all swings, so a pitch clears the Z-Whiff floor later than the
+# Whiff% one, and the parenthetical n says so.
+#
+# Its floor is 60, not whiff's 50, because per swing it is the noisier rate.
+# Measured 2026-10-06 the same way as the whiff rows above, resampling k swings
+# from pitcher-pitch cells with 200+ and comparing the percentile to his own:
+#   whiff%,   50 swings      : median error 13.5 points, 25.5% off by more than 25
+#   z-whiff%, 50 zone swings : median error 14.8 points, 28.0% off by more than 25
+#   z-whiff%, 75 zone swings : median error 12.3 points
+# 60 is where z-whiff matches whiff at 50. Checked against Savant's
+# iz_contact_percent the same day: 141 pitchers, MAE 0.38, r 0.987, bias +0.01,
+# the same agreement whiff% has against Savant's whiff_percent.
+DENOM_COLS <- c("pitches", "swings", "oz", "pa", "cut_pitches", "bbe", "z_swings")
 
 # The denominator that is already on screen as a column: COUNT in the TRAITS
 # table, N in the search table. A parenthetical repeating it says nothing the

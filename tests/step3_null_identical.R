@@ -16,6 +16,12 @@
 # the original script. Baseline captured at 9694276, the commit before
 # resolve_table() and the ref argument landed.
 #
+# RECAPTURED 2026-10-06 for Z-Whiff%, a new results column after WHIFF%.
+# Diffed by column in both directions before rewriting. Columns dropped: none.
+# Columns added: Z-WHIFF% in results_R and results_L. Cells moved in every other
+# column: 0. Traits artifacts unchanged. One cell checked by hand against the
+# fixture: RHH changeup, 46 misses on 159 in-zone swings, 28.9.
+#
 # RECAPTURED 2026-09-09 for the HB sign. The traits table now prints RAW
 # horizontal break, the same sign the movement chart draws, instead of the
 # arm-side normalised one. The fixture pitcher is a LEFT-hander, so every hb

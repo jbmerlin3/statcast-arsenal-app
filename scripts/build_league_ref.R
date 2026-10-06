@@ -35,6 +35,7 @@ pitcher_cells <- function(d, by_stand) {
       swings  = sum(description %in% swing_only),
       oz      = sum(in_zone == 0),
       pa      = sum(woba_denom, na.rm = TRUE),
+      z_swings = sum(in_zone == 1 & description %in% swing_only, na.rm = TRUE),
       bbe     = sum(description == "hit_into_play" & nzchar(bb_type) & !is.na(bb_type)),
 
       velo = mean(release_speed, na.rm = TRUE),
@@ -72,6 +73,9 @@ pitcher_cells <- function(d, by_stand) {
       zone_pct   = mean(in_zone, na.rm = TRUE) * 100,
       whiff_pct  = sum(description %in% whiff_desc) / sum(description %in% swing_only) * 100,
       chase_pct  = sum(in_zone == 0 & description %in% swing_only) / sum(in_zone == 0) * 100,
+      # Same expression as arsenal_table(), see the note there.
+      z_whiff_pct = sum(in_zone == 1 & description %in% whiff_desc, na.rm = TRUE) /
+                      sum(in_zone == 1 & description %in% swing_only, na.rm = TRUE) * 100,
       xwoba      = sum(estimated_woba_using_speedangle * woba_denom, na.rm = TRUE) /
                      sum(woba_denom, na.rm = TRUE),
       # Same two expressions the table uses. Reference and value must be built
@@ -110,7 +114,8 @@ summarise_cells <- function(cells, grain) {
                                denom == "swings"  ~ swings,
                                denom == "oz"      ~ oz,
                                denom == "pa"      ~ pa,
-                               denom == "bbe"     ~ bbe)) |>
+                               denom == "bbe"     ~ bbe,
+                               denom == "z_swings" ~ z_swings)) |>
     filter(is.finite(value), denom_n >= floor)
 
   long |>
