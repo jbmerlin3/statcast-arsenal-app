@@ -96,6 +96,11 @@ arsenal_table <- function(df, hand, stuff_all) {
       strike_pct = round(mean(type %in% c("S", "X"), na.rm = TRUE) * 100, 1),
       whiff_pct = round(pct_or_na(sum(description %in% whiff_desc),
                                   sum(description %in% swing_only)), 1),
+      # Zone whiff: misses on swings at strikes, over swings at strikes. Whiff%
+      # beside it mixes in chases, which are easier to miss, so a pitch that
+      # lives off the plate can post a high Whiff% and still get hit in the zone.
+      z_whiff_pct = round(pct_or_na(sum(in_zone == 1 & description %in% whiff_desc, na.rm = TRUE),
+                                    sum(in_zone == 1 & description %in% swing_only, na.rm = TRUE)), 1),
       csw_pct = round(mean(description %in% c("called_strike", whiff_desc))*100,1),
       zone_pct = round(mean(in_zone, na.rm = TRUE) * 100, 1),
       chase_pct = round(pct_or_na(sum(in_zone == 0 & description %in% swing_only),
@@ -147,6 +152,7 @@ arsenal_denoms <- function(df, hand) {
       swings  = sum(description %in% swing_only),
       oz      = sum(in_zone == 0),
       pa      = sum(woba_denom, na.rm = TRUE),
+      z_swings = sum(in_zone == 1 & description %in% swing_only, na.rm = TRUE),
       # Must match gb_pct's denominator in arsenal_table() exactly, or the
       # parenthetical n describes a different sample from the number beside it.
       bbe     = sum(description == "hit_into_play" & nzchar(bb_type) & !is.na(bb_type)),
@@ -191,7 +197,7 @@ TRAITS_COLS <- c("pitch_type", "count", "pitch_pct",
 # consequence: a pitches-denominated results cell now shows its sample only in
 # the traits table above.
 RESULTS_COLS <- c("pitch_type",
-                  "strike_pct", "whiff_pct", "csw_pct",
+                  "strike_pct", "whiff_pct", "z_whiff_pct", "csw_pct",
                   "zone_pct", "chase_pct", "gb_pct", "xwoba", "rv")
 
 #' any_of(), not all_of(), and this is the one place in the file where that is
@@ -427,7 +433,7 @@ results_gt <- function(tbl, hand, label = hand_label(hand), ref = NULL) {
     gt_chassis(paste0("PITCH RESULTS (", label, ")"), n_visible = ncol(tbl)) |>
     cols_label(
       pitch_type = "PITCH",
-      strike_pct = "STRIKE%", whiff_pct = "WHIFF%", csw_pct = "CSW%",
+      strike_pct = "STRIKE%", whiff_pct = "WHIFF%", z_whiff_pct = "Z-WHIFF%", csw_pct = "CSW%",
       zone_pct = "IN-ZONE%", chase_pct = "CHASE%", gb_pct = "GB%",
       xwoba = "xwOBA", rv = "RV"
     ) |>
@@ -499,7 +505,7 @@ count_usage_denoms <- function(df, hand) {
       # cut_pitches is the bucket total and is the same for every pitch type in
       # the bucket, since that is what each share was measured over.
       mutate(count_bucket = nm, cut_pitches = sum(pitches),
-             swings = 0, oz = 0, pa = 0)
+             swings = 0, oz = 0, pa = 0, z_swings = 0)
   })
 }
 
