@@ -278,3 +278,283 @@ plot_heatmap <- function(df, hand, hide = character()) {
           panel.spacing = unit(0.6, "lines"),
           panel.background = element_rect(fill = "#440154", color = NA))
 }
+
+
+# ---- Trends tab: one pitch, one line per panel ------------------------------
+#
+# Every other chart is one total over the window, so a pitcher who dropped his
+# slot four degrees in August reads the same as one who never moved. This puts
+# each game on the x axis against the window average.
+#
+# ONE pitch at a time, by request, 2026-10-06. The first build drew every pitch
+# type on every panel and was too busy to read at a glance: five coloured lines
+# crossing, and the legend had to be read before the chart said anything. Now
+# each panel is a single line, and its title states the change in words, so a
+# coach reads the title and only looks at the line to see when.
+
+# Fewest pitches of a type in one game to plot that game's point. A two-pitch
+# game average is one pitch's noise. Per game rather than per window, so it is
+# much lower than MIN_PITCH_COUNT's job of deciding what is in the arsenal.
+TREND_MIN_N <- 3
+
+# Outings shorter than this are left off the usage panel. A reliever's
+# 14-pitch inning swings a pitch's share by 7 points per pitch, which is noise
+# drawn as a change of plan. 50 keeps starts and long relief.
+TREND_USAGE_MIN_GAME <- 50
+
+# The usage line pools the last 3 outings: one start against one side is 40 to
+# 50 pitches, where a single pitch moves a share 2 points.
+TREND_USAGE_ROLL <- 3
+
+# "Recent" in the panel titles: the last 5 plotted games against the window.
+TREND_LAST_N <- 5
+
+TREND_INK <- "#1f3a5f"
+
+# Smallest y range each panel draws, centred on the window average. Without it
+# free scales stretch whatever is there to the full panel, and a starter's
+# ordinary 1 mph game-to-game wobble looks like a collapse. These spans are
+# wider than normal game-to-game noise, so a real change still fills the panel.
+TREND_MIN_SPAN <- c(velo = 4, spin = 200, ivb = 8, hb = 8, arm_angle = 8)
+
+# Trailing sum over the last k values, shorter at the start.
+roll_sum <- function(x, k = TREND_USAGE_ROLL) {
+  vapply(seq_along(x), function(i) sum(x[max(1, i - k + 1):i]), numeric(1))
+}
+
+
+#' Pitch types for the selector, most used first, as named pitch counts
+trend_pitch_choices <- function(df, hide = character()) {
+  n <- sort(table(as.character(df$pitch_type)), decreasing = TRUE)
+  n <- n[!names(n) %in% hide]
+  stats::setNames(as.integer(n), names(n))
+}
+
+
+#' Starter-length outings in the window, counted over BOTH batter sides
+trend_usage_games <- function(df) {
+  df |> count(game_date, name = "game_n") |> filter(game_n >= TREND_USAGE_MIN_GAME)
+}
+
+
+#' Per-game series and the window-vs-recent summary for one pitch type
+#'
+#' Velo, spin, IVB and HB are the selected pitch, both batter sides, like the
+#' movement chart; HB keeps the movement chart's raw sign. Usage follows the
+#' batter side selector, because that is where a platoon plan shows. Arm angle
+#' is the whole delivery, so it ignores the pitch selection.
+#'
+#' `season` is the window value the traits table prints: a mean over pitches,
+#' or for usage a share pooled over the starter-length outings. `last` is the
+#' same computed over the last TREND_LAST_N plotted games, NA when the window
+#' holds no more games than that. `sd` is the spread of the per-game values, his
+#' normal game-to-game range, which the band draws and trend_changes() tests.
+trend_series <- function(df, pt, hand) {
+  one <- function(metric, rows, value) {
+    g <- rows |> mutate(v = value) |> filter(!is.na(v)) |>
+      group_by(game_date) |> summarise(n = n(), v = mean(v), .groups = "drop") |>
+      filter(n >= TREND_MIN_N) |> arrange(game_date)
+    recent <- tail(g$game_date, TREND_LAST_N)
+    vals <- value[!is.na(value)]; days <- rows$game_date[!is.na(value)]
+    has_last <- nrow(g) > TREND_LAST_N
+    list(points = mutate(g, metric = metric, line = v),
+         summ = data.frame(metric = metric, season = mean(vals),
+                           last = if (has_last) mean(vals[days %in% recent]) else NA_real_,
+                           from = if (has_last) min(recent) else NA_character_,
+                           sd = if (nrow(g) >= 2) stats::sd(g$v) else NA_real_))
+  }
+  p <- df[df$pitch_type == pt, ]
+  parts <- list(one("velo", p, p$release_speed), one("spin", p, p$release_spin_rate),
+                one("ivb", p, p$ivb), one("hb", p, p$hb))
+
+  games <- trend_usage_games(df)
+  if (nrow(games) >= 2) {
+    u <- df[df$game_date %in% games$game_date, ]
+    if (hand != "All") u <- u[u$stand == hand, ]
+    g <- u |> group_by(game_date) |>
+      summarise(n = sum(pitch_type == pt), tot = n(), .groups = "drop") |>
+      filter(tot > 0) |> arrange(game_date) |>
+      mutate(v = n / tot * 100, line = roll_sum(n) / roll_sum(tot) * 100, metric = "usage")
+    recent <- tail(g, TREND_LAST_N)
+    parts[[5]] <- list(points = g, summ = data.frame(metric = "usage",
+      season = sum(g$n) / sum(g$tot) * 100,
+      last = if (nrow(g) > TREND_LAST_N) sum(recent$n) / sum(recent$tot) * 100 else NA_real_,
+      from = if (nrow(g) > TREND_LAST_N) min(recent$game_date) else NA_character_,
+      sd = stats::sd(g$v)))
+  }
+  parts[[length(parts) + 1]] <- one("arm_angle", df, df$arm_angle)
+
+  list(points = bind_rows(lapply(parts, `[[`, "points")),
+       summ   = bind_rows(lapply(parts, `[[`, "summ")))
+}
+
+
+#' Panel titles: the metric, then the change in words
+trend_titles <- function(summ, hand) {
+  name <- c(velo = "Velocity", spin = "Spin", ivb = "Induced vertical break", hb = "Horizontal break",
+            usage = paste0("Usage", switch(hand, L = " vs LHH", R = " vs RHH", "")),
+            arm_angle = "Arm angle, all pitches")
+  unit <- c(velo = " mph", spin = " rpm", ivb = "\"", hb = "\"", usage = "%", arm_angle = "\u00b0")
+  f <- function(x, m) paste0(formatC(x, format = "f", digits = if (m == "spin") 0 else 1,
+                                      big.mark = ","), unit[[m]])
+  vapply(seq_len(nrow(summ)), function(i) {
+    m <- summ$metric[i]
+    if (is.na(summ$last[i])) paste0(name[[m]], ":  avg ", f(summ$season[i], m))
+    else paste0(name[[m]], ":  avg ", f(summ$season[i], m), "   |   last ", TREND_LAST_N,
+                " games ", f(summ$last[i], m))
+  }, character(1))
+}
+
+
+#' The Trends chart for one pitch type
+#'
+#' Takes trend_panels() rather than the pitch frame, so the app builds the
+#' panels once and the plot and the click tooltip read the same rows.
+trend_panels <- function(df, pt, hand) {
+  s <- trend_series(df, pt, hand)
+  titles <- stats::setNames(trend_titles(s$summ, hand), s$summ$metric)
+  lv <- factor(titles[s$points$metric], levels = titles)
+  list(pts  = mutate(s$points, panel = lv, game_date = as.Date(game_date)),
+       base = mutate(s$summ, panel = factor(titles[metric], levels = titles)),
+       pt = pt, hand = hand)
+}
+
+plot_trends <- function(tp) {
+  pts <- tp$pts; base <- tp$base
+  # Usage plots its rolling line over faint single-game points; every other
+  # panel's line IS the per-game points.
+  faint <- pts$metric == "usage"
+  # Invisible points that widen each panel to its minimum span. Usage is pinned
+  # at zero instead, so a share is always read against nothing thrown.
+  span <- base |> filter(metric %in% names(TREND_MIN_SPAN)) |>
+    mutate(h = TREND_MIN_SPAN[metric] / 2)
+  pad <- bind_rows(transmute(span, panel, y = season - h),
+                   transmute(span, panel, y = season + h),
+                   transmute(filter(base, metric == "usage"), panel, y = 0)) |>
+    mutate(game_date = min(pts$game_date))
+
+  # The last TREND_LAST_N games, shaded, so "last 5" in the title points at
+  # something on a chart that otherwise shows the whole window. Starts half a
+  # day early so the first shaded point is not cut in half.
+  recent <- base |> filter(!is.na(from)) |>
+    transmute(panel, xmin = as.Date(from) - 0.5, xmax = max(pts$game_date) + 0.5)
+
+  ggplot(pts, aes(game_date)) +
+    geom_rect(data = recent, aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
+              inherit.aes = FALSE, fill = "#dce6f2", alpha = 0.7) +
+    geom_blank(data = pad, aes(y = y)) +
+    # His normal game-to-game range, average +/- one SD of the game values.
+    # Roughly two games in three land inside it, so a point outside is unusual
+    # for him and a run of them is a change.
+    geom_rect(data = filter(base, is.finite(sd)),
+              aes(xmin = -Inf, xmax = Inf, ymin = season - sd, ymax = season + sd),
+              inherit.aes = FALSE, fill = "gray50", alpha = 0.10) +
+    geom_hline(data = base, aes(yintercept = season), linetype = "dashed",
+               color = "gray55", linewidth = 0.5) +
+    geom_point(data = pts[faint, ], aes(y = v), color = TREND_INK, alpha = 0.3, size = 1.6) +
+    geom_line(aes(y = line), color = TREND_INK, linewidth = 0.8) +
+    geom_point(data = pts[!faint, ], aes(y = v), color = TREND_INK, size = 1.8) +
+    facet_wrap(~panel, ncol = 2, scales = "free_y", drop = TRUE) +
+    scale_x_date(date_labels = "%b %d") +
+    labs(x = NULL, y = NULL) +
+    theme_minimal(base_size = 13) +
+    theme(panel.grid.minor = element_blank(),
+          strip.text = element_text(face = "bold", size = 12.5, hjust = 0),
+          panel.spacing = unit(1.4, "lines"),
+          axis.text = element_text(color = "gray40"))
+}
+
+
+#' The tooltip for one hovered point on the Trends chart
+#'
+#' `row` is one row of trend_panels()$pts, as nearPoints() returns it. Says the
+#' game, the sample behind the point, and the point against the window average,
+#' since the average is the thing the reader is comparing it to.
+trend_tip_text <- function(row, tp) {
+  m <- row$metric
+  avg <- tp$base$season[tp$base$metric == m]
+  unit <- c(velo = " mph", spin = " rpm", ivb = "\"", hb = "\"", usage = "%", arm_angle = "\u00b0")
+  name <- c(velo = "Velocity", spin = "Spin", ivb = "IVB", hb = "HB", usage = "Usage",
+            arm_angle = "Arm angle")
+  f <- function(x) paste0(formatC(x, format = "f", digits = if (m == "spin") 0 else 1,
+                                  big.mark = ","), unit[[m]])
+  date <- format(row$game_date, "%b %d, %Y")
+  side <- switch(tp$hand, L = " vs LHH", R = " vs RHH", "")
+  sample <- switch(m,
+    usage     = paste0(row$n, " of ", row$tot, " pitches", side),
+    arm_angle = paste0(row$n, " pitches, all types"),
+    paste0(row$n, " ", tp$pt, if (row$n == 1) "" else "s"))
+  c(date, sample,
+    paste0(name[[m]], " ", f(row$v), " (avg ", f(avg), ")"),
+    if (m == "usage") paste0("Last-", TREND_USAGE_ROLL, " line ", f(row$line)))
+}
+
+
+# ---- What changed: last 5 games against his average, every pitch ------------
+#
+# The chart shows one pitch, so a change that runs through the whole arsenal
+# (Skenes lost 250 to 300 rpm on every pitch from March to July while the
+# league stayed flat) is only visible by clicking through every button. This
+# lists every pitch and metric whose last-5 value sits outside chance.
+#
+# Two bars, both required. Statistical: the last-5 difference is at least
+# TREND_CHANGE_Z standard errors, the SE being his game-to-game SD over the
+# root of TREND_LAST_N. Practical: at least TREND_CHANGE_MIN, so a pitch he
+# throws identically every night is not flagged for a 0.2 mph wobble that is
+# significant only because he is so consistent.
+#
+# Calibrated 2026-10-06 on 80 starters by shuffling each one's game order,
+# which keeps his values and destroys any real trend: 3.1 flags per pitcher on
+# real order against 0.5 on shuffled, so about one flag in six is chance. At
+# 2.5 that falls to one in eleven but real flags halve (3.1 to 1.25). A flag is
+# a prompt to look at the chart, not a verdict, so 2 keeps the real ones.
+TREND_CHANGE_Z   <- 2
+TREND_CHANGE_MIN <- c(velo = 0.5, spin = 40, ivb = 1, hb = 1, usage = 3, arm_angle = 1)
+
+
+#' Every flagged change, one row per pitch and metric
+#'
+#' Arm angle is one delivery, so it is tested once, from the first pitch's
+#' series, under pitch "All".
+trend_changes <- function(df, hand, hide = character()) {
+  pts <- names(trend_pitch_choices(df, hide))
+  rows <- lapply(seq_along(pts), function(i) {
+    s <- trend_series(df, pts[i], hand)$summ
+    s$pitch <- ifelse(s$metric == "arm_angle", "All", pts[i])
+    if (i > 1) s <- s[s$metric != "arm_angle", ]
+    s
+  })
+  out <- bind_rows(rows) |>
+    filter(is.finite(last), is.finite(sd), sd > 0) |>
+    mutate(diff = last - season,
+           z = diff / (sd / sqrt(TREND_LAST_N)),
+           min_size = TREND_CHANGE_MIN[metric]) |>
+    filter(abs(z) >= TREND_CHANGE_Z, abs(diff) >= min_size)
+  out[order(match(out$metric, names(TREND_CHANGE_MIN)), -abs(out$z)), ]
+}
+
+
+#' The strip's sentences, one per metric and direction
+#'
+#' "Spin down: FF -222 rpm, ST -83 rpm". Grouped this way because a change
+#' that shows on several pitches at once is the finding the strip exists for.
+trend_change_text <- function(ch, hand) {
+  if (nrow(ch) == 0) return(character())
+  name <- c(velo = "Velocity", spin = "Spin", ivb = "IVB", hb = "HB",
+            usage = paste0("Usage", switch(hand, L = " vs LHH", R = " vs RHH", "")),
+            arm_angle = "Arm angle")
+  unit <- c(velo = " mph", spin = " rpm", ivb = "\"", hb = "\"", usage = " pts", arm_angle = "\u00b0")
+  ch$dir <- ifelse(ch$diff > 0, "up", "down")
+  # HB's sign is raw, so "up" would mean toward third base, which reads as
+  # nothing. Say what it means for this pitch instead: more or less break.
+  hb <- ch$metric == "hb"
+  ch$dir[hb] <- ifelse(sign(ch$diff[hb]) == sign(ch$season[hb]), "more break", "less break")
+  keys <- unique(ch[, c("metric", "dir")])
+  vapply(seq_len(nrow(keys)), function(k) {
+    r <- ch[ch$metric == keys$metric[k] & ch$dir == keys$dir[k], ]
+    d <- formatC(r$diff, format = "f", digits = if (keys$metric[k] == "spin") 0 else 1, flag = "+")
+    items <- if (keys$metric[k] == "arm_angle") paste0(d, unit[[keys$metric[k]]])
+             else paste0(r$pitch, " ", d, unit[[keys$metric[k]]])
+    paste0(name[[keys$metric[k]]], " ", keys$dir[k], ": ", paste(items, collapse = ", "))
+  }, character(1))
+}

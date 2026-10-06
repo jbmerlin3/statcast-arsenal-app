@@ -156,7 +156,16 @@ ui <- fluidPage(
     ".tto-pill input:checked+span{background:#1f3a5f;border-color:#1f3a5f;color:#fff;}",
     ".tto-pill input:checked+span .tto-n{color:#c8d3e3;}",
     ".tto-pill input:focus-visible+span{outline:2px solid #1f3a5f;outline-offset:2px;}",
-    ".tto-pill input:disabled+span{opacity:.4;cursor:not-allowed;}"
+    ".tto-pill input:disabled+span{opacity:.4;cursor:not-allowed;}",
+    # Trends hover tooltip, over the plot at the hovered point.
+    ".trend-tip{position:absolute;z-index:10;background:#fff;border:1px solid #cfd5dd;",
+    "border-radius:6px;padding:7px 10px;font-size:12.5px;line-height:1.45;",
+    "box-shadow:0 2px 8px rgba(0,0,0,.12);pointer-events:none;white-space:nowrap;}",
+    ".trend-tip b{color:#1f3a5f;}",
+    ".trend-changes{margin:14px 0 4px 0;padding:9px 14px;background:#f5f8fb;border-left:3px solid #1f3a5f;border-radius:3px;}",
+    ".trend-changes ul{margin:4px 0 0 0;padding-left:18px;font-size:13.5px;line-height:1.6;}",
+    ".trend-none{font-size:13px;color:#666;margin-top:3px;}",
+    "#trends img{cursor:crosshair;}"
   )))),
   # The deploy bundles the rds files rather than fetching them at startup, so
   # the page has to say how current they are. Read off app_data itself and not
@@ -251,6 +260,26 @@ ui <- fluidPage(
                        "estimate needs a larger per-panel sample than a usage percentage does. ",
                        "Panels under ", KDE_MIN_N, " pitches show the raw locations as white ",
                        "dots instead of a smoothed surface.")))),
+        tabPanel("Trends",
+                 uiOutput("trend_changes_ui"),
+                 uiOutput("trend_pitch_ui"),
+                 div(class = "sec",
+                     div(class = "sec-h", "Game by game"),
+                     div(class = "sec-sub", paste0("One point per game. Dashed line: average over the date range. ",
+                                                   "Grey band: his normal game-to-game range. ",
+                                                   "Blue: the last ", TREND_LAST_N, " games.")),
+                     # The tip is absolutely positioned over the plot at the
+                     # click, so the wrapper is the positioning context.
+                     div(style = "position:relative;",
+                         plotOutput("trends", height = "780px",
+                                    hover = hoverOpts("trends_hover", delay = 60,
+                                                      delayType = "debounce")),
+                         uiOutput("trends_tip")),
+                     div(class = "sec-note", paste0(
+                       "Velocity, spin and movement are the selected pitch against both batter sides; a game ",
+                       "needs ", TREND_MIN_N, " of it to plot. Usage counts outings of ",
+                       TREND_USAGE_MIN_GAME, "+ pitches, so it shows for starters, follows the Batter ",
+                       "side selector, and its line pools the last ", TREND_USAGE_ROLL, ".")))),
         # ---- Context: one pitcher, read the way a coach reads him ----------
         #
         # Laid out 2026-09-21 around two questions: is he funky (the percentile
@@ -646,6 +675,73 @@ server <- function(input, output, session) {
     # here, so the reference marks existed and never reached the page.
     plot_movement(pitcher_data(), hide = chart_hide())
   }, width = sized_width("movement"))
+
+  # ---- Trends tab --------------------------------------------------------
+  #
+  # One pitch at a time. The selected pitch survives a pitcher change when the
+  # new pitcher throws it, and falls back to his most-used pitch when he does
+  # not, so the chart never asks for a pitch the window does not hold.
+  trend_choices <- reactive(trend_pitch_choices(pitcher_data(), chart_hide()))
+  trend_pt <- reactive({
+    ch <- names(trend_choices())
+    req(length(ch) > 0)
+    if (isTRUE(input$trend_pitch %in% ch)) input$trend_pitch else ch[1]
+  })
+
+  output$trend_pitch_ui <- renderUI({
+    ch  <- trend_choices()
+    sel <- isolate(trend_pt())
+    pill <- function(code) tags$label(class = "tto-pill",
+      tags$input(type = "radio", name = "trend_pitch", value = code,
+                 checked = if (identical(code, sel)) NA),
+      tags$span(code, tags$b(class = "tto-n", format(ch[[code]], big.mark = ","))))
+    div(class = "tto-bar",
+        div(class = "tto-lab", "Pitch"),
+        div(id = "trend_pitch", class = "shiny-input-radiogroup tto-pills", role = "radiogroup",
+            `aria-label` = "Pitch type", unname(lapply(names(ch), pill))))
+  })
+
+  trend_tp <- reactive(trend_panels(pitcher_data(), trend_pt(), input$hand))
+
+  output$trends <- renderPlot(plot_trends(trend_tp()), width = sized_width("trends"))
+
+  # Every pitch at once, so a change that runs through the arsenal shows
+  # without clicking through the buttons. Follows the Batter side selector for
+  # usage, like the chart.
+  output$trend_changes_ui <- renderUI({
+    lines <- trend_change_text(trend_changes(pitcher_data(), input$hand, chart_hide()), input$hand)
+    div(class = "trend-changes",
+        div(class = "tto-lab", paste0("Last ", TREND_LAST_N, " games vs his average")),
+        if (length(lines) == 0) div(class = "trend-none", "Nothing outside his normal game-to-game range.")
+        else tags$ul(lapply(lines, tags$li)))
+  })
+
+  # Hover a point for its game. Leaving the plot sends NULL (nullOutside), and
+  # a hover away from any point matches nothing, so either clears the tip. A
+  # new pitch, pitcher, window or side re-renders this through trend_tp().
+  output$trends_tip <- renderUI({
+    cl <- input$trends_hover
+    tp <- trend_tp()
+    if (is.null(cl)) return(NULL)
+    hit <- nearPoints(tp$pts, cl, xvar = "game_date", yvar = "v", panelvar1 = "panel",
+                      threshold = 12, maxpoints = 1)
+    if (nrow(hit) == 0) return(NULL)
+    lines <- trend_tip_text(hit[1, ], tp)
+    # Open toward the middle of the plot so the tip never runs off the page:
+    # left of the cursor on the right part of the chart, above it near the
+    # bottom. translate() moves it by its own size, which the server does not
+    # know.
+    x <- round(cl$coords_css$x); y <- round(cl$coords_css$y)
+    w <- session$clientData$output_trends_width
+    h <- session$clientData$output_trends_height
+    flip_x <- isTRUE(x > 0.6 * w)
+    flip_y <- isTRUE(y > 0.8 * h)
+    div(class = "trend-tip",
+        style = sprintf("left:%dpx;top:%dpx;transform:translate(%s,%s);",
+                        x + if (flip_x) -12 else 12, y + if (flip_y) -10 else 10,
+                        if (flip_x) "-100%" else "0", if (flip_y) "-100%" else "0"),
+        tags$b(lines[1]), lapply(lines[-1], div))
+  })
 
   # ---- Usage tab: times through the order --------------------------------
   #
