@@ -75,11 +75,32 @@ format_player_name <- function(x) {
 #' The choice value is the pitcher id, not the name. Display names happen to be
 #' unique in 2026, but two pitchers sharing a name would otherwise collide
 #' silently, and ids never do.
-build_player_index <- function(app_data) {
+#'
+#' `exclude` is a vector of ids to leave out, the position players from
+#' load_position_players(). Their pitches stay in app_data and in the league
+#' pools; only the dropdown drops them.
+build_player_index <- function(app_data, exclude = integer()) {
   app_data |>
     distinct(pitcher, player_name) |>
+    filter(!pitcher %in% exclude) |>
     mutate(display = format_player_name(player_name)) |>
     arrange(display)
+}
+
+
+#' Ids of position players who pitched, from the tracked lookup
+#'
+#' Built by scripts/build_position_players.R. A missing file returns no ids, so
+#' the dropdown falls back to listing everyone rather than the app failing.
+load_position_players <- function(path = NULL, year = 2026) {
+  if (is.null(path)) path <- file.path("lookups", sprintf("position_players_%d.csv", year))
+  if (!file.exists(path)) {
+    warning("No position-player lookup at ", path,
+            ". The pitcher dropdown will list position players. ",
+            "Build it with: Rscript scripts/build_position_players.R", call. = FALSE)
+    return(integer())
+  }
+  as.integer(utils::read.csv(path, stringsAsFactors = FALSE)$pitcher)
 }
 
 

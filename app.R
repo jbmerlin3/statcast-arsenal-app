@@ -40,7 +40,7 @@ game_logs    <- load_game_logs()
 # scale. Computed here rather than per render: it is a property of the log file.
 FIP_CONST    <- if (is.null(game_logs)) NA_real_ else fip_constant(game_logs)
 LOG_THROUGH  <- if (is.null(game_logs)) NULL else max(game_logs$game_date)
-player_index <- build_player_index(app_data)
+player_index <- build_player_index(app_data, exclude = load_position_players())
 # Read off the data, not hardcoded, for the same reason player_index is: a list
 # of 30 written out here would go stale on a relocation and would silently drop
 # a team the store does have. Sorted so the dropdown is alphabetical.
@@ -212,7 +212,7 @@ ui <- fluidPage(
         tabPanel("Movement",
                  div(class = "sec",
                      div(class = "sec-h", "Movement profile"),
-                     div(class = "sec-sub", "Induced vertical vs horizontal break, catcher's view"),
+                     div(class = "sec-sub", "Induced vertical vs horizontal break, pitcher's view"),
                      plotOutput("movement", height = "620px"))),
         tabPanel("Usage",
                  # Empty unless the window holds something beyond the first time
