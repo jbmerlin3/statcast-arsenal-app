@@ -104,7 +104,7 @@ NEW_ONLY <- c(
 )
 
 EXPECTED_DIFFS <- c(
-  plot_movement       = "set.seed(3) is a deliberate change from the original's 42, cosmetic subsample only",
+  plot_movement       = "set.seed(3) is a deliberate change from the original's 42, cosmetic subsample only; plus the pitch legend from the Usage tab, added 2026-10-09",
   plot_heatmap_R      = "deliberate presentation change: strip annotation 3.2 to 4.2, plus plot.margin and strip.text margin so the column labels stop clipping",
   plot_heatmap_L      = "deliberate presentation change: strip annotation 3.2 to 4.2, plus plot.margin and strip.text margin so the column labels stop clipping"
 )

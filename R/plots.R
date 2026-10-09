@@ -161,7 +161,7 @@ plot_movement <- function(df, hide = character()) {
     geom_vline(xintercept = 0, linewidth = 0.6)
 
   g <- g +
-    geom_point(shape = 21, color = "white", stroke = 0.5, size = 5) +
+    geom_point(shape = 21, color = "white", stroke = 0.5, size = 5, key_glyph = "polygon") +
     scale_fill_manual(values = pitch_colors) +
     coord_cartesian(xlim = c(-22, 22), ylim = c(-22, 22), clip = "off") +
     annotate("label", x = -20, y = 24, label = arm_label,
@@ -170,7 +170,14 @@ plot_movement <- function(df, hide = character()) {
              size = 4, fontface = "bold", fill = "white", label.size = 0.4, hjust = 0) +
     labs(x = "Horizontal Break (in)", y = "Induced Vertical Break (in)") +
     theme_minimal(base_size = 13) +
-    theme(legend.position = "none", panel.grid.major = element_line(color = "gray90"),
+    # Same legend as the Usage tab, squares and all, so the colors read without
+    # switching tabs. The square keys come from key_glyph on geom_point above;
+    # linewidth 0.5 and no outline are geom_col's defaults, which give the Usage
+    # keys their inset and the thin white gap between them.
+    guides(fill = guide_legend(override.aes = list(linewidth = 0.5, colour = NA))) +
+    theme(legend.position = "right", legend.title = element_blank(),
+          legend.text = element_text(face = "bold", size = 15), legend.key.size = unit(1.5, "cm"),
+          panel.grid.major = element_line(color = "gray90"),
           aspect.ratio = 1, plot.margin = ggplot2::margin(t = 20, r = 5, b = 5, l = 5))
 
   # A bare `g`, not the assignment above. A function ending in an assignment
