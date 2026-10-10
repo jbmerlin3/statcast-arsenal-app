@@ -51,22 +51,30 @@ for (pt in unique(thin$pitch_type)) {
 expect("LHP four-seam HB stays negative",
        all(s$points$v[s$points$metric == "hb"] < 0), TRUE)
 
-# Usage follows the batter side; outings are counted on both sides.
+# Usage follows the batter side, and every outing with a pitch to that side
+# gets a point, short ones included.
 u <- s$points |> filter(metric == "usage") |> arrange(game_date)
 g1 <- d[d$game_date == u$game_date[1] & d$stand == "R", ]
 expect("first-game usage vs RHH", u$v[1], mean(g1$pitch_type == "FF") * 100)
-expect("first rolling share equals the first game's", u$line[1], u$v[1])
-games <- trend_usage_games(d)
-expect("usage outings counted on both sides", all(games$game_n >= TREND_USAGE_MIN_GAME), TRUE)
+expect("first pooled share equals the first game's", u$line[1], u$v[1])
+expect("every outing vs RHH has a usage point",
+       sort(as.character(u$game_date)), sort(unique(as.character(d$game_date[d$stand == "R"]))))
 
 # Arm angle ignores the pitch selection.
 expect("arm angle is the same whatever pitch is selected",
        trend_series(d, "SL", "R")$summ$season[6], s$summ$season[6])
 
-# A reliever-only window has no usage panel.
-short <- d[!d$game_date %in% games$game_date, ]
-if (nrow(short) > 0) expect("no usage panel without 2 starter-length outings",
-                            "usage" %in% trend_series(short, "FF", "All")$summ$metric, FALSE)
+# Short outings now get a usage panel; one outing alone still does not.
+gn <- d |> count(game_date)
+short <- d[d$game_date %in% gn$game_date[gn$n < TREND_USAGE_POOL], ]
+cat("       (", length(unique(short$game_date)), " outings under ", TREND_USAGE_POOL,
+    " pitches in the fixture)\n", sep = "")
+if (length(unique(short$game_date)) >= 2)
+  expect("a short-outings-only window has a usage panel",
+         "usage" %in% trend_series(short, "FF", "All")$summ$metric, TRUE)
+one <- d[d$game_date == max(d$game_date), ]
+expect("one outing has no usage panel", "usage" %in% trend_series(one, "FF", "All")$summ$metric, FALSE)
+expect("one outing still plots", inherits(plot_trends(trend_panels(one, "FF", "All")), "ggplot"), TRUE)
 
 tt <- trend_titles(s$summ, "R")
 expect("usage title names the side", grepl("^Usage vs RHH", tt[5]), TRUE)
@@ -111,7 +119,25 @@ hbtxt <- trend_change_text(data.frame(pitch = "FF", metric = "hb", season = -12,
                                       diff = -2, sd = 1, z = -4), "All")
 expect("HB away from zero reads as more break", hbtxt, "HB more break: FF -2.0\"")
 
-expect("roll_sum trails by three", roll_sum(c(1, 2, 3, 4)), c(1, 3, 6, 9))
+# The pool goes back 3 outings, further until it holds 50 pitches. Starters'
+# pools are the last 3; a run of 10-pitch innings reaches back 5.
+expect("starter pool is the last 3", pool_start(c(90, 95, 88, 92)), c(1, 1, 1, 2))
+expect("reliever pool reaches 50 pitches", pool_start(rep(10, 7)), c(1, 1, 1, 1, 1, 2, 3))
+expect("pooled share weights by pitches", pool_share(c(1, 9), c(10, 90), k = 2), c(10, 10))
+
+# Pitch mix by outing: one bar segment per outing and type, shares summing to
+# 100 per outing, widths equal to the outing's pitches.
+pm <- plot_mix_outings(d, "All")
+md <- pm$data
+expect("mix shares sum to 100 per outing", all(abs(tapply(md$share, md$game_date, sum) - 100) < 1e-9), TRUE)
+expect("mix bar width is the outing's pitches", all(md$x1 - md$x0 == md$tot), TRUE)
+expect("mix bars tile with no gap", max(md$x1), nrow(d))
+pr <- plot_mix_outings(d, "R")$data
+expect("mix follows the batter side", max(pr$x1), sum(d$stand == "R"))
+hid <- names(sort(table(as.character(d$pitch_type))))[1]
+ph <- plot_mix_outings(d, "All", hide = hid)$data
+expect("hidden type drops after shares are computed",
+       ph$share[ph$pitch_type != hid][1], md$share[md$pitch_type != hid][1])
 
 cat(if (fails == 0) "\nTRENDS: PASS\n" else sprintf("\nTRENDS: FAIL (%d)\n", fails))
 if (fails > 0) quit(status = 1)

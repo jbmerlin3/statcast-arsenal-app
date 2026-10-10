@@ -131,6 +131,50 @@ add_pitch_features <- function(df) {
 }
 
 
+# Savant arm angles that cannot be real. Found 2026-10-10 on Bryan Hudson's
+# Trends chart: in game 822873 (2026-07-22) six of his twelve pitches read about
+# -50 degrees against his usual 12, and Jacob Latz in the same game read -51
+# against his 52. Release point on those pitches was within 0.2 ft of normal,
+# and arm angle is a description of where the ball leaves the hand, so a 60
+# degree swing with no release change is a recording error.
+#
+# Measured on the 2026 store, release within 0.3 ft of the pitcher's median:
+#
+#   off his median by   pitches   pitchers
+#   > 15 deg                 31         17   single pitches, the normal tail
+#   > 20 deg                 14          5
+#   > 30 deg                 14          5   the same 14: nothing in 20 to 30
+#
+# The empty 20 to 30 band is why 30 is safe. The 0.5 ft release bound separates
+# the errors (all 0.19 ft or less) from position players pitching, whose angle
+# genuinely swings 30+ degrees with the release point moving 1.1 ft or more.
+ARM_ANGLE_MAX_DEV     <- 30    # degrees from the pitcher's median
+ARM_ANGLE_SAME_RELEASE <- 0.5  # ft from his median release point
+
+#' Blank arm angles that disagree with an unchanged release point
+#'
+#' NOT row-wise, unlike add_pitch_features(): the reference is each pitcher's
+#' median over the WHOLE frame passed in. build_app_data() passes the full season
+#' store, so the median is the season's and does not move with the date window
+#' the user picks later. On a short window a pitcher with a few bad pitches could
+#' have them pull his median; on a season they cannot.
+#'
+#' Blanks to NA rather than dropping the pitch: velocity, movement and results
+#' on these pitches are fine, and every arm angle reader already handles NA (see
+#' release_context.R and plot_movement()).
+clean_arm_angle <- function(df) {
+  # Base R rather than group_by(), so a data.frame comes back a data.frame. A
+  # tibble would change what df[, "col"] returns for every reader downstream.
+  med <- function(x) ave(x, df$pitcher, FUN = function(v) median(v, na.rm = TRUE))
+  dev   <- abs(df$arm_angle - med(df$arm_angle))
+  shift <- sqrt((df$release_pos_x - med(df$release_pos_x))^2 +
+                (df$release_pos_z - med(df$release_pos_z))^2)
+  bad <- !is.na(dev) & dev > ARM_ANGLE_MAX_DEV & !is.na(shift) & shift < ARM_ANGLE_SAME_RELEASE
+  df$arm_angle[bad] <- NA_real_
+  df
+}
+
+
 VAA_ADJ_MIN_N <- 2000
 
 
