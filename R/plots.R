@@ -304,14 +304,17 @@ plot_heatmap <- function(df, hand, hide = character()) {
 # much lower than MIN_PITCH_COUNT's job of deciding what is in the arsenal.
 TREND_MIN_N <- 3
 
-# Outings shorter than this are left off the usage panel. A reliever's
-# 14-pitch inning swings a pitch's share by 7 points per pitch, which is noise
-# drawn as a change of plan. 50 keeps starts and long relief.
-TREND_USAGE_MIN_GAME <- 50
-
-# The usage line pools the last 3 outings: one start against one side is 40 to
-# 50 pitches, where a single pitch moves a share 2 points.
+# Every outing gets a usage point, sized by its pitches, but the line pools
+# back over at least TREND_USAGE_ROLL outings AND at least TREND_USAGE_POOL
+# pitches. A reliever's 14-pitch inning swings a share 7 points per pitch, so
+# one outing is noise; pooled to 50 pitches it is a plan.
+#
+# Until 2026-10-09 outings under 50 pitches were dropped instead, which left a
+# reliever with no usage panel at all (Bryan Hudson, 70 outings, longest 33)
+# and a swingman with his starts only. For a starter nothing moved: three starts
+# are well past 50 pitches to either side, so his line is the same last-3 pool.
 TREND_USAGE_ROLL <- 3
+TREND_USAGE_POOL <- 50
 
 # "Recent" in the panel titles: the last 5 plotted games against the window.
 TREND_LAST_N <- 5
@@ -324,9 +327,20 @@ TREND_INK <- "#1f3a5f"
 # wider than normal game-to-game noise, so a real change still fills the panel.
 TREND_MIN_SPAN <- c(velo = 4, spin = 200, ivb = 8, hb = 8, arm_angle = 8)
 
-# Trailing sum over the last k values, shorter at the start.
-roll_sum <- function(x, k = TREND_USAGE_ROLL) {
-  vapply(seq_along(x), function(i) sum(x[max(1, i - k + 1):i]), numeric(1))
+# Index of the first outing in each trailing pool: back at least k outings and
+# until the pool holds `min_tot` pitches, or to the first outing.
+pool_start <- function(tot, k = TREND_USAGE_ROLL, min_tot = TREND_USAGE_POOL) {
+  vapply(seq_along(tot), function(i) {
+    j <- max(1, i - k + 1)
+    while (j > 1 && sum(tot[j:i]) < min_tot) j <- j - 1
+    j
+  }, numeric(1))
+}
+
+# Pooled share per outing: pitches of the type over all pitches in the pool.
+pool_share <- function(n, tot, ...) {
+  st <- pool_start(tot, ...)
+  vapply(seq_along(n), function(i) sum(n[st[i]:i]) / sum(tot[st[i]:i]) * 100, numeric(1))
 }
 
 
@@ -338,12 +352,6 @@ trend_pitch_choices <- function(df, hide = character()) {
 }
 
 
-#' Starter-length outings in the window, counted over BOTH batter sides
-trend_usage_games <- function(df) {
-  df |> count(game_date, name = "game_n") |> filter(game_n >= TREND_USAGE_MIN_GAME)
-}
-
-
 #' Per-game series and the window-vs-recent summary for one pitch type
 #'
 #' Velo, spin, IVB and HB are the selected pitch, both batter sides, like the
@@ -352,7 +360,7 @@ trend_usage_games <- function(df) {
 #' is the whole delivery, so it ignores the pitch selection.
 #'
 #' `season` is the window value the traits table prints: a mean over pitches,
-#' or for usage a share pooled over the starter-length outings. `last` is the
+#' or for usage a share pooled over every outing. `last` is the
 #' same computed over the last TREND_LAST_N plotted games, NA when the window
 #' holds no more games than that. `sd` is the spread of the per-game values, his
 #' normal game-to-game range, which the band draws and trend_changes() tests.
@@ -374,14 +382,12 @@ trend_series <- function(df, pt, hand) {
   parts <- list(one("velo", p, p$release_speed), one("spin", p, p$release_spin_rate),
                 one("ivb", p, p$ivb), one("hb", p, p$hb))
 
-  games <- trend_usage_games(df)
-  if (nrow(games) >= 2) {
-    u <- df[df$game_date %in% games$game_date, ]
-    if (hand != "All") u <- u[u$stand == hand, ]
+  u <- if (hand != "All") df[df$stand == hand, ] else df
+  if (length(unique(u$game_date)) >= 2) {
     g <- u |> group_by(game_date) |>
       summarise(n = sum(pitch_type == pt), tot = n(), .groups = "drop") |>
-      filter(tot > 0) |> arrange(game_date) |>
-      mutate(v = n / tot * 100, line = roll_sum(n) / roll_sum(tot) * 100, metric = "usage")
+      arrange(game_date) |>
+      mutate(v = n / tot * 100, line = pool_share(n, tot), metric = "usage")
     recent <- tail(g, TREND_LAST_N)
     parts[[5]] <- list(points = g, summ = data.frame(metric = "usage",
       season = sum(g$n) / sum(g$tot) * 100,
@@ -458,7 +464,10 @@ plot_trends <- function(tp) {
               inherit.aes = FALSE, fill = "gray50", alpha = 0.10) +
     geom_hline(data = base, aes(yintercept = season), linetype = "dashed",
                color = "gray55", linewidth = 0.5) +
-    geom_point(data = pts[faint, ], aes(y = v), color = TREND_INK, alpha = 0.3, size = 1.6) +
+    # Sized by pitches, so a 9-pitch inning at 100% reads as the small thing it
+    # is next to a 90-pitch start.
+    geom_point(data = pts[faint, ], aes(y = v, size = tot), color = TREND_INK, alpha = 0.3) +
+    scale_size_area(max_size = 3.4, guide = "none") +
     geom_line(aes(y = line), color = TREND_INK, linewidth = 0.8) +
     geom_point(data = pts[!faint, ], aes(y = v), color = TREND_INK, size = 1.8) +
     facet_wrap(~panel, ncol = 2, scales = "free_y", drop = TRUE) +
@@ -469,6 +478,51 @@ plot_trends <- function(tp) {
           strip.text = element_text(face = "bold", size = 12.5, hjust = 0),
           panel.spacing = unit(1.4, "lines"),
           axis.text = element_text(color = "gray40"))
+}
+
+
+#' Pitch mix by outing: one stacked bar per outing, width = pitches thrown
+#'
+#' The usage panel follows one pitch; this shows what it traded with. Bars sit
+#' end to end on a pitch-count axis rather than dates, so a 90-pitch start is
+#' wide, a 9-pitch inning is a sliver, and the off days between outings take no
+#' room. Month labels mark where each month's first outing begins.
+#'
+#' Follows the Batter side selector like the usage panel. `hide` drops types
+#' AFTER the shares are computed, as plot_usage() does, so a hidden type leaves
+#' its sliver of white rather than inflating the rest.
+plot_mix_outings <- function(df, hand, hide = character()) {
+  if (hand != "All") df <- df[df$stand == hand, ]
+  if (nrow(df) == 0) return(NULL)
+  g <- df |> count(game_date, name = "tot") |> arrange(game_date) |>
+    mutate(x1 = cumsum(tot), x0 = x1 - tot)
+  m <- df |> count(game_date, pitch_type) |>
+    left_join(g, by = "game_date") |>
+    mutate(share = n / tot * 100)
+  if (length(hide)) m <- m |> filter(!pitch_type %in% hide)
+  m <- m |> mutate(pitch_type = droplevels(pitch_type)) |>
+    arrange(game_date, pitch_type) |> group_by(game_date) |>
+    mutate(y1 = cumsum(share), y0 = y1 - share) |> ungroup()
+  mo <- g |> mutate(m = format(as.Date(game_date), "%b")) |>
+    group_by(m) |> summarise(x = min(x0), d = min(game_date), .groups = "drop") |> arrange(d)
+  # One outing is a thin bar whose white edge would swallow it, so the edge
+  # thins as the outing count grows.
+  edge <- if (nrow(g) > 40) 0.1 else 0.3
+  ggplot(m) +
+    geom_rect(aes(xmin = x0, xmax = x1, ymin = y0, ymax = y1, fill = pitch_type),
+              color = "white", linewidth = edge) +
+    # Reversed so the legend reads top to bottom in the order the bars stack,
+    # most-used type at the bottom on the 0% baseline.
+    scale_fill_manual(values = pitch_colors, guide = guide_legend(reverse = TRUE)) +
+    scale_x_continuous(breaks = mo$x, labels = mo$m, expand = c(0, 0)) +
+    scale_y_continuous(breaks = c(0, 25, 50, 75, 100), labels = \(x) paste0(x, "%"),
+                       expand = c(0, 0)) +
+    labs(x = NULL, y = NULL) +
+    theme_minimal(base_size = 13) +
+    theme(legend.position = "right", legend.title = element_blank(),
+          legend.text = element_text(face = "bold", size = 13),
+          panel.grid = element_blank(), axis.text = element_text(color = "gray40"),
+          axis.ticks.x = element_line(color = "gray60"))
 }
 
 
@@ -493,7 +547,8 @@ trend_tip_text <- function(row, tp) {
     paste0(row$n, " ", tp$pt, if (row$n == 1) "" else "s"))
   c(date, sample,
     paste0(name[[m]], " ", f(row$v), " (avg ", f(avg), ")"),
-    if (m == "usage") paste0("Last-", TREND_USAGE_ROLL, " line ", f(row$line)))
+    if (m == "usage") paste0("Pooled ", f(row$line), " (last ", TREND_USAGE_ROLL, "+ outings, ",
+                             TREND_USAGE_POOL, "+ pitches)"))
 }
 
 

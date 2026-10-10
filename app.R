@@ -277,9 +277,14 @@ ui <- fluidPage(
                          uiOutput("trends_tip")),
                      div(class = "sec-note", paste0(
                        "Velocity, spin and movement are the selected pitch against both batter sides; a game ",
-                       "needs ", TREND_MIN_N, " of it to plot. Usage counts outings of ",
-                       TREND_USAGE_MIN_GAME, "+ pitches, so it shows for starters, follows the Batter ",
-                       "side selector, and its line pools the last ", TREND_USAGE_ROLL, ".")))),
+                       "needs ", TREND_MIN_N, " of it to plot. Usage has a dot for every outing, sized by its ",
+                       "pitches, and follows the Batter side selector; its line pools the last ",
+                       TREND_USAGE_ROLL, " outings, more until it holds ", TREND_USAGE_POOL, " pitches."))),
+                 div(class = "sec",
+                     div(class = "sec-h", "Pitch mix by outing"),
+                     div(class = "sec-sub", paste0("One bar per outing, as wide as the pitches he threw. ",
+                                                   "Follows the Batter side selector.")),
+                     plotOutput("mix_outings", height = "300px"))),
         # ---- Context: one pitcher, read the way a coach reads him ----------
         #
         # Laid out 2026-09-21 around two questions: is he funky (the percentile
@@ -704,6 +709,11 @@ server <- function(input, output, session) {
   trend_tp <- reactive(trend_panels(pitcher_data(), trend_pt(), input$hand))
 
   output$trends <- renderPlot(plot_trends(trend_tp()), width = sized_width("trends"))
+  output$mix_outings <- renderPlot({
+    p <- plot_mix_outings(pitcher_data(), input$hand, chart_hide())
+    req(p)
+    p
+  }, width = sized_width("mix_outings"))
 
   # Every pitch at once, so a change that runs through the arsenal shows
   # without clicking through the buttons. Follows the Batter side selector for
