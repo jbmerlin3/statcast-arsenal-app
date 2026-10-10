@@ -505,7 +505,11 @@ different things:
 **Almost nothing here has external ground truth.** `scripts/verify_savant.R`
 diffs the one column that does: arm angle, MAE 0.13 degrees over 110 pitchers.
 Since we ship Savant's own `arm_angle` and average it, that validates our
-population, window and aggregation, not any definition of ours. Extension is
+population, window and aggregation, not any definition of ours. One deliberate
+departure since 2026-10-10: `clean_arm_angle()` blanks readings 30+ degrees off
+a pitcher's median with his release point unchanged (15 pitches in 2026, five
+pitchers, Latz's season mean the most moved at 0.55 degrees), so a pitcher with
+a bad Savant game can now differ from the leaderboard by that much. Extension is
 NOT on the custom leaderboard under any of five names tried, release position
 is not served at a usable grain, and VAA is not published anywhere at all.
 

@@ -174,10 +174,16 @@ pull_season_statcast <- function(start_date, end_date, chunk_days = 4) {
 #'
 #' The pitch_type filter is defensive. statcast_clean already applies it, but
 #' this file is what the app reads and a stray empty code would reach a plot.
+#'
+#' One exception to "row-wise only": clean_arm_angle() compares each pitch to
+#' the pitcher's season median. That is deliberate, the season being the one
+#' frame where a few bad pitches cannot move the reference. See features.R.
+#' The store itself is left untouched; 03_ArsenalReports reads it too.
 build_app_data <- function(sc) {
   sc |>
     filter(!is.na(pitch_type), pitch_type != "") |>
     add_pitch_features() |>
+    clean_arm_angle() |>
     select(all_of(APP_DATA_COLS))
 }
 
