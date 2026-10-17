@@ -324,8 +324,8 @@ shape_arsenal <- function(df) {
   # deliberately separate constants". Only the second concern is real. A
   # three-pitch slider has an honest count, an honest velocity and an honest
   # location; what it does not have is a meaningful whiff rate, and the
-  # below_floor state already greys exactly those cells and prints their
-  # denominator.
+  # below_floor state already marks exactly those cells by printing their
+  # denominator beside the shading.
   #
   # So the count is always true and the rates police themselves.
   pl <- df |> add_count(pitch_type, name = "pt_n")

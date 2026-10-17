@@ -301,8 +301,8 @@ style_pitch_codes <- function(g, tbl) {
 #' consequence, so it is written down. A dagger whose legend has been deleted is
 #' strictly worse than no dagger: it is a symbol the page never defines. The
 #' below-floor marker is KEPT, because it is the value's own denominator in
-#' parentheses and reads without a legend, and because the grey italic it travels
-#' with is the actual signal.
+#' parentheses and reads without a legend, and because it is the only thing that
+#' tells a shaded small sample apart from a shaded full one.
 #'
 #' No conditionals in the fill loop below. Every cell carries a concrete fill,
 #' colour, style, weight and marker, with white for the unfilled states and ""
@@ -421,7 +421,7 @@ traits_gt <- function(tbl, hand, fg_window = NULL, label = hand_label(hand),
 #' here comes from the same Statcast pull the rest of the app runs on, so a
 #' provenance note would be saying nothing the page does not already assume.
 #' Keeps its footnotes. They explain the percentile scope and the below-floor
-#' grey, which are statements about how much the numbers can be trusted rather
+#' (n), which are statements about how much the numbers can be trusted rather
 #' than restatements of what a column means, and that is the line the traits
 #' table's footnotes fell on the wrong side of.
 #'

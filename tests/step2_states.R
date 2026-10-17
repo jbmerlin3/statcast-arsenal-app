@@ -412,7 +412,7 @@ expect("no hue: the neutral scale is pure grey",
        all(vapply(c(0, 25, 50, 75, 100), function(p) {
          r <- grDevices::col2rgb(pctile_fill(p, "neutral")); r[1] == r[2] && r[2] == r[3]
        }, logical(1))), TRUE)
-# Below floor is an unfilled cell with grey ITALIC text; these are filled cells
+# No reference is an unfilled cell with grey ITALIC text; these are filled cells
 # with black text. Two channels apart, which is what makes grey safe to use here
 # at all.
 expect("no neutral fill collides with the below-floor text grey",
