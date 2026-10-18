@@ -467,9 +467,10 @@ state_notes <- function(cells) {
   # which is where the reader needs it.
   if (any(cells$state == "below_floor")) {
     notes <- c(notes, paste0(
-      "Grey italic values sit below the sample floor for their metric and are ",
-      "not placed against the league. The figure in parentheses is that value's ",
-      "own denominator."))
+      "A number in parentheses marks a small sample and gives that value's own ",
+      "denominator, and the shading still compares it against the league. A cell ",
+      "is left unshaded only when there is no value to rank, such as a pitch type ",
+      "nobody swung at."))
   }
 
   # Always present when there is any context at all, because the fill implies a

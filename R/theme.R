@@ -583,16 +583,18 @@ SEARCH_METRIC_COLS <- c(
 #
 # This replaced a violet ramp on 2026-08-24. The violet was chosen to avoid grey,
 # on the reasoning that the below-floor state owns grey; that turned out to be
-# the wrong worry, because below floor is an UNFILLED cell with grey italic text
+# the wrong worry, because no reference is an UNFILLED cell with grey italic text
 # and these are filled cells with black text, which is a difference in two
-# channels. What the violet actually did was put a second hue on a table whose
+# channels. (Below floor shared that unfilled grey look until 2026-09-08; it is
+# now filled with black text like any other cell.) What the violet actually did was put a second hue on a table whose
 # whole point was one.
 PCTILE_PAL_DIVERGING <- c("#7FA8D6", "#BFD3E8", "#F0F0F0", "#EFC0AE", "#DC8163")
 PCTILE_PAL_NEUTRAL   <- c("#C4C4C4", "#DEDEDE", "#F0F0F0", "#DEDEDE", "#C4C4C4")
 
-# Below floor and no reference both render unfilled with grey italic text. Grey
-# is reserved for them: half the cells in a two-week window land here, so it has
-# to read as calm and normal rather than as a warning.
+# No reference renders unfilled with grey italic text, and grey text is reserved
+# for it. Below floor used to share this look, and since half the cells in a
+# two-week window land below floor the grey had to read as calm rather than as a
+# warning. Since 2026-09-08 below floor is filled with black text instead.
 PCTILE_GREY <- "#767676"
 
 # Arm-side normalisation for HB, and the one place the sign is decided.

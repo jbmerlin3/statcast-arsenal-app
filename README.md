@@ -65,10 +65,10 @@ hand is never dropped from the grain: horizontal break is not arm-side
 normalized, so a righty's and a lefty's sliders sit on opposite sides of zero
 and their pooled mean lands where neither hand throws.
 
-**Sample floors are stated on the page, not smoothed over.** A metric below its
-floor renders grey and italic with its own denominator in parentheses, rather
-than being coloured against a league it cannot honestly be compared to. Pitch
-types under five pitches in the window are dropped, heat map panels under
+**Sample floors are stated on the page, not smoothed over.** A value below its
+floor is still shaded against the league, in normal text, with its own
+denominator in parentheses so the small sample is visible next to the colour.
+Heat map panels under
 fifteen fall back to plotting raw locations as white dots instead of a density
 surface, and a reference cell built on fewer than twenty pitchers is not used at
 all: the lookup steps down a fallback ladder to a coarser grain, and the table
