@@ -139,5 +139,31 @@ ph <- plot_mix_outings(d, "All", hide = hid)$data
 expect("hidden type drops after shares are computed",
        ph$share[ph$pitch_type != hid][1], md$share[md$pitch_type != hid][1])
 
+# Mix tooltip: the hovered segment's own pitches, and velocity off that
+# outing's pitches of that type only.
+r1 <- md[1, ]
+own <- d[d$game_date == r1$game_date & d$pitch_type == r1$pitch_type, ]
+expect("mix segment velo is that outing's pitch", r1$velo, mean(own$release_speed, na.rm = TRUE))
+tip <- mix_tip_text(r1, "All")
+expect("mix tip names the count", grepl(paste0("^", r1$n, " of ", r1$tot, " pitches"), tip[4]), TRUE)
+expect("mix tip has velo and break", grepl("Velo .* mph .*IVB .*HB", tip[3]), TRUE)
+expect("mix tip names the times-through view", grepl("2nd time through", mix_tip_text(r1, "All", "2")[4]), TRUE)
+
+# Pooled share in the tooltip: the bottom type's pooled share is the same
+# pool_share() the Trends usage line uses, with a type missing from an outing
+# counted as zero, and the tooltip names how many outings the pool spans.
+lv <- levels(md$pitch_type)
+g1 <- md |> distinct(game_date, tot) |> arrange(game_date)
+n1 <- sapply(g1$game_date, \(dt) sum(d$game_date == dt & d$pitch_type == lv[1]))
+b1 <- md[md$pitch_type == lv[1], ] |> arrange(game_date)
+expect("pooled share matches the Trends pool",
+       all(abs(b1$pooled - pool_share(n1, g1$tot)[match(b1$game_date, g1$game_date)]) < 1e-9), TRUE)
+expect("npool counts the pooled outings", all(md$npool == (seq_len(nrow(g1)) - pool_start(g1$tot) + 1)[match(md$game_date, g1$game_date)]), TRUE)
+last <- md[md$game_date == max(md$game_date), ][1, ]
+tip <- mix_tip_text(last, "All")
+expect("mix tip ends on the recent-outings usage", tail(tip, 1), sprintf("Last %d outings: %.1f%%", last$npool, last$pooled))
+expect("first outing has no recent line", any(grepl("^Last ", mix_tip_text(md[md$game_date == min(md$game_date), ][1, ], "All"))), FALSE)
+expect("no line layers on the mix chart", length(pm$layers), 1L)
+
 cat(if (fails == 0) "\nTRENDS: PASS\n" else sprintf("\nTRENDS: FAIL (%d)\n", fails))
 if (fails > 0) quit(status = 1)
