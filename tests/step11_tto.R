@@ -121,14 +121,15 @@ expect("2nd view, All Counts: FF 2 of 3, CH 1 of 3",
 # 2026-09-23, Barnett's 3rd+ view: every pitch to righties was a sweeper.
 one_side <- data.frame(pitch_type = factor(c("ST", "ST", "FF"), levels = c("FF", "ST")),
                        stand = c("R", "R", "L"))
-# ggplot pads 5% of the span past each limit, so the old 105 axis draws to
-# 115.5 and a widened one to 137.5; the thresholds sit between the two.
+# ggplot pads 5% of the span past each limit. The axis runs 15 past the
+# longest bar rounded up to a gridline: a 100% bar gets 125 (draws to 137.5),
+# a 50/50 chart gets 75 (draws to 82.5).
 xr <- ggplot2::ggplot_build(plot_usage(one_side))$layout$panel_params[[1]]$x.range
 expect("a 100% bar leaves room for its label", xr[2] >= 130, TRUE)
 xr <- ggplot2::ggplot_build(plot_usage(data.frame(
   pitch_type = factor(c("FF", "SL", "FF", "SL"), levels = c("FF", "SL")),
   stand = c("R", "R", "L", "L"))))$layout$panel_params[[1]]$x.range
-expect("a 50/50 chart keeps the old 105 axis", xr[2] < 120, TRUE)
+expect("a 50/50 chart fits its axis to the bars", xr[2] < 90, TRUE)
 
 
 cat("\n=== B. the table, real outings ===\n")

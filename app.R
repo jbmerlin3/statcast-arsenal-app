@@ -141,6 +141,14 @@ ui <- fluidPage(
     "margin:-6px 0 10px 14px;}",
     ".sec-note,.ctx-note{font-size:11.5px;color:#888;margin:8px 0 0 0;max-width:900px;",
     "line-height:1.45;}",
+    # Usage tab top row. The chart flexes and the table keeps its natural
+    # width (~615px); under 340px of chart they wrap, which holds them side by
+    # side from about a 1380px window, so on a 1440 laptop. gt centers its table with an
+    # inline margin, so the override needs !important to sit it under its header.
+    ".usage-row{display:flex;flex-wrap:wrap;gap:0 28px;align-items:flex-start;}",
+    ".usage-chart{flex:1 1 340px;min-width:0;}",
+    ".usage-count{flex:0 1 auto;max-width:100%;overflow-x:auto;}",
+    ".usage-count .gt_table{margin-left:0 !important;}",
     ".app-codes{font-size:11.5px;color:#999;margin:2px 0 6px 0;}",
     # Times-through toggle on the Usage tab. The radio circles are hidden and the
     # span after each is the pill, so the selected and disabled looks come from
@@ -165,7 +173,7 @@ ui <- fluidPage(
     ".trend-changes{margin:14px 0 4px 0;padding:9px 14px;background:#f5f8fb;border-left:3px solid #1f3a5f;border-radius:3px;}",
     ".trend-changes ul{margin:4px 0 0 0;padding-left:18px;font-size:13.5px;line-height:1.6;}",
     ".trend-none{font-size:13px;color:#666;margin-top:3px;}",
-    "#trends img{cursor:crosshair;}"
+    "#trends img, #mix_outings img{cursor:crosshair;}"
   )))),
   # The deploy bundles the rds files rather than fetching them at startup, so
   # the page has to say how current they are. Read off app_data itself and not
@@ -227,17 +235,33 @@ ui <- fluidPage(
                  # Empty unless the window holds something beyond the first time
                  # through, so a reliever's Usage tab is exactly what it was.
                  uiOutput("tto_toggle"),
+                 # Season usage and usage by count side by side, so the count
+                 # table is on the first screen. They wrap to one column when
+                 # the panel is too narrow for the table beside the chart.
+                 div(class = "usage-row",
+                     div(class = "sec usage-chart",
+                         div(class = "sec-h", "Pitch usage"),
+                         plotOutput("usage", height = "330px"),
+                         # Said out loud because the batter side control is
+                         # visible and this chart deliberately ignores it.
+                         # Without the note the toggle looks broken on this tab.
+                         div(class = "sec-note",
+                             "Always both batter sides. Usage by count and the mix by outing follow the Batter side selector.")),
+                     div(class = "sec usage-count",
+                         div(class = "sec-h", "Usage by count"),
+                         gt::gt_output("usage_table"))),
+                 # The season mix above, how it moved outing to outing here.
+                 # It sat under the 780px Trends chart until 2026-10-19, where
+                 # nobody scrolled far enough to find it, and the top of Trends
+                 # belongs to the one-pitch panels.
                  div(class = "sec",
-                     div(class = "sec-h", "Pitch usage"),
-                     plotOutput("usage", height = "420px"),
-                     # Said out loud because the batter side control is visible
-                     # and this chart deliberately ignores it. Without the note
-                     # the toggle looks broken on this tab.
-                     div(class = "sec-note",
-                         "The chart always shows both batter sides. The table below follows the Batter side selector.")),
-                 div(class = "sec",
-                     div(class = "sec-h", "Usage by count"),
-                     gt::gt_output("usage_table"))),
+                     div(class = "sec-h", "Pitch mix by outing"),
+                     div(class = "sec-sub", "One bar per outing, as wide as his pitch count. Hover for the pitch's velo and break."),
+                     div(style = "position:relative;",
+                         plotOutput("mix_outings", height = "300px",
+                                    hover = hoverOpts("mix_hover", delay = 60,
+                                                      delayType = "debounce")),
+                         uiOutput("mix_tip")))),
         # Two tables, traits above results, from one arsenal_table() pass. The
         # order is deliberate: what the pitch IS reads before what it DID, so a
         # reader who stops after the first table has still learned the arsenal.
@@ -279,12 +303,7 @@ ui <- fluidPage(
                        "Velocity, spin and movement are the selected pitch against both batter sides; a game ",
                        "needs ", TREND_MIN_N, " of it to plot. Usage has a dot for every outing, sized by its ",
                        "pitches, and follows the Batter side selector; its line pools the last ",
-                       TREND_USAGE_ROLL, " outings, more until it holds ", TREND_USAGE_POOL, " pitches."))),
-                 div(class = "sec",
-                     div(class = "sec-h", "Pitch mix by outing"),
-                     div(class = "sec-sub", paste0("One bar per outing, as wide as the pitches he threw. ",
-                                                   "Follows the Batter side selector.")),
-                     plotOutput("mix_outings", height = "300px"))),
+                       TREND_USAGE_ROLL, " outings, more until it holds ", TREND_USAGE_POOL, " pitches.")))),
         # ---- Context: one pitcher, read the way a coach reads him ----------
         #
         # Laid out 2026-09-21 around two questions: is he funky (the percentile
@@ -709,11 +728,37 @@ server <- function(input, output, session) {
   trend_tp <- reactive(trend_panels(pitcher_data(), trend_pt(), input$hand))
 
   output$trends <- renderPlot(plot_trends(trend_tp()), width = sized_width("trends"))
+  # Lives on the Usage tab, so it follows the times-through pick like the
+  # chart and table beside it.
+  mix_p <- reactive(plot_mix_outings(filter_tto(pitcher_data(), tto()), input$hand, chart_hide()))
   output$mix_outings <- renderPlot({
-    p <- plot_mix_outings(pitcher_data(), input$hand, chart_hide())
+    p <- mix_p()
     req(p)
     p
   }, width = sized_width("mix_outings"))
+
+  # Hover a segment for that pitch in that outing. The bars are rects on
+  # continuous axes, so the hit is the rect the cursor sits inside rather than
+  # a nearPoints() match. Same placement rules as the Trends tip.
+  output$mix_tip <- renderUI({
+    cl <- input$mix_hover
+    p <- mix_p()
+    if (is.null(cl) || is.null(p) || is.null(cl$x) || is.null(cl$y)) return(NULL)
+    md <- p$data
+    hit <- md[cl$x >= md$x0 & cl$x < md$x1 & cl$y >= md$y0 & cl$y < md$y1, ]
+    if (nrow(hit) == 0) return(NULL)
+    lines <- mix_tip_text(hit[1, ], input$hand, tto())
+    x <- round(cl$coords_css$x); y <- round(cl$coords_css$y)
+    w <- session$clientData$output_mix_outings_width
+    h <- session$clientData$output_mix_outings_height
+    flip_x <- isTRUE(x > 0.6 * w)
+    flip_y <- isTRUE(y > 0.6 * h)
+    div(class = "trend-tip",
+        style = sprintf("left:%dpx;top:%dpx;transform:translate(%s,%s);",
+                        x + if (flip_x) -12 else 12, y + if (flip_y) -10 else 10,
+                        if (flip_x) "-100%" else "0", if (flip_y) "-100%" else "0"),
+        tags$b(lines[1]), lapply(lines[-1], div))
+  })
 
   # Every pitch at once, so a change that runs through the arsenal shows
   # without clicking through the buttons. Follows the Batter side selector for
@@ -778,7 +823,7 @@ server <- function(input, output, session) {
 
   output$usage_table <- gt::render_gt({
     count_usage_gt(count_usage_tbl(pitcher_data(), input$hand, tto()), input$hand,
-                   label = tto_table_label(input$hand, tto()))
+                   label = tto_table_label(input$hand, tto()), heading = NULL)
   })
 
   # Stuff+ for the selected pitcher. The read is about 11 ms, so it runs per

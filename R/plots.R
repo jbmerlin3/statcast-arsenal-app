@@ -68,28 +68,35 @@ plot_usage <- function(df, hide = character()) {
   if (length(hide)) {
     usage <- usage |> filter(!pitch_type %in% hide) |> mutate(pitch_type = droplevels(pitch_type))
   }
-  # The label sits OUTSIDE the bar end, so a bar near 100% pushed it past the
-  # old fixed limit of 105 and it rendered clipped, "100'". Rare on a season,
-  # common on one outing or one time through the order, where a reliever can
-  # throw one pitch to one side. The axis widens only when a label needs it,
-  # so every chart that fit before is drawn exactly as before.
-  lim <- max(105, max(usage$pct, na.rm = TRUE) + 25)
+  # The label sits OUTSIDE the bar end, so the axis runs 15 past the longest
+  # bar (room for "24.4%" at half width), rounded up to a gridline. A fixed 105 once clipped a 100% bar's label
+  # to "100'" (one pitch to one side, common on one time through the order).
+  #
+  # Fitted to the data since 2026-10-19, when the chart moved to half the Usage
+  # tab's width: on a fixed 0-100 axis a 25% pitch was a stub. The cost is that
+  # bar lengths no longer compare across pitchers; the gridline labels do.
+  lim <- max(50, ceiling((max(usage$pct, na.rm = TRUE) + 15) / 25) * 25)
   ggplot(usage, aes(plot_pct, fct_rev(pitch_type), fill = pitch_type)) +
-    geom_vline(xintercept = seq(-75, 75, 25), linetype = "dashed", color = "gray80", linewidth = 0.4) +
+    geom_vline(xintercept = setdiff(seq(-lim, lim, 25), c(-lim, lim)), linetype = "dashed", color = "gray80", linewidth = 0.4) +
     geom_col(width = 0.6) +
     geom_text(aes(label = paste0(round(abs(plot_pct), 1), "%"),
                   hjust = if_else(stand == "L", 1.15, -0.15)),
-              size = 7, fontface = "bold", color = "gray20") +
+              size = 5, fontface = "bold", color = "gray20") +
     scale_x_continuous(limits = c(-lim, lim), breaks = seq(-100, 100, 25),
                        labels = \(x) paste0(abs(x), "%")) +
-    scale_y_discrete(expand = expansion(add = c(0.9, 0.6))) +
+    scale_y_discrete(expand = expansion(add = c(1.1, 0.5))) +
     scale_fill_manual(values = pitch_colors) +
-    annotate("label", x = -90, y = 0.45, label = "vs LHH", size = 5, fontface = "bold", fill = "white") +
-    annotate("label", x =  90, y = 0.45, label = "vs RHH", size = 5, fontface = "bold", fill = "white") +
-    labs(x = "Usage (%)", y = NULL) +
+    # Side labels in the outer corners, under the bars.
+    annotate("label", x = -lim, y = 0.2, label = "vs LHH", hjust = 0, size = 4,
+             fontface = "bold", fill = "white", label.size = 0.3) +
+    annotate("label", x =  lim, y = 0.2, label = "vs RHH", hjust = 1, size = 4,
+             fontface = "bold", fill = "white", label.size = 0.3) +
+    labs(x = NULL, y = NULL) +
     theme_minimal(base_size = 13) +
-    theme(legend.position = "right", legend.title = element_blank(),
-          legend.text = element_text(face = "bold", size = 15), legend.key.size = unit(1.5, "cm"),
+    # No legend: the Usage by count table beside it on the Usage tab is the
+    # key, its rows colored and in the same order as these bars. A legend here
+    # floated in the chart's margin and repeated it (removed 2026-10-19).
+    theme(legend.position = "none",
           panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
           axis.text.y = element_blank(), axis.text.x = element_text(color = "gray40"))
 }
@@ -491,29 +498,55 @@ plot_trends <- function(tp) {
 #' Follows the Batter side selector like the usage panel. `hide` drops types
 #' AFTER the shares are computed, as plot_usage() does, so a hidden type leaves
 #' its sliver of white rather than inflating the rest.
+#'
+#' Each segment also carries its type's share pooled over recent outings by
+#' pool_share(), as the Trends usage line is, for the tooltip to compare
+#' against. One outing's mix swings with the opponent and a 15-pitch sample;
+#' the pooled share says whether this outing was a departure. `npool` is how
+#' many outings that pool spans, so the tooltip can name it.
+#' A trend line per boundary was drawn over the bars on 2026-10-19 and taken
+#' off the same day: it read as clutter, not as the plan.
 plot_mix_outings <- function(df, hand, hide = character()) {
   if (hand != "All") df <- df[df$stand == hand, ]
   if (nrow(df) == 0) return(NULL)
   g <- df |> count(game_date, name = "tot") |> arrange(game_date) |>
     mutate(x1 = cumsum(tot), x0 = x1 - tot)
-  m <- df |> count(game_date, pitch_type) |>
+  # Velocity and break ride along so the hover tooltip can say what the pitch
+  # was doing that day, not just how often he threw it.
+  m <- df |> group_by(game_date, pitch_type) |>
+    summarise(n = n(), velo = mean(release_speed, na.rm = TRUE),
+              ivb = mean(ivb, na.rm = TRUE), hb = mean(hb, na.rm = TRUE), .groups = "drop") |>
     left_join(g, by = "game_date") |>
     mutate(share = n / tot * 100)
   if (length(hide)) m <- m |> filter(!pitch_type %in% hide)
   m <- m |> mutate(pitch_type = droplevels(pitch_type)) |>
     arrange(game_date, pitch_type) |> group_by(game_date) |>
     mutate(y1 = cumsum(share), y0 = y1 - share) |> ungroup()
+  # Pooled shares need every type in every outing, zeros included, so the
+  # pool sums the right pitches.
+  g$npool <- seq_len(nrow(g)) - pool_start(g$tot) + 1
+  pl <- m |> distinct(pitch_type) |> tidyr::crossing(g) |>
+    left_join(select(m, game_date, pitch_type, n), by = c("game_date", "pitch_type")) |>
+    mutate(n = coalesce(n, 0L)) |> arrange(pitch_type, game_date) |>
+    group_by(pitch_type) |> mutate(pooled = pool_share(n, tot)) |> ungroup()
+  m <- m |> left_join(select(pl, game_date, pitch_type, pooled, npool), by = c("game_date", "pitch_type"))
   mo <- g |> mutate(m = format(as.Date(game_date), "%b")) |>
     group_by(m) |> summarise(x = min(x0), d = min(game_date), .groups = "drop") |> arrange(d)
+  # A month with an outing or two (a late-March opener) puts its label on top
+  # of the next one's, so a label needs 4% of the axis before the next.
+  mo <- mo[c(diff(mo$x) >= 0.04 * max(g$x1), TRUE), ]
   # One outing is a thin bar whose white edge would swallow it, so the edge
   # thins as the outing count grows.
   edge <- if (nrow(g) > 40) 0.1 else 0.3
   ggplot(m) +
+    # Softened: at full strength the pitch colors over a whole chart of area
+    # shout. Not further than 0.8, or ST and SI blur together.
     geom_rect(aes(xmin = x0, xmax = x1, ymin = y0, ymax = y1, fill = pitch_type),
-              color = "white", linewidth = edge) +
-    # Reversed so the legend reads top to bottom in the order the bars stack,
-    # most-used type at the bottom on the 0% baseline.
-    scale_fill_manual(values = pitch_colors, guide = guide_legend(reverse = TRUE)) +
+              color = "white", linewidth = edge, alpha = 0.8) +
+    # Legend in the same order as the Pitch usage chart above it on the Usage
+    # tab, so the two read as one key. The bars stack the other way up, with
+    # the lead pitch on the 0% baseline where its share reads off the axis.
+    scale_fill_manual(values = pitch_colors) +
     scale_x_continuous(breaks = mo$x, labels = mo$m, expand = c(0, 0)) +
     scale_y_continuous(breaks = c(0, 25, 50, 75, 100), labels = \(x) paste0(x, "%"),
                        expand = c(0, 0)) +
@@ -524,6 +557,34 @@ plot_mix_outings <- function(df, hand, hide = character()) {
           panel.grid = element_blank(), axis.text = element_text(color = "gray40"),
           axis.ticks.x = element_line(color = "gray60"))
 }
+
+
+#' The tooltip for one hovered segment of the pitch mix chart
+#'
+#' `row` is one row of plot_mix_outings()$data. Says the outing, the pitch, how
+#' much of the outing it was, and its average velocity and break that day.
+#' A mean of all-NA (Savant missing the tracking) prints as a dash.
+mix_tip_text <- function(row, hand, tto = "All") {
+  f <- function(x, unit) if (is.na(x) || is.nan(x)) "\u2013" else paste0(formatC(x, format = "f", digits = 1), unit)
+  side <- switch(hand, L = " vs LHH", R = " vs RHH", "")
+  if (!identical(tto, "All")) side <- paste0(side, ", ", TTO_TITLE[[tto]])
+  nm <- PITCH_NAMES[as.character(row$pitch_type)]
+  # "Last 3 outings" counts this one: the pool as of this date.
+  recent <- if (!is.null(row$pooled) && !is.na(row$pooled) && row$npool > 1)
+    paste0("Last ", row$npool, " outings: ", formatC(row$pooled, format = "f", digits = 1), "%")
+  # Velo and break sit above the usage lines, so "Last 3 outings" closes the
+  # tip and reads as being about usage only, not the movement.
+  c(format(as.Date(row$game_date), "%b %d, %Y"),
+    paste0(row$pitch_type, if (!is.na(nm)) paste0(" \u00b7 ", nm)),
+    paste0("Velo ", f(row$velo, " mph"), "  \u00b7  IVB ", f(row$ivb, "\""), "  \u00b7  HB ", f(row$hb, "\"")),
+    paste0(row$n, " of ", row$tot, " pitches", side, " (", formatC(row$share, format = "f", digits = 1), "%)"),
+    recent)
+}
+
+PITCH_NAMES <- c(FF = "Four-seam", SI = "Sinker", FC = "Cutter", SL = "Slider", ST = "Sweeper",
+                 SV = "Slurve", CU = "Curveball", KC = "Knuckle curve", CS = "Slow curve",
+                 CH = "Changeup", FS = "Splitter", FO = "Forkball", SC = "Screwball",
+                 KN = "Knuckleball", EP = "Eephus")
 
 
 #' The tooltip for one hovered point on the Trends chart

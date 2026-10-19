@@ -516,9 +516,13 @@ count_usage_denoms <- function(df, hand) {
 #' reference. NULL renders exactly what this rendered before Part B, which
 #' scripts/phase1_check.R does guard here: count_usage_gt is not in
 #' EXPECTED_DIFFS, unlike the characteristics renderers.
-count_usage_gt <- function(wide, hand, label = hand_label(hand), ref = NULL) {
+#'
+#' `heading = NULL` titles the table with the view alone ("vs LHH"), for the
+#' app, where the section header above already says Usage by count.
+count_usage_gt <- function(wide, hand, label = hand_label(hand), ref = NULL,
+                           heading = "USAGE BY COUNT") {
   g <- wide |> gt() |> cols_label(pitch_type = "PITCH") |>
-    tab_header(title = paste("USAGE BY COUNT", label)) |> cols_align("center") |>
+    tab_header(title = trimws(paste(heading, label))) |> cols_align("center") |>
     fmt_number(columns = -pitch_type, decimals = 1, pattern = "{x}%") |>
     tab_style(cell_text(weight = "bold"), cells_body(columns = "All Counts")) |>
     tab_style(cell_borders(sides = c("top","bottom"), color = "black", weight = px(2)),
