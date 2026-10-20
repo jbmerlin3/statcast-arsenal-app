@@ -33,7 +33,19 @@ expect("vs RHH and vs LHH differ",
        identical(stuff_for(sv, mis, season, "R")$stuff_plus,
                  stuff_for(sv, mis, season, "L")$stuff_plus), FALSE)
 
-# 4. Contract and empties: two columns; an unknown pitcher and a window with no
+# 4. The scale is per group: full-season grades of every pitcher with 250+
+#    pitches of a type sit near 100 within each group. Fails if the single
+#    league-wide scale returns (fastballs would center near 85)
+ids <- unique(sv$daily$pitcher)
+season_grades <- bind_rows(lapply(ids, function(id) {
+  g <- stuff_for(sv, id, season, "All")
+  n <- sv$daily |> filter(pitcher == id) |> summarise(n = sum(n), .by = pitch_type)
+  inner_join(g, n, by = "pitch_type")
+})) |> filter(n >= 250) |> mutate(group = STUFF_GROUP(pitch_type))
+meds <- season_grades |> summarise(m = median(stuff_plus), .by = group)
+expect("every group's median grade sits within 5 of 100", all(abs(meds$m - 100) <= 5), TRUE)
+
+# 5. Contract and empties: two columns; an unknown pitcher and a window with no
 #    games give zero rows, not an error
 expect("contract is pitch_type, stuff_plus", names(stuff_for(sv, mis, season, "All")),
        c("pitch_type", "stuff_plus"))
