@@ -68,9 +68,8 @@ pitch_text_colors[c("SL", "ST")] <- c("#B59410", "#B59410")
 # and CU were different pitches, pitchers would throw both; none of the other
 # 408 do.
 #
-# Savant's player page groups them as one "Curve" bucket, and FG_TO_SAVANT in
-# stuff.R has cross-filled a Stuff+ grade from either label to the other since
-# it was written. The display was the last place still treating them as two.
+# Savant's player page groups them as one "Curve" bucket, and the Stuff+ grades
+# use the same fold. The display was the last place still treating them as two.
 PITCH_CODE_RULES <- data.frame(
   code   = c("CS",   "KC",   "FO",   "EP",   "FA",   "PO",   "UN"),
   action = c("map",  "map",  "map",  "drop", "drop", "drop", "drop"),
@@ -78,7 +77,7 @@ PITCH_CODE_RULES <- data.frame(
   reason = c(
     "slow curve; Savant's own player page folds it into the curve",
     "knuckle curve; one curveball, see the note above this table",
-    "forkball, a splitter variant; FG_TO_SAVANT already folds FanGraphs FO into FS",
+    "forkball, a splitter variant; Stuff+ grades fold FO into FS the same way",
     "eephus; 32 of its 35 throwers are position players mopping up",
     "unclassified fastball; 30 of its 33 throwers are position players",
     "pitchout, a play rather than a pitch type",
@@ -648,10 +647,9 @@ SHAPE_DELTA_SPAN  <- 6
 # How far from 100 Stuff+ has to sit to reach the end of the ramp.
 #
 # Stuff+ needs no league reference: it is centred on 100 by construction, so the
-# anchor is already in the scale. What it does need is a span, and 25 is where
-# the real distribution ends. Measured on the 2026 export, 2,202 pitch grades at
-# 20+ IP: the 2nd and 98th percentiles are 75.3 and 131.1, and 94.2% of grades
-# sit within 100 +/- 25. Beyond it the fill clamps rather than running off.
+# anchor is already in the scale. What it does need is a span. v2 sets SD 10
+# across pitcher pitch types, so 25 is 2.5 SD: nearly every grade sits inside
+# it, and beyond it the fill clamps rather than running off.
 STUFF_PLUS_SPAN <- 25
 
 # The unfilled states paint white explicitly rather than painting nothing.

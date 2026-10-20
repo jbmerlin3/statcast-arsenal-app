@@ -28,7 +28,7 @@ suppressMessages(invisible(lapply(sort(list.files("R", full.names = TRUE)), sour
 
 MLB_ID <- 702070
 d <- shape_arsenal(filter(load_app_data(), pitcher == MLB_ID))
-empty_stuff <- tibble::tibble(pitch_type = character(), stuff_plus = numeric(), fg_exact = logical())
+empty_stuff <- tibble::tibble(pitch_type = character(), stuff_plus = numeric())
 
 fails <- 0L
 ok <- function(label, passed, detail = "") {

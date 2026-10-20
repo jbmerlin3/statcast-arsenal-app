@@ -28,9 +28,8 @@ pct_or_na <- function(num, den) if (den > 0) num / den * 100 else NA_real_
 #' Pitch characteristics for one batter side
 #'
 #' stuff_all arrives as an argument and is never read from disk here. That is
-#' the seam that lets the Stuff+ source change later without touching this
-#' function, so do not inline a FanGraphs read or add a `source` argument. See
-#' CLAUDE.md.
+#' the seam that lets the Stuff+ source change without touching this function,
+#' so do not inline a Stuff+ read or add a `source` argument. See CLAUDE.md.
 #'
 #' Denominators differ on purpose and are the most commonly botched part of this
 #' table. whiff_pct is over swings, chase_pct is over out-of-zone pitches,
@@ -125,10 +124,7 @@ arsenal_table <- function(df, hand, stuff_all) {
       .groups = "drop"
     ) |>
     arrange(desc(pitch_pct)) |>
-    left_join(stuff_all, by = "pitch_type") |>
-    # A pitch with no FanGraphs row is treated as an exact match so it carries no
-    # footnote. Only a grade filled from a non-matching code is flagged.
-    mutate(fg_exact = replace_na(fg_exact, TRUE))
+    left_join(stuff_all, by = "pitch_type")
 }
 
 
@@ -188,7 +184,7 @@ arsenal_denoms <- function(df, hand) {
 TRAITS_COLS <- c("pitch_type", "count", "pitch_pct",
                  "velocity", "ivb", "hb", "vaa", "spin",
                  "ext", "rel_ht", "rel_side",
-                 "stuff_plus", "fg_exact")
+                 "stuff_plus")
 
 # COUNT and PITCH% are TRAITS-only as of 2026-09-08. They are identity columns
 # rather than results, they were identical in both tables, and the two stack
@@ -201,7 +197,7 @@ RESULTS_COLS <- c("pitch_type",
                   "zone_pct", "chase_pct", "gb_pct", "xwoba", "rv")
 
 #' any_of(), not all_of(), and this is the one place in the file where that is
-#' correct rather than sloppy. fg_exact is absent whenever stuff_all carried no
+#' correct rather than sloppy. stuff_plus is absent whenever stuff_all carried no
 #' rows, and a traits table with no Stuff+ column is a real state the app
 #' renders. The pitch-level contract in features.R uses all_of() for the
 #' opposite reason: there a missing column IS the bug.
@@ -227,9 +223,6 @@ gt_chassis <- function(tbl, title, n_visible = ncol(tbl)) {
   # a local argument does not exist, so both `px(col_px)` and an injected `!!wid`
   # fail at RENDER time with "object not found" -- late, and only on the code
   # path that renders. Building the formula text sidesteps the lookup entirely.
-  # n_visible, not ncol(tbl): the traits table carries a hidden fg_exact that gt
-  # does not render, so dividing by ncol() would make its columns narrower than
-  # the arithmetic intends and leave the two tables unequal again.
   base <- TABLE_WIDTH_PX %/% n_visible
   rem  <- TABLE_WIDTH_PX %% n_visible
   # The remainder goes on the first column, which is the pitch code in both
@@ -361,37 +354,17 @@ apply_league_ref <- function(g, ref, notes = TRUE) {
 #' convention the number already showed, and five lines of prose under a six-row
 #' table was most of what the reader saw. The results table keeps its own.
 #'
-#' `fg_window` is retained in the signature and is deliberately unused. It is the
-#' date window of the FanGraphs export behind Stuff+, and it used to print in a
-#' source note so a stale export could not be invisible on the page. That note is
-#' gone, so THE PAGE NO LONGER SHOWS WHETHER STUFF+ IS STALE. Keeping the
-#' argument keeps the caller in app.R passing it and makes restoring the note a
-#' one-line change rather than a re-trace.
-#'
-#' Two things went with the footnotes and are worth naming, because neither is
-#' recoverable by reading the table:
-#'
-#'   - the sweeper caveat. FanGraphs grades ST and SV under SL, so a sweeper's
-#'     Stuff+ is a slider's. The table now shows that grade with nothing marking
-#'     it as not pitch specific. fg_exact still carries the fact, so restoring
-#'     the footnote needs no new data.
-#'   - the fallback and no-reference daggers, dropped in apply_league_ref() with
-#'     their legend. Those cells keep their fill and weight, so a percentile off
-#'     a coarser league cut is no longer distinguishable from an exact one.
-traits_gt <- function(tbl, hand, fg_window = NULL, label = hand_label(hand),
-                      ref = NULL) {
+#' Stuff+ is Jonathan's v2 grade (R/stuff.R): how often the shape misses bats
+#' when swung at, league-wide 100, SD 10.
+traits_gt <- function(tbl, hand, label = hand_label(hand), ref = NULL) {
   g <- tbl |>
-    # fg_exact is hidden below, so it must not claim width.
-    gt_chassis(paste0("PITCH TRAITS (", label, ")"),
-               n_visible = ncol(tbl) - sum("fg_exact" %in% names(tbl))) |>
+    gt_chassis(paste0("PITCH TRAITS (", label, ")")) |>
     cols_label(
       pitch_type = "PITCH", count = "COUNT", pitch_pct = "PITCH%",
       velocity = "AVG VELO", ivb = "IVB", hb = "HB", vaa = "VAA", spin = "SPIN",
       ext = "EXT", rel_ht = "REL HT", rel_side = "REL SIDE",
       stuff_plus = "Stuff+"
     )
-
-  if ("fg_exact" %in% names(tbl)) g <- g |> cols_hide(fg_exact)
 
   g <- style_pitch_codes(g, tbl)
 

@@ -20,7 +20,7 @@ expect <- function(l, got, want) if (!identical(got, want))
 build <- function(id, hand, dates = NULL) {
   pl <- build_pitch_level(ad, id)
   if (!is.null(dates)) pl <- filter(pl, game_date >= dates[1], game_date <= dates[2])
-  tb <- arsenal_table(pl, hand, tibble(pitch_type = character(), stuff_plus = numeric(), fg_exact = logical()))
+  tb <- arsenal_table(pl, hand, tibble(pitch_type = character(), stuff_plus = numeric()))
   dn <- arsenal_denoms(pl, hand); pth <- unique(pl$p_throws)[1]
   panel <- function(project, render, glyphs) {
     sub <- project(tb)
@@ -219,9 +219,9 @@ expect("count_usage_gt renders with no ref",     renders(count_usage_gt(uw, "R")
 expect("count_usage_gt renders with ref = NULL", renders(count_usage_gt(uw, "R", ref = NULL)), TRUE)
 expect("count_usage_gt renders with a context",  renders(count_usage_gt(uw, "R", ref = uctx)), TRUE)
 expect("traits_gt renders with no ref",
-       renders(traits_gt(traits_tbl(arsenal_table(pm, "R", tibble(pitch_type=character(), stuff_plus=numeric(), fg_exact=logical()))), "R")), TRUE)
+       renders(traits_gt(traits_tbl(arsenal_table(pm, "R", tibble(pitch_type=character(), stuff_plus=numeric()))), "R")), TRUE)
 expect("results_gt renders with no ref",
-       renders(results_gt(results_tbl(arsenal_table(pm, "R", tibble(pitch_type=character(), stuff_plus=numeric(), fg_exact=logical()))), "R")), TRUE)
+       renders(results_gt(results_tbl(arsenal_table(pm, "R", tibble(pitch_type=character(), stuff_plus=numeric()))), "R")), TRUE)
 expect("count_usage_gt ref=NULL equals no ref",
        identical(gspec(count_usage_gt(uw, "R")), gspec(count_usage_gt(uw, "R", ref = NULL))), TRUE)
 expect("count_usage_gt with a ref actually differs",
@@ -305,7 +305,7 @@ nan_frame <- tibble::tibble(
   woba_denom   = c(NA, NA, 1, NA, NA, NA, rep(NA, 6)),
   estimated_woba_using_speedangle = c(NA, NA, 0.3, NA, NA, NA, rep(NA, 6)))
 nan_tb <- arsenal_table(nan_frame, "All",
-                        tibble(pitch_type = character(), stuff_plus = numeric(), fg_exact = logical()))
+                        tibble(pitch_type = character(), stuff_plus = numeric()))
 cu <- nan_tb[as.character(nan_tb$pitch_type) == "CU", ]
 cat(sprintf("  CU: %d pitches, whiff %s, chase %s, xwOBA %s\n", cu$count,
             format(cu$whiff_pct), format(cu$chase_pct), format(cu$xwoba)))

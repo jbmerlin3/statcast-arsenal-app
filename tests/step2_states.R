@@ -258,7 +258,7 @@ expect("an unknown pitch type stops rather than guessing", bad, "stopped")
 cat("\n=== the case that reported the bug: Logan Webb ===\n")
 webb <- build_pitch_level(ad, 657277L)
 w_tb <- arsenal_table(webb, "All", tibble::tibble(pitch_type = character(),
-                                                  stuff_plus = numeric(), fg_exact = logical()))
+                                                  stuff_plus = numeric()))
 w_ctx <- resolve_table(w_tb, arsenal_denoms(webb, "All"), ref, webb$p_throws[1], "All")
 hue <- function(col, pt) {
   i <- which(as.character(w_tb$pitch_type) == pt)
@@ -302,8 +302,7 @@ expect("and a slider reads glove-side negative for both",
 # normalised, and the cost was that the same pitch carried opposite signs on
 # two tabs under one label. Changed 2026-09-09.
 lhp <- filter(build_pitch_level(ad, 702070), pitch_type == "SI")
-no_stuff <- tibble::tibble(pitch_type = character(), stuff_plus = numeric(),
-                           fg_exact = logical())
+no_stuff <- tibble::tibble(pitch_type = character(), stuff_plus = numeric())
 lhp_si <- arsenal_table(lhp, "All", no_stuff)
 cat(sprintf("  a LHP sinker in the table reads HB %+.1f\n", lhp_si$hb[1]))
 expect("the table shows a lefty's sinker with the chart's RAW sign, negative",

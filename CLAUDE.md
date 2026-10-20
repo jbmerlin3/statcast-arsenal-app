@@ -18,10 +18,9 @@ fresh clone with no credentials and no live Savant pull.
 In scope. The six chart and table outputs that already exist, wrapped in an app,
 with league context added.
 
-Out of scope for now. The user's Stuff+ v4 model. Stuff+ grades come from a
-FanGraphs CSV export, exactly as they do today. See the Stuff+ section below for
-the one thing that must stay true so the model can be swapped in later without a
-refactor.
+Stuff+ is the user's own v2 model (stuff-plus repo), shipped as precomputed
+2026 daily sums in `lookups/`. The model itself is never run in the app. See the
+Stuff+ section below.
 
 ## How to work with Jonathan
 
@@ -47,7 +46,7 @@ statcast-arsenal-app/
     features.R              # build_pitch_level(), pl_trim column contract
     plots.R                 # plot_movement, plot_velo, plot_usage, plot_heatmap
     tables.R                # arsenal_table, traits_gt, results_gt, count_usage_tbl, count_usage_gt
-    stuff.R                 # load_fg_stuff() and the stuff_all contract
+    stuff.R                 # load_stuff_v2(), stuff_for() and the stuff_all contract
     league.R                # league_ref lookup + percentile helpers
     mod_*.R                 # Shiny modules, one per tab. NOT YET, see below
   scripts/
@@ -56,7 +55,6 @@ statcast-arsenal-app/
   data/
     app_data.rds            # the only pitch data the app reads at startup
     league_ref.rds
-  fg_stuff/                 # dated FanGraphs Stuff+ exports
   tests/
 ```
 
@@ -73,7 +71,7 @@ wrapped around it.
 Two triggers to revisit, whichever comes first. The comparison pane in the
 backlog renders the same table for two windows, which is exactly what
 namespacing exists for. And the first tab that grows its own control, such as a
-FanGraphs export selector on the characteristics tab.
+Stuff+ source selector on the characteristics tab.
 
 **The second trigger fired on 2026-08-23 and the answer was still no.** The
 Search tab owns seven inputs of its own, so the encapsulation argument is real
@@ -173,8 +171,8 @@ costs nothing at runtime.
 from `mlb_rosters()`. Guarantees every searchable name has data behind it.
 Savant's `player_name` is "Last, First" and needs reformatting for display.
 
-**stuff_all.** A frame with `pitch_type`, `stuff_plus`, `fg_exact`. Produced by
-`load_fg_stuff()` and passed into `arsenal_table()` as an argument. See below.
+**stuff_all.** A frame with `pitch_type`, `stuff_plus`. Produced by
+`stuff_for()` and passed into `arsenal_table()` as an argument. See below.
 
 **game_date is character, not Date.** It arrives that way from Savant and is
 stored that way in `statcast_clean_2026.rds` and `app_data.rds`. Coerce
@@ -214,8 +212,7 @@ calls the StatsAPI `gameLog` endpoint directly, one request per pitcher. Measure
 It is the only input the app tolerates missing. Steps 1 to 3 are pure transforms
 of one store; this one depends on somebody else's uptime, so step 4 fails soft,
 leaves the previous file in place and warns. The panel prints the log's own max
-game date, the same way the arsenal table prints the FanGraphs export window, so
-staleness is visible on the page rather than silent.
+game date, so staleness is visible on the page rather than silent.
 
 **IP is written in thirds, not decimals.** StatsAPI returns `"5.2"` meaning five
 innings and two outs, NOT five and two tenths. Read as a decimal it understates
@@ -232,26 +229,24 @@ it lands at 3.088, against the 3.10 that gets quoted from memory.
 
 `arsenal_table(df, hand, stuff_all)` takes grades as an argument rather than
 computing them. Keep it that way. The app's data layer decides where `stuff_all`
-comes from, and the table function stays ignorant of the source. When the v4
-model gets wired in later, it produces the same three columns and nothing
-downstream changes.
+comes from, and the table function stays ignorant of the source.
 
-Do not inline a FanGraphs read inside `arsenal_table()`, and do not add a
-`source` argument to it. The resolver lives in `R/stuff.R`.
+Do not inline a Stuff+ read inside `arsenal_table()`, and do not add a `source`
+argument to it. The loader lives in `R/stuff.R`.
 
-Practical handling of the CSV, which is a manual export and goes stale silently.
+How the v2 grades get here and what must stay true.
 
-- Exports live in `fg_stuff/` named with their pull date
-- `load_fg_stuff()` takes an explicit `path`. Never rely on a default, a stale
-  default has already produced "No FanGraphs row" warnings that looked like an ID
-  mismatch
-- Print the export date in the gt source note so staleness is visible on the page
-- No player row is not the same as NA on an existing row. A missing row usually
-  means the export predates the callup, not an ID problem. Check `nrow()` on a
-  manual filter of the raw CSV before assuming
-- `FG_TO_SAVANT` handles code mismatches. FanGraphs SL absorbs Savant ST and SV,
-  FanGraphs FO maps to Savant FS. When `fg_exact == FALSE`, `traits_gt()`
-  auto-adds the footnote. Do not manually re-flag these
+- The model lives in the stuff-plus repo (`PREREG_v2.md`, `DECISIONS.md`). Its
+  `export_v2.R` scores every 2026 pitch against a same-side and an opposite-side
+  hitter and writes daily sums by pitcher, date, pitch type and batter side to
+  `lookups/stuff_v2_2026.csv`, plus `lookups/stuff_v2_scale.csv`
+- "All" is the 50/50 grade over every throw; "R" and "L" use the throws to that
+  side, scored as that side, so the grade matches the table's pitch counts
+- Pitch codes follow the app's `PITCH_CODE_RULES` (KC and CS into CU, FO into FS)
+  in the export, or the grades will not join
+- `tests/step18_stuff_v2.R` checks parity with the model's own leaderboard; it
+  must pass after any regeneration
+- Before 2027: live scoring moves into the data build
 
 ## Hard rules
 

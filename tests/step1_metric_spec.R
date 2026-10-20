@@ -3,7 +3,7 @@ suppressMessages({library(dplyr);library(tidyr);library(purrr);library(forcats)
                   library(ggplot2);library(gt);library(readr)})
 invisible(lapply(sort(list.files("R", full.names = TRUE)), source))
 plt   <- readRDS("tests/fixtures/pl_trim_702070.rds")
-stuff <- suppressMessages(load_fg_stuff(702070, "fg_stuff/fg_stuff_2026-03-26_2026-08-17.csv"))
+stuff <- stuff_for(load_stuff_v2(), 702070, c("2026-03-25", "2026-09-27"), "R")
 tb    <- arsenal_table(plt, "R", stuff)
 
 bad_keys <- setdiff(names(ARSENAL_METRIC_COLS), names(tb))

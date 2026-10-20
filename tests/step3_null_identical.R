@@ -165,11 +165,11 @@ BASELINE <- file.path(REPO, "tests/fixtures/chars_gt_null_baseline.rds")
 FIXTURE  <- file.path(REPO, "tests/fixtures/pl_trim_702070.rds")
 plt <- readRDS(FIXTURE)
 
-# Same two synthetic stuff_all inputs phase1_artifacts.R uses, so the fg_exact
-# footnote branch is exercised and no FanGraphs file is read.
-stuff_empty <- tibble(pitch_type = character(), stuff_plus = numeric(), fg_exact = logical())
-stuff_mixed <- tibble(pitch_type = c("FF", "SL"), stuff_plus = c(95.0, 102.7),
-                      fg_exact = c(TRUE, FALSE))
+# Two synthetic stuff_all inputs, so no grade file is read. stuff_mixed once
+# also exercised a FanGraphs-mismatch footnote; that flag and the footnote are
+# gone (Stuff+ v2, 2026-10-20) and the render must not move because of it.
+stuff_empty <- tibble(pitch_type = character(), stuff_plus = numeric())
+stuff_mixed <- tibble(pitch_type = c("FF", "SL"), stuff_plus = c(95.0, 102.7))
 
 # gt stamps one random table id, so strip it. Same treatment as gt_spec() in
 # tests/phase1_artifacts.R, and it must stay the rendered page rather than the
@@ -191,8 +191,9 @@ current <- list(
   traits_R        = render(traits_gt(traits_tbl(arsenal_table(plt, "R", stuff_empty)), "R")),
   traits_L        = render(traits_gt(traits_tbl(arsenal_table(plt, "L", stuff_empty)), "L")),
   traits_footnote = render(traits_gt(traits_tbl(arsenal_table(plt, "R", stuff_mixed)), "R")),
-  traits_window   = render(traits_gt(traits_tbl(arsenal_table(plt, "R", stuff_empty)), "R",
-                                     fg_window = "2026-03-26 to 2026-08-17")),
+  # fg_window was already unused before it was removed, so this case must still
+  # render identically to its baseline without it.
+  traits_window   = render(traits_gt(traits_tbl(arsenal_table(plt, "R", stuff_empty)), "R")),
   results_R       = render(results_gt(results_tbl(arsenal_table(plt, "R", stuff_empty)), "R")),
   results_L       = render(results_gt(results_tbl(arsenal_table(plt, "L", stuff_empty)), "L"))
 )
