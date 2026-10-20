@@ -1,8 +1,9 @@
 # stuff.R
 #
 # Stuff+ grades from Jonathan's own model (stuff-plus repo, v2): how often a
-# pitch's shape misses bats when swung at, on a league-wide 100 scale with
-# SD 10. Validated on the held-out 2026 season before it was wired in.
+# pitch's shape misses bats when swung at. 100 is the average pitch within its
+# group (fastball, offspeed, hard breaker, soft breaker), 10 points one SD
+# within the group. Validated on the held-out 2026 season before it was wired in.
 #
 # This file owns where a grade comes from. arsenal_table() takes the result as
 # its stuff_all argument and knows nothing about the source. Keep it that way:
@@ -19,6 +20,15 @@
 library(readr)
 library(dplyr)
 library(tibble)
+
+
+#' The scale group for a pitch type, as the app labels pitches (KC and CS are
+#' already folded into CU, FO into FS)
+STUFF_GROUP <- function(pitch_type) dplyr::case_when(
+  pitch_type %in% c("FF", "SI", "FC")       ~ "fastball",
+  pitch_type %in% c("CH", "FS")             ~ "offspeed",
+  pitch_type == "SL"                        ~ "hard breaker",
+  pitch_type %in% c("ST", "SV", "CU")       ~ "soft breaker")
 
 
 #' Load the daily sums and the scale constants, once at startup
@@ -59,6 +69,7 @@ stuff_for <- function(sv, mlb_id, dates, hand) {
   col <- if (hand == "All") "s_both" else "s_side"
   d |>
     summarise(g = sum(.data[[col]]) / sum(n), .by = pitch_type) |>
-    transmute(pitch_type,
-              stuff_plus = round(100 + 10 * (g - sv$scale$mu) / sv$scale$sigma))
+    mutate(group = STUFF_GROUP(pitch_type)) |>
+    inner_join(sv$scale, by = "group") |>
+    transmute(pitch_type, stuff_plus = round(100 + 10 * (g - mu) / sigma))
 }

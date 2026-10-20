@@ -240,6 +240,8 @@ How the v2 grades get here and what must stay true.
   `export_v2.R` scores every 2026 pitch against a same-side and an opposite-side
   hitter and writes daily sums by pitcher, date, pitch type and batter side to
   `lookups/stuff_v2_2026.csv`, plus `lookups/stuff_v2_scale.csv`
+- 100 and SD 10 are per group (`STUFF_GROUP()` in `R/stuff.R`; constants in
+  `lookups/stuff_v2_scale.csv`, one row per group)
 - "All" is the 50/50 grade over every throw; "R" and "L" use the throws to that
   side, scored as that side, so the grade matches the table's pitch counts
 - Pitch codes follow the app's `PITCH_CODE_RULES` (KC and CS into CU, FO into FS)

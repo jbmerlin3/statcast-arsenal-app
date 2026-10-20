@@ -98,17 +98,17 @@ rank within pitch type and hand, which stops the table implying a cross-pitch
 ranking, but it does not solve the reading.
 
 Stuff+ is Jonathan's own model (v2): how often a pitch's shape misses bats when
-swung at, on a league-wide 100 scale with SD 10, validated on the held-out 2026
-season. It reads velocity, movement, release point, the gap to the pitcher's
+swung at, validated on the held-out 2026 season. 100 is the average pitch within
+its group (fastball: FF, SI, FC; offspeed: CH, FS; hard breaker: SL; soft
+breaker: ST, SV, CU) and 10 points is one SD within the group. It reads velocity, movement, release point, the gap to the pitcher's
 hardest fastball, batter side and the gap between movement and spin axis; never
 the pitch label, count or location. Grades follow the date window and the
 Batter side selector. Built and documented in the separate stuff-plus repo;
 2026 grades ship as daily sums in `lookups/stuff_v2_2026.csv`.
 
-Reading it: the scale is league-wide, so 100 is the average pitch of any type,
-and four-seamers and sinkers sit lower than breaking balls by design because
-they miss fewer bats. A 99 four-seamer is about the 73rd percentile among
-four-seamers. Grades come from the model's cleaned pitches (no bunts, no
+Reading it: a grade compares a pitch with its own group, so a 110 sinker and a
+110 sweeper are each well above their group, not equally nasty; fastballs as a
+group miss fewer bats than breaking balls. Grades come from the model's cleaned pitches (no bunts, no
 position players pitching), so a grade can rest on a few pitches fewer than the
 table's COUNT.
 

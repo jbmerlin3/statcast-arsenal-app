@@ -648,8 +648,8 @@ SHAPE_DELTA_SPAN  <- 6
 #
 # Stuff+ needs no league reference: it is centred on 100 by construction, so the
 # anchor is already in the scale. What it does need is a span. v2 sets SD 10
-# across pitcher pitch types, so 25 is 2.5 SD: nearly every grade sits inside
-# it, and beyond it the fill clamps rather than running off.
+# across pitcher pitch types within each group, so 25 is 2.5 SD: nearly every
+# grade sits inside it, and beyond it the fill clamps rather than running off.
 STUFF_PLUS_SPAN <- 25
 
 # The unfilled states paint white explicitly rather than painting nothing.
