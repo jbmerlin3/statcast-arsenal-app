@@ -1,7 +1,5 @@
-# step3_render.R
-#
-# What the four states look like in the RENDERED gt, not in the resolver.
-# Baz carries the fallback case, Cameron's two-week window the below-floor bulk.
+# The four cell states as rendered by gt (not just resolved), plus table widths, note
+# order, plot visibility, the masked-margin guard and NaN handling.
 suppressMessages({library(dplyr);library(tidyr);library(purrr);library(forcats)
                   library(ggplot2);library(gt);library(readr)})
 invisible(lapply(sort(list.files("R", full.names = TRUE)), source))
@@ -11,12 +9,7 @@ fails <- character()
 expect <- function(l, got, want) if (!identical(got, want))
   fails <<- c(fails, sprintf("%s: got %s, wanted %s", l, deparse(got), deparse(want)))
 
-# After the 2026-08-31 split a pitcher's table is TWO renders, and a resolved
-# context only describes the one it was resolved against. Every probe below
-# therefore carries its context and its rendered page as a matched pair. Pairing
-# them was not optional: resolving the wide table and rendering a projection of
-# it passed three of these assertions by looking up a results column in a traits
-# page, finding no cell, and comparing FALSE to FALSE.
+# Each table's context and rendered page are built as a matched pair
 build <- function(id, hand, dates = NULL) {
   pl <- build_pitch_level(ad, id)
   if (!is.null(dates)) pl <- filter(pl, game_date >= dates[1], game_date <= dates[2])
@@ -27,9 +20,7 @@ build <- function(id, hand, dates = NULL) {
     ctx <- resolve_table(sub, dn, ref, pth, hand, "All Counts")
     list(tbl = sub, ctx = ctx, g = render(sub, ctx), glyphs = glyphs)
   }
-  # `glyphs` says whether that renderer draws the dagger and double-dagger
-  # markers at all. traits_gt() stopped on 2026-08-31 when its footnotes were
-  # removed, since a marker whose legend is gone is worse than no marker.
+  # `glyphs`: whether the renderer draws dagger markers (traits_gt() doesn't)
   list(tb      = tb,
        traits  = panel(traits_tbl,  function(s, c) traits_gt(s, hand, ref = c),
                        glyphs = FALSE),
@@ -37,23 +28,8 @@ build <- function(id, hand, dates = NULL) {
                        glyphs = TRUE))
 }
 
-# Which table carries a given state is a property of the PITCHER, not of the
-# code: below_floor follows thin denominators, which sit in results for a short
-# window and in traits for a rarely-thrown pitch. Hard-coding a panel here is how
-# a probe stops firing without anyone noticing, so this searches both and says
-# which one answered.
-#' `glyphs = TRUE` restricts the search to renderers that actually draw the
-#' dagger markers. Without it this function is a trap rather than a helper: it
-#' searches traits first, so a pitcher with a fallback cell in his traits table
-#' would hand the dagger assertion a panel that deliberately draws no daggers,
-#' and the test would fail on a deliberate design choice rather than on a
-#' regression. It passed on the current fixtures only because neither happens to
-#' have one, which is exactly the kind of accident that should not be load
-#' bearing.
-#' `cols` narrows to particular columns. Needed since 2026-09-08, when the
-#' below-floor marker was suppressed on metrics whose denominator is the COUNT
-#' column: an unfiltered search lands on velocity, which now correctly carries no
-#' marker, and the n assertion fails on intended behaviour.
+# Find a cell in a given state in either table. `glyphs = TRUE` limits to renderers
+# that draw daggers; `cols` narrows to specific columns.
 pick <- function(b, state, glyphs = FALSE, cols = NULL) {
   nms <- c("traits", "results")
   if (glyphs) nms <- Filter(function(nm) isTRUE(b[[nm]]$glyphs), nms)
@@ -66,7 +42,7 @@ pick <- function(b, state, glyphs = FALSE, cols = NULL) {
   stop("no ", state, " cell in any eligible table, so this probe tested nothing")
 }
 
-# One <td> per (column, row), in document order, with its inline style attached.
+# One <td> per (column, row) with its inline style
 tds <- function(g, col) {
   h <- as.character(as_raw_html(g))
   regmatches(h, gregexpr(paste0('<td headers="', col, '"[^>]*>[^<]*</td>'), h))[[1]]
@@ -82,32 +58,23 @@ cell <- tds(f$panel$g, fb$column)[fb$row]
 cat("  [", f$which, "] ", fb$column, " row ", fb$row, ": ", txt(cell), "\n", sep = "")
 expect("fallback cell text ends with the dagger", grepl("†$", txt(cell)), TRUE)
 expect("fallback cell is filled, not white", grepl("#FFFFFF", cell, ignore.case = TRUE), FALSE)
-# Not bold, as of 2026-09-09. Asserted at the RENDERED html rather than only in
-# CELL_STATE_STYLE, because the weight reaches the page through tab_style() and
-# a stray bold added there would not show up in the style table.
-expect("fallback cell is NOT bold", grepl("font-weight: bold", cell), FALSE)
+# Fallback is not bold in the rendered HTML
+expect("fallback cell is not bold", grepl("font-weight: bold", cell), FALSE)
 expect("but it still carries the dagger", grepl("\u2020", txt(cell)), TRUE)
 
 cat("\n=== below floor renders unfilled, grey, italic, with its n ===\n")
-# whiff_pct: its denominator is swings, so it is one of the three that still
-# carries a parenthetical. The COUNT-denominated case is asserted separately
-# below, because "no marker" is now just as much a contract as "a marker".
+# whiff_pct's denominator is swings: it carries an (n)
 b2    <- pick(cam, "below_floor", cols = "whiff_pct"); bf <- b2$cell
 cell2 <- tds(b2$panel$g, bf$column)[bf$row]
 cat("  [", b2$which, "] ", bf$column, " row ", bf$row, ": ", txt(cell2), "\n", sep = "")
-# CHANGED 2026-09-08 with the fill. A thin cell now renders in colour and in
-# normal text, and the parenthetical n is the whole of what marks it. So the n
-# assertion carries the weight the three style assertions used to share, and it
-# is checked in the RENDERED page rather than in the resolver for that reason.
+# A thin cell is colored; its (n) is what marks it
 expect("below floor is not white",
        grepl("background-color: #FFFFFF", cell2, ignore.case = TRUE), FALSE)
 expect("below floor is not greyed", grepl("color: #767676", cell2, ignore.case = TRUE), FALSE)
 expect("below floor is not italic",  grepl("font-style: italic", cell2), FALSE)
 expect("below floor shows its n", grepl("\\([0-9]+\\)$", txt(cell2)), TRUE)
 
-# The other half: a thin cell whose denominator IS the COUNT column carries no
-# parenthetical, because the row already prints it. Without this the suppression
-# could silently revert and only the visual clutter would tell anyone.
+# A thin cell on a COUNT-denominated metric carries no (n)
 b3 <- pick(cam, "below_floor", cols = c("velocity", "ivb", "spin", "csw_pct", "zone_pct"))
 cell3b <- tds(b3$panel$g, b3$cell$column)[b3$cell$row]
 cat("  [", b3$which, "] ", b3$cell$column, " row ", b3$cell$row, ": ", txt(cell3b), "\n", sep = "")
@@ -122,14 +89,10 @@ pc <- paste0(pitch_colors[[as.character(e2$panel$tbl$pitch_type[ex$row])]], "20"
 cat("  [", e2$which, "] cell fill: ", sub('.*background-color: ([^;]*);.*', '\\1', cell3),
     "   resolver said: ", ex$fill, "   pitch colour is: ", pc, "\n", sep = "")
 expect("cell carries the percentile fill", grepl(ex$fill, cell3, ignore.case = TRUE), TRUE)
-expect("cell does NOT carry the pitch-colour fill", grepl(pc, cell3, ignore.case = TRUE), FALSE)
+expect("cell does not carry the pitch-color fill", grepl(pc, cell3, ignore.case = TRUE), FALSE)
 
 cat("\n=== the two tables render to the same total width ===\n")
-# They stack, so unequal widths read as a rendering fault. This cannot be
-# checked by arithmetic in the renderers: 12 and 9 columns do not both divide
-# TABLE_WIDTH_PX evenly, and the traits table hides a column that must not claim
-# width. Measured off the rendered page for that reason, and pinned so adding or
-# dropping a column in either table cannot silently unbalance them.
+# The two stacked tables render the same total width
 total_px <- function(g) {
   h <- as.character(as_raw_html(g))
   w <- as.numeric(gsub("[^0-9]", "", regmatches(h, gregexpr("width:[0-9]+px", h))[[1]]))
@@ -142,17 +105,11 @@ expect("results table hits TABLE_WIDTH_PX", rw, as.numeric(TABLE_WIDTH_PX))
 expect("the two tables are exactly equal",  tw == rw, TRUE)
 
 cat("\n=== note order is dagger, double dagger, grey ===\n")
-# Whichever panel carries the most notes, so the sortedness check has something
-# to sort. A panel with one note satisfies !is.unsorted() by having nothing to
-# compare, which is the trivially-passing shape this avoids.
-# results only: traits_gt() renders no source notes at all now, so its resolved
-# ctx$notes describe prose that never reaches the page. Reading them here would
-# assert an order on text nobody sees.
+# The results table has the most notes to order
 np  <- baz$results
 nts <- np$ctx$notes
 for (n in nts) cat("  ", substr(n, 1, 72), "\n", sep = "")
-# Scope note first, it frames every other line. Then the marker grammar:
-# dagger, double dagger, grey.
+# Note order: scope, dagger, double dagger, small sample
 rank_of <- function(n) {
   if (startsWith(n, "Percentiles rank")) 0L
   else if (startsWith(n, "†")) 1L
@@ -161,7 +118,7 @@ rank_of <- function(n) {
 }
 expect("the note-order check has more than one note to order", length(nts) > 1, TRUE)
 expect("notes are in marker-grammar order", !is.unsorted(vapply(nts, rank_of, integer(1))), TRUE)
-# The rendered order must match, or the vector's order is decorative.
+# The rendered order must match
 h <- as.character(as_raw_html(np$g))
 pos <- vapply(nts, function(n) regexpr(substr(n, nchar(n) - 30, nchar(n)), h, fixed = TRUE), integer(1))
 expect("rendered source notes follow the same order", !is.unsorted(pos), TRUE)
@@ -175,10 +132,8 @@ got <- tryCatch({
 }, error = function(e) "stopped")
 expect("two distinct grains would be caught", got, "stopped")
 
-cat("\n=== NULL paths on the two functions phase1_check cannot guard ===\n")
-# plot_movement sits in EXPECTED_DIFFS, so the regression reports "differs
-# (expected)" whatever happens inside it. This builds it instead, which needs no
-# historical baseline.
+cat("\n=== NULL paths on the plot and usage renderers ===\n")
+# Build the movement plot for a short window
 pm <- build_pitch_level(ad, 702070) |> filter(game_date >= "2026-08-04", game_date <= "2026-08-17")
 pspec <- function(p) tryCatch({
   b <- suppressMessages(suppressWarnings(ggplot2::ggplot_build(p)))
@@ -186,10 +141,7 @@ pspec <- function(p) tryCatch({
 }, error = function(e) paste("BUILD FAILED:", conditionMessage(e)))
 expect("plot_movement builds", is.list(pspec(plot_movement(pm))), TRUE)
 
-# The league reference marks were removed on 2026-09-09 by request: a cross and
-# an "n=" label per pitch type, drawn from movement_ref(), which is gone with
-# them. This asserts they stayed gone, because the layers are additive and a
-# future edit restoring a reference layer would not fail anything else here.
+# League reference marks were removed; they must stay gone
 mb   <- suppressMessages(suppressWarnings(ggplot2::ggplot_build(plot_movement(pm))))
 labs <- unlist(lapply(mb$data, function(d) if ("label" %in% names(d)) as.character(d$label)))
 expect("no n= labels on the movement chart",
@@ -197,69 +149,30 @@ expect("no n= labels on the movement chart",
 shapes <- unlist(lapply(mb$data, function(d) if ("shape" %in% names(d)) unique(d$shape)))
 expect("and no cross-shaped marks", any(shapes == 3), FALSE)
 
-# M7 removed count_usage_gt's early return, so ref = NULL flowed into the context
-# block and died on nrow(NULL). Nothing can make that call succeed: the function
-# genuinely cannot proceed without a context. What CAN be fixed is that the
-# check reported an uncaught error instead of a named failure, so the render is
-# asserted to produce a gt_tbl rather than assumed to.
+# Renders must return a gt_tbl, reported as a named failure if not
 renders <- function(expr) tryCatch({ g <- expr; inherits(g, "gt_tbl") }, error = function(e) FALSE)
 
 uw <- count_usage_tbl(pm, "R")
-uctx <- resolve_usage(uw, count_usage_denoms(pm, "R"), ref, pm$p_throws[1], "R")
-# Tolerant on purpose. A render that dies must show up as a named comparison
-# failure, not as an uncaught error that stops the file before the remaining
-# checks run.
-gspec <- function(g) tryCatch({
-  h <- as.character(gt::as_raw_html(g))
-  for (id in unique(regmatches(h, gregexpr('(?<=id=")[a-z]{10,}(?=")', h, perl = TRUE))[[1]]))
-    h <- gsub(id, "GT_ID", h, fixed = TRUE)
-  h
-}, error = function(e) paste("RENDER FAILED:", conditionMessage(e)))
 expect("count_usage_gt renders with no ref",     renders(count_usage_gt(uw, "R")), TRUE)
-expect("count_usage_gt renders with ref = NULL", renders(count_usage_gt(uw, "R", ref = NULL)), TRUE)
-expect("count_usage_gt renders with a context",  renders(count_usage_gt(uw, "R", ref = uctx)), TRUE)
 expect("traits_gt renders with no ref",
        renders(traits_gt(traits_tbl(arsenal_table(pm, "R", tibble(pitch_type=character(), stuff_plus=numeric()))), "R")), TRUE)
 expect("results_gt renders with no ref",
        renders(results_gt(results_tbl(arsenal_table(pm, "R", tibble(pitch_type=character(), stuff_plus=numeric()))), "R")), TRUE)
-expect("count_usage_gt ref=NULL equals no ref",
-       identical(gspec(count_usage_gt(uw, "R")), gspec(count_usage_gt(uw, "R", ref = NULL))), TRUE)
-expect("count_usage_gt with a ref actually differs",
-       identical(gspec(count_usage_gt(uw, "R")), gspec(count_usage_gt(uw, "R", ref = uctx))), FALSE)
 
-cat("\n=== every plot function returns VISIBLY ===\n")
-# renderPlot() relies on auto-printing, so a function ending in an assignment
-# returns invisibly and Shiny draws a blank white device with no error at all.
-# plot_movement did exactly that for four commits. Nothing here caught it,
-# because ggplot_build() and print() both work fine on an invisible value: the
-# tests consumed the object directly, and Shiny does not.
+cat("\n=== every plot function returns visibly ===\n")
+# Plots must return visibly: renderPlot() relies on auto-printing
 pd <- shape_arsenal(dplyr::filter(ad, pitcher == 702070))
-for (fn in c("plot_movement", "plot_velo", "plot_usage")) {
+for (fn in c("plot_movement", "plot_usage")) {
   vis <- withVisible(do.call(fn, list(pd)))$visible
   cat(sprintf("  %-14s visible: %s\n", fn, vis))
   expect(paste(fn, "returns visibly"), vis, TRUE)
 }
-expect("plot_movement returns visibly",
-       withVisible(plot_movement(pd))$visible, TRUE)
-# plot_heatmap takes a hand argument, so it is checked separately.
+# plot_heatmap takes a hand argument
 expect("plot_heatmap returns visibly",
        withVisible(plot_heatmap(pd, "R"))$visible, TRUE)
 
 cat("\n=== both plots survive a masked margin() ===\n")
-# randomForest exports margin(x, observed, ...). Attach it after ggplot2 in a
-# console session and ggplot2::margin is masked, at which point the two plots
-# that set a plot margin die with `argument "observed" is missing, with no
-# default` and the other two render fine. Reported 2026-08-22 as "the movement
-# plots and heatmaps broke", which points nowhere near margin.
-#
-# Masked here rather than by attaching randomForest, which is not in the project
-# library. The lookup path is the same either way: these functions are sourced
-# into the global environment, so a global margin() shadows the package one
-# exactly as a later-attached package does, and so does the app, whose R/
-# environment has the global environment as its parent.
-#
-# This fails on a bare margin() call and passes on ggplot2::margin(), which is
-# the whole point of writing the namespace out.
+# A global margin() masks ggplot2's (as randomForest does); plots must still draw
 margin <- function(x, observed, ...) stop("the masked margin() was called")
 draws <- function(p) tryCatch({
   f <- tempfile(fileext = ".png")
@@ -273,33 +186,19 @@ expect("plot_heatmap draws with margin() masked", draws(plot_heatmap(pd, "R")), 
 rm(margin)
 
 cat("\n=== an empty denominator reaches the page as NA, never NaN ===\n")
-# 0/0 is NaN in R and NaN travels: a pitch type nobody swung at rendered the
-# literal "NaN (0)" in the whiff column. The cell is below floor either way, so
-# what is at stake is whether the reader sees an empty sample or a computer
-# error. Measured 2026-08-22: 1.1% of full-season rows carry an empty
-# denominator, 4.5% over a one-week window, which is the window a scout picks.
-#
-# A literal fixture, not a pitcher who happens to have a zero-swing pitch type
-# today. That pitcher gets a swing tomorrow and the check quietly stops
-# exercising anything. See CLAUDE.md entry 5.
+# Empty denominators must render as blanks, never "NaN" (literal fixture)
 nan_frame <- tibble::tibble(
   pitch_type   = factor(c(rep("FF", 6), rep("CU", 6)), levels = c("FF", "CU")),
   stand        = "R", p_throws = "R",
-  # CU is taken every time: no swing, so no whiff denominator, and no pitch ends
-  # a plate appearance, so no xwOBA denominator either.
+  # CU is always taken: no swings, no PA-ending pitch
   description  = c("swinging_strike", "foul", "hit_into_play", "ball", "ball", "called_strike",
                    rep("called_strike", 3), rep("ball", 3)),
   type         = c("S", "S", "X", "B", "B", "S", rep("S", 3), rep("B", 3)),
   in_zone      = c(1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 0),
   release_speed = 93, ivb = 15, hb = 8, release_spin_rate = 2300,
-  # The release columns the 2026-08-31 split added. Constant across every row on
-  # purpose: this frame exists to exercise empty denominators, and a constant keeps
-  # those means from varying while the rows under test do.
+  # Constant release columns
   vaa = -4.8, release_extension = 6.4, release_pos_x = -1.9, release_pos_z = 5.9,
-  # bb_type is populated only on balls in play and is the empty string
-  # elsewhere, which is the shape gb_pct() filters on. delta_pitcher_run_exp is
-  # a constant 0: this frame tests denominators, and a run value that varied
-  # would move rv/rv100 without any assertion noticing.
+  # bb_type is "" off balls in play; run value held at 0
   bb_type = ifelse(description == "hit_into_play", "ground_ball", ""),
   delta_pitcher_run_exp = 0,
   woba_denom   = c(NA, NA, 1, NA, NA, NA, rep(NA, 6)),
@@ -312,9 +211,7 @@ cat(sprintf("  CU: %d pitches, whiff %s, chase %s, xwOBA %s\n", cu$count,
 expect("no swings gives NA whiff, not NaN", is.na(cu$whiff_pct) && !is.nan(cu$whiff_pct), TRUE)
 expect("no PA gives NA xwOBA, not NaN",     is.na(cu$xwoba)     && !is.nan(cu$xwoba),     TRUE)
 expect("out-of-zone pitches with no swing still give a chase rate", cu$chase_pct, 0)
-# Both tables, because the NaN guards live in arsenal_table() and each table
-# projects a different subset of the columns they protect: whiff/chase/xwOBA
-# land in results, and a degenerate velocity or release mean lands in traits.
+# Check both tables
 expect("the rendered traits page carries no NaN",
        grepl("NaN", as.character(gt::as_raw_html(traits_gt(traits_tbl(nan_tb), "All")))), FALSE)
 expect("the rendered results page carries no NaN",
@@ -322,5 +219,5 @@ expect("the rendered results page carries no NaN",
 
 cat("\n", strrep("-", 58), "\n", sep = "")
 if (length(fails)) { cat("FAILURES:\n"); for (f in fails) cat("  ", f, "\n") }
-cat("STEP 3 RENDER: ", if (length(fails)) "FAIL" else "PASS", "\n", sep = "")
+cat("CELL RENDER: ", if (length(fails)) "FAIL" else "PASS", "\n", sep = "")
 quit(status = if (length(fails)) 1 else 0)

@@ -1,24 +1,6 @@
-# Step 2 acceptance. The four states, resolved through resolve_cell() only.
-#
-# Coverage, verified by mutation on the committed tree rather than assumed.
-# Caught: direction ignored so a low metric fills as high; a fallback cell
-# resolving exact; a below-floor cell resolving no_reference or exact; a
-# no_reference cell losing its marker; below_floor losing its n; and
-# resolve_column growing a branch resolve_cell does not have.
-#
-# NOT caught, and worth knowing. Nudging a floor from 50 to 49 passes, because
-# no cell here sits on a boundary: the below-floor case is 13 swings against 50
-# and the exact cases clear it by a wide margin. Same shape of gap as the
-# KDE_MIN_N one recorded in scripts/phase1_check.R. A cell chosen to sit at
-# floor and floor-1 would close it.
-#
-# The four-way greyscale check is a backstop, not the primary guard. Every
-# mutation above was caught by a sharper single expectation first; the four-way
-# check fired only when a mutation collapsed two states outright.
-#
-#
-# Denominators are computed here the same way build_league_ref.R computes them,
-# because arsenal_table() does not return them until step 3.
+# The four cell states through resolve_cell(): which state each case lands in, how it
+# renders (fill, text, marker), direction per pitch type, HB mirroring, floor
+# boundaries, zone geometry and the whiff and swing definitions.
 suppressMessages({library(dplyr);library(tidyr);library(purrr);library(forcats)
                   library(ggplot2);library(gt);library(readr)})
 invisible(lapply(sort(list.files("R", full.names = TRUE)), source))
@@ -65,28 +47,8 @@ fails <- character()
 expect <- function(lbl, got, want) if (!identical(got, want))
   fails <<- c(fails, sprintf("%s: got %s, wanted %s", lbl, deparse(got), deparse(want)))
 
-# FOUND, NOT HARDCODED, as of 2026-09-08. This is the third time this fixture
-# went stale and the previous two were re-derived by hand:
-#
-#   Shane Baz's KC broke when PITCH_CODE_RULES mapped KC to CU, so the filter
-#   matched zero rows and every field came back NA.
-#   Jhoan Duran's FS vs RHH broke when the store grew from 589k to 636k pitches
-#   and the fine cell gained enough pitchers to resolve exact instead.
-#
-# Both were correct behaviour of a correct change, and both left this block
-# asserting nothing. A fallback is by definition a cell whose fine league cut is
-# THIN, so any particular one stops being a fallback the moment the reference
-# fills in. Pinning a pitcher pins the thing most likely to move.
-#
-# So the fallback case is now searched for. What gets asserted is the fallback
-# CONTRACT, which is what this block was always about: the coarser grain is
-# named, the dagger is set, the cell is bold and filled, and has_ref is TRUE.
-# The n_pitchers and the exact grain string are printed rather than asserted,
-# because those are properties of whichever cell answered.
-#
-# If no fallback exists anywhere, that FAILS loudly rather than passing. A
-# league reference with no coarse fallbacks left would mean this state is dead
-# and the test should say so, not go quiet.
+# Find a fallback cell in the current league_ref instead of pinning one (they
+# fill in as the season grows). Fails if none exists.
 cat("=== THE FALLBACK CASE, found in the current league_ref ===\n")
 find_fallback <- function() {
   cands <- ad |>
@@ -114,34 +76,26 @@ if (!is.null(hit)) {
   cat("  state note: ", fb$state_note, "\n", sep = "")
   expect("fallback state",       fb$state,       "fallback")
   expect("fallback names a coarser grain", is.character(fb$grain) && nzchar(fb$grain), TRUE)
-  expect("fallback grain is NOT the finest cut",
+  expect("fallback grain is not the finest cut",
          grepl("stand", fb$grain, fixed = TRUE), FALSE)
   expect("fallback marker",      fb$marker,      "\u2020")
-  # Not bold. The dagger is the whole signal; bold made the least certain cell
-  # the loudest one. See the note above CELL_STATE_STYLE.
-  expect("fallback is NOT bold",  fb$font_weight, "normal")
+  # Fallback is marked by the dagger, not bold
+  expect("fallback is not bold",  fb$font_weight, "normal")
   expect("fallback is filled",   fb$fill != PCTILE_UNFILLED, TRUE)
   expect("fallback has_ref",     fb$has_ref,     TRUE)
   expect("fallback quotes a real pitcher count", fb$n_pitchers >= MIN_REF_PITCHERS, TRUE)
 }
 
-cat("\n=== THE OTHER THREE STATES ===\n")
-# Below floor uses a real, non-zero denominator rather than an empty pitch type.
-# A 0-swing row resolves below_floor for the wrong reason and would pass even if
-# the floor comparison were broken.
+cat("\n=== exact, below floor and no reference ===\n")
+# Below floor on a real, non-zero denominator
 ex <- cell_for(669358, "FF", "R", "velo");   show("exact        Baz FF velo vs RHH", ex)
-# FF has a thick reference, 172 pitchers, so this isolates the pitcher's own
-# thin sample from any question about the league side.
+# Thick league cell (172 pitchers), thin pitcher sample
 bf <- cell_for(669358, "FF", "R", "whiff_pct", c("2026-08-04", "2026-08-17"))
                                              show("below floor  Baz FF whiff%, 2wk", bf)
-# xwOBA is thin on BOTH sides for a secondary pitch: 7 PA against a 50 floor,
-# and the league cell itself tops out at 17 pitchers. Below floor wins.
+# Thin on both sides: below floor wins
 xw <- cell_for(669358, "KC", "R", "xwoba", c("2026-08-04", "2026-08-17"))
                                              show("both thin    Baz KC xwOBA, 2wk", xw)
-# Waldron's knuckleball is the only pitch type with no reference row at any
-# grain, so it is the only way to reach no_reference on live data. The same cell
-# under whiff% is below floor AND no reference at once, which is the precedence
-# case: 29 swings against a 50 floor, and no KN reference either way.
+# Waldron's knuckleball has no reference at any grain
 nr <- cell_for(663362, "KN", "R", "velo");   show("no reference Waldron KN velo", nr)
 pr <- cell_for(663362, "KN", "R", "whiff_pct"); show("precedence   Waldron KN whiff%", pr)
 hb <- cell_for(669358, "FF", "R", "hb");     show("directional  Baz FF hb vs RHH", hb)
@@ -157,11 +111,7 @@ expect("below floor state",  bf$state, "below_floor")
 expect("below floor n is real, not zero", bf$n > 0, TRUE)
 expect("below floor is under its floor",  bf$n < bf$floor, TRUE)
 expect("below floor marker", bf$marker, paste0(" (", bf$n, ")"))
-# CHANGED 2026-09-08. A thin cell is now FILLED with its real percentile and set
-# in normal text; the floor annotates the sample instead of withholding the
-# comparison. The marker assertion above is what still guarantees the reader is
-# told the denominator, and it is the one that must never be relaxed: without it
-# a 60% whiff off five swings is a deep red cell with nothing qualifying it.
+# A thin cell is filled with its real percentile; its (n) marker must stay
 expect("below floor is filled with its real percentile",
        bf$fill != PCTILE_UNFILLED, TRUE)
 expect("below floor is normal text, not italic", bf$font_style, "normal")
@@ -176,36 +126,20 @@ expect("no reference fill",   nr$fill,  PCTILE_UNFILLED)
 expect("no reference has no n in the marker", grepl("(", nr$marker, fixed = TRUE), FALSE)
 expect("no reference has_ref", nr$has_ref, FALSE)
 
-# Precedence: below floor wins, and has_ref still records the missing reference.
+# Below floor wins precedence; has_ref still records the missing reference
 expect("precedence resolves below floor", pr$state, "below_floor")
 expect("precedence keeps the diagnostic",  pr$has_ref, FALSE)
 expect("xwoba both-thin resolves below floor", xw$state, "below_floor")
 expect("xwoba both-thin keeps the diagnostic", xw$has_ref, FALSE)
 
-# hb has moved twice on 2026-08-24 and this assertion moved with it both times,
-# which is the point: a check that stops describing the code has to move, not go
-# quiet. First it left the neutral scale for the diverging one. Then it stopped
-# being coloured by RANK at all and started being coloured by distance from the
-# league average, so comparing its fill to pctile_fill(hb$pctile, ...) is now
-# wrong by construction.
-# Asserted as a PROPERTY rather than by rebuilding the value here. The first
-# attempt re-derived the league mean with lg_cell(..., "All", ...) and got a
-# different cell than resolve_cell uses, because the ladder picks the cell and
-# the batter side is part of the grain. Reimplementing a lookup inside a check
-# is how a check ends up testing its own arithmetic.
+# HB shades by distance from the league mean, not by rank
 expect("hb is not on the neutral scale", hb$fill == pctile_fill(hb$pctile, "neutral"), FALSE)
-expect("and is NOT the rank-based diverging fill either, because it is magnitude now",
+expect("and is not the rank-based diverging fill",
        hb$fill == pctile_fill(hb$pctile, metric_direction("hb", "FF")), FALSE)
 expect("its reported percentile is still the true RANK", hb$pctile >= 0 && hb$pctile <= 100, TRUE)
 
 cat("\n=== IVB and HB colour by DISTANCE from the league, not by rank ===\n")
-# A rank is not comparable across rows: 90th percentile is one inch in a
-# cutter's tight IVB spread and four in a curveball's wide one, so two cells the
-# same colour meant different things. The fill is now inches off the league
-# average for that pitch type, on one scale for the whole table, saturating at
-# SHAPE_DELTA_SPAN. Savant reads the same way: "9.0 MORE DROP", not "94th".
-#
-# Literal spans, never written through the constant, per CLAUDE.md entry 5.
+# Literal spans, not SHAPE_DELTA_SPAN
 expect("sitting on the league average is the middle of the ramp",
        shape_delta_pctile(10, 10), 50)
 expect("six inches above saturates the top",   shape_delta_pctile(16, 10), 100)
@@ -214,25 +148,16 @@ expect("three inches above is halfway up",     shape_delta_pctile(13, 10), 75)
 expect("and it clamps rather than running off", shape_delta_pctile(40, 10), 100)
 expect("a missing league mean gives no fill",   is.na(shape_delta_pctile(10, NA_real_)), TRUE)
 
-# The point of the change, stated as the thing rank could not do: two pitches at
-# the SAME distance from their own league average get the same colour, even
-# though their ranks differ because their pitch types have different spreads.
+# Same distance from the league mean, same color, whatever the rank
 same_delta <- pctile_fill(shape_delta_pctile(10, 6), "high") ==
               pctile_fill(shape_delta_pctile(-2, -6), "high")
 expect("equal deltas render equal, whatever the rank would have said", same_delta, TRUE)
-# And direction still applies on top: for a pitch that wants the low end, being
-# BELOW the league is what reddens.
+# For a pitch that wants the low end, below the league reddens
 drop_is_red <- grDevices::col2rgb(pctile_fill(shape_delta_pctile(4, 10), "low"))
 expect("a drop pitch four inches under the league fills red", drop_is_red[1] > drop_is_red[3], TRUE)
 
 cat("\n=== shape direction is a property of the PITCH, not of the metric ===\n")
-# The bug: IVB and HB were graded globally high-is-good, so Logan Webb's changeup
-# sat 5 inches under the league on IVB and rendered BLUE. Savant paints that same
-# pitch red and labels it "9.0 MORE DROP", because drop is what a changeup is
-# for. More ride is the point of a four-seam and the death of a sinker.
-#
-# Written out per pitch type as literals. There is no default on purpose: a code
-# that arrives unlisted must stop the render rather than inherit a guess.
+# Direction per pitch type, as literals; an unlisted code must stop
 expect("a four-seam wants ride",        metric_direction("ivb", "FF"), "high")
 expect("a cutter wants ride",           metric_direction("ivb", "FC"), "high")
 expect("a sinker wants drop",           metric_direction("ivb", "SI"), "low")
@@ -244,18 +169,17 @@ expect("a changeup wants arm side",     metric_direction("hb",  "CH"), "high")
 expect("a cutter wants glove side",     metric_direction("hb",  "FC"), "low")
 expect("a sweeper wants glove side",    metric_direction("hb",  "ST"), "low")
 expect("a curveball wants glove side",  metric_direction("hb",  "CU"), "low")
-# A knuckleball has no intended shape, which is the whole idea.
+# A knuckleball has no intended shape
 expect("a knuckleball keeps the neutral grey on ivb", metric_direction("ivb", "KN"), "neutral")
 expect("and on hb",                                   metric_direction("hb",  "KN"), "neutral")
-# Everything that is not a shape still comes from METRIC_SPEC.
+# Non-shape metrics come from METRIC_SPEC
 expect("whiff% is unaffected by pitch type", metric_direction("whiff_pct", "CH"), "high")
 expect("xwOBA is still low-is-good",         metric_direction("xwoba", "FF"), "low")
-# An unlisted code stops rather than defaulting. Caught and named so a dead call
-# fails the comparison it belongs to instead of killing the file. Entry 7.
+# Unlisted code: caught and named, not a crash
 bad <- tryCatch(metric_direction("ivb", "ZZ"), error = function(e) "stopped")
 expect("an unknown pitch type stops rather than guessing", bad, "stopped")
 
-cat("\n=== the case that reported the bug: Logan Webb ===\n")
+cat("\n=== direction by pitch type: Logan Webb ===\n")
 webb <- build_pitch_level(ad, 657277L)
 w_tb <- arsenal_table(webb, "All", tibble::tibble(pitch_type = character(),
                                                   stuff_plus = numeric()))
@@ -275,32 +199,20 @@ expect("his sweeper's glove-side sweep reads red",              hue("hb",  "ST")
 expect("and his four-seam, which does not ride, reads blue",    hue("ivb", "FF"), "blue")
 
 cat("\n=== HB is arm-side normalised on the comparison surfaces, raw on the chart ===\n")
-# The bug this closes: HB is stored as -pfx_x * 12, arm side positive for a
-# righty and negative for a lefty, so once the cell carried a COLOUR two pitchers
-# with identical arm-side run rendered red and blue. Measured before the fix:
-# RHP sinkers averaged +14.9 and LHP sinkers -15.1.
-#
-# Three surfaces, and they must not all agree. The TABLE and LEAGUE_REF are
-# normalised, because a percentile has to mean one thing. The MOVEMENT CHART is
-# not, because a lefty's slider really does sweep the other way and the league
-# cross has to land on his pitches.
+# HB: league_ref is arm-side positive for both hands; the table shows the raw sign
 expect("a righty is unchanged by normalisation", arm_side_sign("R"), 1)
 expect("a lefty is flipped",                     arm_side_sign("L"), -1)
 
 si_r <- lg_cell(ref, "hb", "SI", "R", "All", "All Counts")$row$mean[[1]]
 si_l <- lg_cell(ref, "hb", "SI", "L", "All", "All Counts")$row$mean[[1]]
 cat(sprintf("  league_ref sinker HB: RHP %+.1f, LHP %+.1f\n", si_r, si_l))
-# Both positive is the whole point. Before the fix these were +14.9 and -15.1.
-expect("both hands' sinkers now read arm-side POSITIVE in league_ref",
+expect("both hands' sinkers read arm side positive in league_ref",
        si_r > 0 && si_l > 0, TRUE)
 expect("and a slider reads glove-side negative for both",
        lg_cell(ref, "hb", "SL", "R", "All", "All Counts")$row$mean[[1]] < 0 &&
        lg_cell(ref, "hb", "SL", "L", "All", "All Counts")$row$mean[[1]] < 0, TRUE)
 
-# The table shows the RAW sign, the same one the movement chart draws, so a
-# lefty's sinker reads negative here. It used to read positive, arm-side
-# normalised, and the cost was that the same pitch carried opposite signs on
-# two tabs under one label. Changed 2026-09-09.
+# The table shows the raw sign: a lefty's sinker reads negative
 lhp <- filter(build_pitch_level(ad, 702070), pitch_type == "SI")
 no_stuff <- tibble::tibble(pitch_type = character(), stuff_plus = numeric())
 lhp_si <- arsenal_table(lhp, "All", no_stuff)
@@ -308,11 +220,7 @@ cat(sprintf("  a LHP sinker in the table reads HB %+.1f\n", lhp_si$hb[1]))
 expect("the table shows a lefty's sinker with the chart's RAW sign, negative",
        lhp_si$hb[1] < 0, TRUE)
 
-# ...and the ranking is still arm-side mirrored, which is the half of this that
-# has no visible symptom. Delete the mirror in resolve_table() and the numbers
-# above still read correctly while every left-hander's HB column shades
-# backwards. So this asserts the percentile came from the MIRRORED value and
-# could not have come from the raw one.
+# The ranking must still use the mirrored value
 lhp_cells <- resolve_table(traits_tbl(lhp_si), arsenal_denoms(lhp, "All"),
                            ref, "L", "All")$cells
 hb_cell <- lhp_cells[lhp_cells$metric == "hb", ][1, ]
@@ -322,15 +230,12 @@ cat(sprintf("  lefty SI hb percentile: shown %d, mirrored %d, raw %d\n",
             as.integer(hb_cell$pctile), as.integer(p_mirrored), as.integer(p_raw)))
 expect("the percentile is read off the arm-side mirrored value",
        as.integer(hb_cell$pctile), as.integer(p_mirrored))
-# Guards the guard: if these two ever coincide the check above proves nothing.
+# Guard the guard: raw and mirrored must rank differently here
 expect("and the raw value would have ranked differently",
        identical(as.integer(p_mirrored), as.integer(p_raw)), FALSE)
 
 cat("\n=== which metrics claim a direction, and which refuse ===\n")
-# Pinned as literals because direction is the least visible thing in this whole
-# system: getting one backwards renders a .420 xwOBA deep red and nothing errors.
-# ivb, hb and zone_pct became directional on 2026-08-24 by request, and what
-# their red now means is "more than average", not "better than average".
+# Directions pinned as literals
 expect("xwOBA is the only low-is-good metric",
        METRIC_SPEC$metric[METRIC_SPEC$direction == "low"], "xwoba")
 expect("usage% is the only metric that still refuses a direction",
@@ -338,41 +243,24 @@ expect("usage% is the only metric that still refuses a direction",
 expect("ivb, hb and zone% are directional now",
        all(METRIC_SPEC$direction[METRIC_SPEC$metric %in% c("ivb", "hb", "zone_pct")] == "high"),
        TRUE)
-# HB is not arm-side normalised, so "high is red" means red is a more POSITIVE
-# value: arm side for a RHP, glove side for a LHP. Measured on league_ref, RHP
-# sinkers mean +14.9 and LHP sinkers -15.1. The table footnote says so, and this
-# asserts the footnote is still there to say it.
+# HB keeps its explanatory footnote
 expect("hb still carries the note explaining what its high end is",
        grepl("arm-side", col_notes_for(c(hb = "hb"))[["hb"]]), TRUE)
 
 cat("\n=== Stuff+ shades off 100, with no league lookup ===\n")
-# Read out of the RENDERED table, not from a local reimplementation of the
-# formula. The first version of this block recomputed the ramp here, which meant
-# it agreed with itself no matter what arsenal_gt() actually did: centring the
-# ramp on 0 instead of 100 passed it. CLAUDE.md entry 8, testing where the app
-# does not stand.
-#
-# The expected hexes are LITERAL. The first version wrote them through
-# STUFF_PLUS_SPAN, so doubling the span moved the fixture with the constant and
-# passed. Entry 5, in a test written the same afternoon it was cited.
+# Stuff+ shading, read from the rendered table; expected colors are literals
 stuff_tbl <- tibble::tibble(
   pitch_type = factor(c("FF", "SL", "CH", "CU", "SI"),
                       levels = c("FF", "SL", "CH", "CU", "SI")),
   count = 100L, pitch_pct = 20, velocity = 93, ivb = 15, hb = 5, spin = 2300,
-  # The release traits the 2026-08-31 split added. Present but never asserted on
-  # here: this block is about the Stuff+ ramp. They are carried because this
-  # tibble stands in for arsenal_table() output, and a stand-in missing columns
-  # the real thing always has is how a renderer grows a dependency nobody tests.
+  # Columns the real arsenal_table() returns
   vaa = -5.0, ext = 6.5, rel_ht = 5.9, rel_side = 2.0,
   gb_pct = 42.0, rv = 1.0,
   strike_pct = 60, whiff_pct = 25, csw_pct = 28, zone_pct = 50, chase_pct = 30,
   xwoba = 0.310,
-  # 75 and 125 are the ends of the span; 40 and 160 are outside it and must
-  # clamp to the same two colours rather than running off or wrapping.
-  stuff_plus = c(100, 85, 115, 40, 160),
-  fg_exact = TRUE)
-# Stuff+ is a TRAIT after the split, so the shading it is asserting on renders
-# through traits_gt(). Still read out of the rendered page, not recomputed.
+  # 75 and 125 are the span ends; 40 and 160 must clamp
+  stuff_plus = c(100, 85, 115, 40, 160))
+# Stuff+ renders through traits_gt()
 sh <- as.character(gt::as_raw_html(traits_gt(traits_tbl(stuff_tbl), "All")))
 stuff_bg <- regmatches(sh, gregexpr('<td headers="stuff_plus"[^>]*>', sh))[[1]]
 hex_of <- function(td) toupper(sub('.*background-color: (#[0-9A-Fa-f]{6}).*', "\\1", td))
@@ -387,16 +275,7 @@ expect("40 clamps to the blue end", got[4], "#7FA8D6")
 expect("160 clamps to the red end", got[5], "#DC8163")
 
 cat("\n=== the neutral scale is symmetric grey, not a rank ramp ===\n")
-# The line above compares the fill to the same function that produced it, so it
-# passes whatever the palette is. That is CLAUDE.md entry 5 in the test file
-# itself: a fixture written in terms of the thing it checks. These pin the
-# DESIGN with literals instead.
-#
-# Neutral metrics have no good end: more IVB is a plus on a four-seam and a
-# minus on a curveball, and HB flips sign with the pitcher's hand. So the scale
-# says how UNUSUAL a value is and refuses to say whether that is good, which
-# means it must be symmetric about the middle and must share the diverging
-# scale's middle stop so average looks the same in both.
+# Neutral scale: symmetric, sharing the diverging middle stop
 cat(sprintf("  p10 %s   p50 %s   p90 %s\n", pctile_fill(10, "neutral"),
             pctile_fill(50, "neutral"), pctile_fill(90, "neutral")))
 expect("average is the same light grey as the diverging scale's average",
@@ -411,9 +290,7 @@ expect("no hue: the neutral scale is pure grey",
        all(vapply(c(0, 25, 50, 75, 100), function(p) {
          r <- grDevices::col2rgb(pctile_fill(p, "neutral")); r[1] == r[2] && r[2] == r[3]
        }, logical(1))), TRUE)
-# No reference is an unfilled cell with grey ITALIC text; these are filled cells
-# with black text. Two channels apart, which is what makes grey safe to use here
-# at all.
+# Neutral fills never use the no-reference text grey
 expect("no neutral fill collides with the below-floor text grey",
        PCTILE_GREY %in% vapply(0:100, function(p) pctile_fill(p, "neutral"), character(1)),
        FALSE)
@@ -436,11 +313,7 @@ expect("unknown direction stops",
        tryCatch({pctile_fill(50, "up"); "no error"}, error = function(e) "stopped"), "stopped")
 
 cat("\n=== every resolved fill is a usable colour ===\n")
-# M3 last turn set below_floor to filled and was caught by a crash inside
-# gt::cell_fill(color = NA), because a below-floor cell's percentile can be NA.
-# A crash proves gt is intolerant, not that the guard works. This asserts the
-# invariant gt was accidentally enforcing: fill is always a real colour, so any
-# state that starts producing NA is named here instead of aborting a render.
+# Every resolved fill is a real color, never NA
 all_fills <- unlist(lapply(unname(ARSENAL_METRIC_COLS), function(m) {
   pl2 <- build_pitch_level(ad, 669358) |> filter(stand == "R")
   d2  <- denoms(pl2)
@@ -455,21 +328,8 @@ expect("no resolved fill is NA", sum(is.na(all_fills)), 0L)
 expect("every fill is a 6-digit hex", all(grepl("^#[0-9A-Fa-f]{6}$", all_fills)), TRUE)
 
 cat("\n=== FLOOR BOUNDARY: floor and floor-1 on a rate metric ===\n")
-# The value and the league reference are real: Baz FF whiff% vs RHH against a
-# 172-pitcher cell. Only the denominator is pinned, to 50 and 49, which is the
-# only way to sit exactly on the boundary. No real pitch type is guaranteed to
-# land on 50 swings, and one that did would drift on the next data pull.
-#
-# The denominators are written as LITERALS, not as `fl` and `fl - 1`, and that
-# is the whole point of this block. A test that reads the same constant the code
-# reads slides along with it: nudge the floor to 49 and a `swings = fl - 1` cell
-# becomes a 48-swing cell, still below floor, still passing. It would test the
-# comparison operator and never the parameter. Verified by mutation, that
-# earlier version passed a 50 -> 49 nudge.
-#
-# So changing a floor deliberately now requires editing this block. That is
-# intended: the floors come from a measured resampling study recorded in
-# theme.R, not from taste, and a silent edit to one is exactly what this guards.
+# Floor boundary with literal denominators 50 and 49 (fl and fl - 1 would move
+# with the constant). Changing a floor means editing this block.
 fl   <- METRIC_SPEC$floor[METRIC_SPEC$metric == "whiff_pct"]
 pl_r <- build_pitch_level(ad, 669358) |> filter(stand == "R", pitch_type == "FF")
 v_ff <- metric_value(pl_r, "whiff_pct")
@@ -480,19 +340,13 @@ below_1  <- resolve_cell(ref, v_ff, "whiff_pct", "FF", "R", "R", "All Counts",
 show("at floor     swings=50", at_floor)
 show("floor - 1    swings=49", below_1)
 
-# Pins the parameter itself, independently of the two cells above.
+# Pin the floor itself
 expect("the rate floor is still the measured 50", fl, 50)
 
-# n == floor must be eligible. This pins the comparison operator: a >= quietly
-# changed to > flips the at-floor cell and nothing else in the file.
+# n == floor is eligible (pins >= vs >)
 expect("at floor is eligible",     at_floor$state, "exact")
 expect("at floor is filled",       at_floor$fill != PCTILE_UNFILLED, TRUE)
-# A cell with NO COMPUTABLE VALUE must stay white, and this became a real risk on
-# 2026-09-08 rather than a theoretical one. below_floor fires for two unrelated
-# reasons -- a thin denominator and a non-finite value -- and now that the state
-# paints, only the is.finite() guard in resolve_cell() separates them. Drop that
-# guard and a pitch type nobody swung at gets cell_fill(NA), which paints an
-# uncoloured cell rather than a white one and looks like a rendering fault.
+# A cell with no computable value stays white
 na_cell <- resolve_cell(ref, NA_real_, "whiff_pct", "FF", "R", "All", "All Counts",
                         counts = list(pitches = 40, swings = 0, oz = 12, pa = 6))
 expect("a value with no sample is below floor", na_cell$state, "below_floor")
@@ -500,7 +354,7 @@ expect("a value with no sample stays WHITE",    na_cell$fill,  PCTILE_UNFILLED)
 expect("and its fill is a real colour, never NA", is.na(na_cell$fill), FALSE)
 
 expect("floor - 1 is below floor", below_1$state,  "below_floor")
-# Still filled: the state boundary is what moves at the floor, not the colour.
+# Below floor is still filled
 expect("floor - 1 is filled anyway", below_1$fill != PCTILE_UNFILLED, TRUE)
 expect("floor - 1 carries its n",  below_1$marker, paste0(" (", below_1$n, ")"))
 expect("floor - 1 reports its n",  below_1$marker, " (49)")
@@ -519,13 +373,7 @@ expect("column equals scalar", col$state, scalar)
 expect("column keeps one row per pitch type", nrow(col), length(vals))
 
 cat("\n=== the strike zone carries a ball radius on BOTH axes ===\n")
-# Literal coordinates, never ZONE_HALF_FT or BALL_RADIUS_FT. A fixture written
-# in terms of the constant it pins slides with the constant and pins nothing.
-# See CLAUDE.md entry 5.
-#
-# A pitch is a strike if any part of the ball crosses the zone, so the bound is
-# the nominal edge plus 0.1208 ft. The vertical bound carried no radius until
-# 2026-08-23, which put zone% 4.6 points below Savant's.
+# Zone edges as literal coordinates: nominal edge + 0.1208 ft ball radius
 zbot <- 1.60; ztop <- 3.40
 iz <- function(x, z) in_zone_flag(x, z, zbot, ztop)
 expect("dead centre is in",                     iz(0,     2.5),  1L)
@@ -539,49 +387,36 @@ expect("the radius applies to the low bound too, not just the high",
        c(iz(0, 1.50), iz(0, 1.45)), c(1L, 0L))
 
 cat("\n=== a foul tip is a whiff and a swing ===\n")
-# Savant counts a foul tip as a whiff, verified against their leaderboard over
-# 105 pitchers: misses / swings ran 2.10 points light, adding foul_tip lands at
-# 0.09 MAE. It has to stay in swing_only as well, since it is a swing whichever
-# way the numerator goes, and it is the whiff half of csw_pct too.
+# Foul tips are whiffs (matches Savant)
 expect("foul_tip counts as a whiff", "foul_tip" %in% whiff_desc, TRUE)
 expect("foul_tip is still a swing",  "foul_tip" %in% swing_only, TRUE)
 ft_frame <- tibble::tibble(
   pitch_type   = factor("SL", levels = "SL"), stand = "R", p_throws = "R",
-  # 10 swings: 2 misses, 1 foul tip, 1 missed bunt and 1 foul bunt among them.
-  # Whiffs are the 2 misses, the foul tip and the missed bunt, so 4 of 10 is
-  # 40.0. The set that shipped this morning gives 2 of 8, 25.0. Counting bunts
-  # as swings but never as whiffs gives 3 of 10, 30.0. Dropping the foul tip
-  # from the denominator gives 3 of 9, 33.3.
+  # 10 swings, 4 whiffs (2 misses, a foul tip, a missed bunt) = 40.0
   description  = c("swinging_strike", "swinging_strike", "foul_tip",
                    "missed_bunt", "foul_bunt",
                    rep("foul", 3), rep("hit_into_play", 2), rep("ball", 4)),
   type         = c(rep("S", 8), rep("X", 2), rep("B", 4)),
   in_zone      = c(rep(1, 8), 1, 1, rep(0, 4)),
   release_speed = 85, ivb = 2, hb = 3, release_spin_rate = 2400,
-  # The release columns the 2026-08-31 split added. Constant across every row on
-  # purpose: this frame exists to exercise the whiff and CSW denominators, and a constant keeps
-  # those means from varying while the rows under test do.
+  # Constant release columns
   vaa = -7.0, release_extension = 6.4, release_pos_x = -1.9, release_pos_z = 5.9,
-  # bb_type is populated only on balls in play and is the empty string
-  # elsewhere, which is the shape gb_pct() filters on. delta_pitcher_run_exp is
-  # a constant 0: this frame tests denominators, and a run value that varied
-  # would move rv/rv100 without any assertion noticing.
+  # bb_type is "" off balls in play; run value held at 0
   bb_type = ifelse(description == "hit_into_play", "ground_ball", ""),
   delta_pitcher_run_exp = 0,
   woba_denom   = c(rep(NA, 8), 1, 1, rep(NA, 4)),
   estimated_woba_using_speedangle = c(rep(NA, 8), 0.3, 0.2, rep(NA, 4)))
 ft_tb <- arsenal_table(ft_frame, "All",
-                       tibble::tibble(pitch_type = character(), stuff_plus = numeric(),
-                                      fg_exact = logical()))
+                       tibble::tibble(pitch_type = character(), stuff_plus = numeric()))
 cat(sprintf("  10 swings, 2 misses, a foul tip and a missed bunt: whiff%% %.1f, CSW%% %.1f\n",
             ft_tb$whiff_pct, ft_tb$csw_pct))
 expect("whiff% is 4 of 10: foul tip and missed bunt both count", ft_tb$whiff_pct, 40.0)
 expect("csw% counts them too", ft_tb$csw_pct, round(4/14*100, 1))
 expect("a bunt attempt is a swing", all(c("foul_bunt", "missed_bunt", "bunt_foul_tip") %in% swing_only), TRUE)
 expect("a missed bunt is a whiff",  "missed_bunt" %in% whiff_desc, TRUE)
-expect("a foul bunt is NOT a whiff", "foul_bunt" %in% whiff_desc, FALSE)
+expect("a foul bunt is not a whiff", "foul_bunt" %in% whiff_desc, FALSE)
 
 cat("\n", strrep("-", 60), "\n", sep = "")
 if (length(fails)) { cat("FAILURES:\n"); for (f in fails) cat("  ", f, "\n") }
-cat("STEP 2: ", if (length(fails)) "FAIL" else "PASS", "\n", sep = "")
+cat("CELL STATES: ", if (length(fails)) "FAIL" else "PASS", "\n", sep = "")
 quit(status = if (length(fails)) 1 else 0)

@@ -1,23 +1,6 @@
 # plots.R
-#
-# The four ggplot outputs. Each takes an already-trimmed pitch-level frame from
-# features.R and returns a plot object, so nothing here reads a file or filters
-# to a pitcher.
-#
-# Requires theme.R for pitch_colors, KDE_BW, and KDE_MIN_N.
-#
-# margin() is called as ggplot2::margin() everywhere below, deliberately.
-# randomForest exports margin(x, observed, ...), and attaching it after ggplot2
-# in a long-lived console session masks the ggplot2 one. That killed exactly the
-# two plots that set a plot margin, with `argument "observed" is missing, with
-# no default`, while the other two rendered fine. app.R calling library(ggplot2)
-# does not protect against it: library() on an already-attached package does not
-# re-order the search path. Verified 2026-08-22 by masking margin in a test.
-#
-# Handedness note. plot_usage, plot_movement, and plot_velo take no `hand`
-# argument. plot_usage splits on `stand` internally to build its two-sided bars,
-# and the other two ignore `stand` entirely. Only plot_heatmap filters to one
-# side, so only it needs the argument.
+# ggplot charts. Each takes one pitcher's pitch-level frame and returns a plot.
+# Write ggplot2::margin() in full: randomForest::margin() can mask it.
 
 library(ggplot2)
 library(dplyr)
@@ -26,19 +9,14 @@ library(forcats)
 library(purrr)
 
 
-#' Pitch types too rare in this window to draw, per CHART_MIN_SHARE and CHART_MIN_N
-#'
-#' Measured over the whole frame, both batter sides, so the Movement chart, the
-#' two-sided usage chart and the heat maps hide the same types whichever batter
-#' side is selected, and a times-through view hides what Overall hides. One
-#' definition of "in the arsenal" on every chart.
+#' Pitch types too rare to chart, counted over both batter sides
 chart_hidden_types <- function(df, min_share = CHART_MIN_SHARE, min_n = CHART_MIN_N) {
   n <- table(as.character(df$pitch_type))
   sort(names(n)[n / sum(n) < min_share & n < min_n])
 }
 
 
-#' "4 SV", or NULL when nothing was left off
+#' "4 SV left off the charts...", or NULL
 chart_hidden_note <- function(df, hidden) {
   if (!length(hidden)) return(NULL)
   n <- table(as.character(df$pitch_type))[hidden]
@@ -47,14 +25,8 @@ chart_hidden_note <- function(df, hidden) {
 }
 
 
-#' Two-sided usage bars, LHH left and RHH right
-#'
-#' complete() fills pitch types a hitter side never saw with zero. Without it the
-#' bar is absent rather than empty, and a pitch he simply never throws to lefties
-#' reads the same as one he does not throw at all.
-#'
-#' `hide` drops bars AFTER the shares are computed, so a hidden type stays in
-#' the denominator and every other bar reads the same as it did with it drawn.
+#' Two-sided usage bars, LHH left and RHH right. Hidden types are dropped after
+#' shares are computed.
 plot_usage <- function(df, hide = character()) {
   usage <- df |>
     count(pitch_type, stand) |>
@@ -62,19 +34,12 @@ plot_usage <- function(df, hide = character()) {
     group_by(stand) |>
     mutate(pct = n / sum(n) * 100) |>
     ungroup() |>
-    # Negative values mirror the left half of the diverging bar. Labels use
-    # abs() below so the axis reads as a percentage on both sides.
+    # LHH bars run left
     mutate(plot_pct = if_else(stand == "L", -pct, pct))
   if (length(hide)) {
     usage <- usage |> filter(!pitch_type %in% hide) |> mutate(pitch_type = droplevels(pitch_type))
   }
-  # The label sits OUTSIDE the bar end, so the axis runs 15 past the longest
-  # bar (room for "24.4%" at half width), rounded up to a gridline. A fixed 105 once clipped a 100% bar's label
-  # to "100'" (one pitch to one side, common on one time through the order).
-  #
-  # Fitted to the data since 2026-10-19, when the chart moved to half the Usage
-  # tab's width: on a fixed 0-100 axis a 25% pitch was a stub. The cost is that
-  # bar lengths no longer compare across pitchers; the gridline labels do.
+  # Axis fits the longest bar plus its label
   lim <- max(50, ceiling((max(usage$pct, na.rm = TRUE) + 15) / 25) * 25)
   ggplot(usage, aes(plot_pct, fct_rev(pitch_type), fill = pitch_type)) +
     geom_vline(xintercept = setdiff(seq(-lim, lim, 25), c(-lim, lim)), linetype = "dashed", color = "gray80", linewidth = 0.4) +
@@ -86,40 +51,21 @@ plot_usage <- function(df, hide = character()) {
                        labels = \(x) paste0(abs(x), "%")) +
     scale_y_discrete(expand = expansion(add = c(1.1, 0.5))) +
     scale_fill_manual(values = pitch_colors) +
-    # Side labels in the outer corners, under the bars.
     annotate("label", x = -lim, y = 0.2, label = "vs LHH", hjust = 0, size = 4,
              fontface = "bold", fill = "white", label.size = 0.3) +
     annotate("label", x =  lim, y = 0.2, label = "vs RHH", hjust = 1, size = 4,
              fontface = "bold", fill = "white", label.size = 0.3) +
     labs(x = NULL, y = NULL) +
     theme_minimal(base_size = 13) +
-    # No legend: the Usage by count table beside it on the Usage tab is the
-    # key, its rows colored and in the same order as these bars. A legend here
-    # floated in the chart's margin and repeated it (removed 2026-10-19).
+    # No legend: the count table beside it is the key
     theme(legend.position = "none",
           panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
           axis.text.y = element_blank(), axis.text.x = element_text(color = "gray40"))
 }
 
 
-#' Movement scatter with the arm slot line
-#'
-#' Plots a usage-weighted subsample of roughly 100 pitches rather than all of
-#' them, so a 600-pitch fastball does not bury a 60-pitch curveball under
-#' overplotting. Each type contributes points in proportion to its usage.
-#'
-#' The seed is fixed so the same pitcher and window redraw identically. In the
-#' app this matters more than it did for a one-off report, since a redraw that
-#' shuffles the points reads as the data having changed.
-#'
-#' The value 3 is a deliberate choice, not a leftover. The source script used 42
-#' and it was changed on purpose, so do not tidy it back. Which seed does not
-#' matter, but changing it reshuffles every movement chart, so it stays put.
-#'
-#' `hide` names types not to draw. Arm angle, extension and every type's share
-#' of the ~100 dots are still computed over the whole frame. The hidden types
-#' were the ones pmax(1, ...) below over-weighted: 4 slurves in 1,203 pitches
-#' got one dot in a hundred, about three times their share.
+#' Movement scatter with the arm slot line: a usage-weighted sample of about
+#' 100 pitches, with a fixed seed.
 plot_movement <- function(df, hide = character()) {
   pitch_order <- setdiff(levels(df$pitch_type), hide)
   usage <- df |> count(pitch_type) |> mutate(k = pmax(1, round(n / sum(n) * 100)))
@@ -128,34 +74,18 @@ plot_movement <- function(df, hide = character()) {
     d <- df |> filter(pitch_type == pt)
     slice_sample(d, n = min(nrow(d), usage$k[usage$pitch_type == pt]))
   })
-  # mean(x, na.rm = TRUE) over an ALL-NA vector is NaN, not NA, and NaN pastes
-  # into a label as the literal text "NaN". Observed 2026-08-31: Clay Holmes over
-  # 2026-08-16 to 08-26 rendered "Arm Angle: NaN°".
-  #
-  # Not a Holmes problem and not a bug in the pull. Savant stopped publishing
-  # arm_angle on 2026-08-16 and every date since is 100% NA, against 0.3% before
-  # August. It is a derived pose metric and its backfill lags the pitch data. So
-  # ANY pitcher, in ANY window sitting entirely inside that gap, hits this.
-  #
-  # Same species as the NaN the arsenal table guards with pct_or_na(). This chart
-  # never got the equivalent, and it failed worse: the label showed a computer
-  # error, and slope = tan(NaN) silently dropped the dashed slot line too, so the
-  # chart lost a feature without saying anything.
+  # Arm angle can be all NA in a window (Savant fills it in late)
   mean_or_na <- function(x) { x <- x[!is.na(x)]; if (length(x)) mean(x) else NA_real_ }
   arm_angle_val <- round(mean_or_na(df$arm_angle), 1)
   extension_val <- round(mean_or_na(df$release_extension), 1)
 
-  # Drawn only when there is an angle to draw. A segment with a NaN slope
-  # disappears, which reads as "this pitcher has no slot" rather than "this
-  # number is not available yet".
   has_slot <- is.finite(arm_angle_val)
   slope <- if (has_slot) tan(arm_angle_val * pi / 180) else NA_real_
   arm_label <- if (has_slot) paste0("Arm Angle: ", arm_angle_val, "\u00b0") else
                  "Arm Angle: not yet published"
   ext_label <- if (is.finite(extension_val)) paste0("Avg Extension: ", extension_val, " ft") else
                  "Avg Extension: not available"
-  # The dashed slot line runs out to the pitcher's arm side, so it mirrors for
-  # a lefty.
+  # Slot line runs to the arm side
   hand_sign <- if (df$p_throws[1] == "R") 1 else -1
 
   g <- ggplot(mv, aes(hb, ivb, fill = pitch_type))
@@ -177,73 +107,28 @@ plot_movement <- function(df, hide = character()) {
              size = 4, fontface = "bold", fill = "white", label.size = 0.4, hjust = 0) +
     labs(x = "Horizontal Break (in)", y = "Induced Vertical Break (in)") +
     theme_minimal(base_size = 13) +
-    # Same legend as the Usage tab, squares and all, so the colors read without
-    # switching tabs. The square keys come from key_glyph on geom_point above;
-    # linewidth 0.5 and no outline are geom_col's defaults, which give the Usage
-    # keys their inset and the thin white gap between them.
+    # Square legend keys, as on the usage chart
     guides(fill = guide_legend(override.aes = list(linewidth = 0.5, colour = NA))) +
     theme(legend.position = "right", legend.title = element_blank(),
           legend.text = element_text(face = "bold", size = 15), legend.key.size = unit(1.5, "cm"),
           panel.grid.major = element_line(color = "gray90"),
           aspect.ratio = 1, plot.margin = ggplot2::margin(t = 20, r = 5, b = 5, l = 5))
 
-  # A bare `g`, not the assignment above. A function ending in an assignment
-  # returns INVISIBLY, and renderPlot() relies on auto-printing, so an invisible
-  # return draws a blank white device with no error. Every test here calls
-  # ggplot_build() or print() on the returned object, both of which work fine on
-  # an invisible value, so nothing caught it for four commits.
+  # Return visibly: renderPlot() needs auto-printing
   g
 }
 
 
-#' Stacked velocity densities, one row per pitch type
-#'
-#' Free y scales because each type is its own density and the shapes matter more
-#' than their relative heights, which usage already covers.
-plot_velo <- function(df) {
-  meds <- df |> group_by(pitch_type) |> summarise(med = median(release_speed, na.rm = TRUE), .groups = "drop")
-  ggplot(df, aes(release_speed, fill = pitch_type)) +
-    geom_density(alpha = 0.7) +
-    geom_vline(data = meds, aes(xintercept = med), linetype = "dashed", color = "gray30", linewidth = 0.6) +
-    facet_wrap(~ pitch_type, ncol = 1, scales = "free_y", strip.position = "left") +
-    scale_fill_manual(values = pitch_colors) +
-    labs(x = "Velocity (mph)", y = NULL) +
-    theme_minimal(base_size = 13) +
-    theme(legend.position = "none", panel.grid = element_blank(), axis.text.y = element_blank(),
-          strip.text = element_text(face = "bold", size = 16, hjust = 0), strip.placement = "outside")
-}
-
-
-#' Location heat maps, situation by pitch type, for one batter side
-#'
-#' Two count panels, Pre-2K and 2K, not the six buckets from the usage tables.
-#' A KDE needs a bigger per-panel sample than a usage percentage does, so the
-#' buckets are deliberately wide, and together they cover every count. Until
-#' 2026-09-25 this used three (0-0, Hitter Ahead, Two Strikes), which left 0-1
-#' and 1-1 out of the chart entirely. See CLAUDE.md, count buckets.
-#'
-#' Panels below KDE_MIN_N fall back to a white-dot scatter. A density surface
-#' fitted to a handful of pitches invents structure, so the thin panel is shown
-#' as what it is rather than smoothed.
-#'
-#' `hide` names pitch types to leave out, per chart_hidden_types(). They are
-#' dropped AFTER the per-panel usage strips are computed, so "Usage 24%" on
-#' every remaining panel still divides by all of his pitches in that count.
+#' Location heat maps by count bucket (Pre-2K, 2K) and pitch type, for one batter
+#' side. Panels under KDE_MIN_N show raw dots.
 plot_heatmap <- function(df, hand, hide = character()) {
   situations <- list("Pre-2K" = c("0-0","1-0","2-0","3-0","0-1","1-1","2-1","3-1"),
                      "2K"     = c("0-2","1-2","2-2","3-2"))
   sit_levels <- names(situations)
-  # "All" pools both batter sides. That roughly doubles per-panel n, so more
-  # panels clear KDE_MIN_N and get a density surface instead of the white-dot
-  # fallback. Safe here because KDE_BW is 1.0 ft in x while the measured gap
-  # between the two sides' mean locations runs 0.19 to 0.79 ft, so the bandwidth
-  # smooths over the separation rather than showing two false modes. It does
-  # blur the platoon pattern, which is usually the point of this chart.
   if (hand != "All") df <- filter(df, stand == hand)
   base <- df |>
     filter(!is.na(plate_x), !is.na(plate_z)) |>
-    # Negate plate_x to draw from the catcher's view, which is how a hitting
-    # coach reads a location chart.
+    # Catcher's view
     mutate(plate_x = -plate_x, cnt = paste(balls, strikes, sep = "-"), pitch_type = droplevels(pitch_type))
   hm <- imap(situations, \(counts, nm) base |> filter(cnt %in% counts) |> mutate(situation = nm)) |>
     bind_rows() |> mutate(situation = factor(situation, levels = sit_levels))
@@ -251,10 +136,7 @@ plot_heatmap <- function(df, hand, hide = character()) {
     summarise(n = n(), iz = mean(in_zone, na.rm = TRUE) * 100, .groups = "drop") |>
     group_by(situation) |> mutate(usage = n / sum(n) * 100) |> ungroup() |>
     mutate(strip = sprintf("Usage %.0f%%   IZ %.0f%%", usage, iz))
-  # A pitch he never threw in a count got no strip, so its panel rendered as a
-  # blank frame, which reads as a rendering fault. It is a finding: Harris
-  # throws no cutter with two strikes. Found on the page 2026-09-23. Label it
-  # 0%, with no IZ, since a zone rate over no pitches does not exist.
+  # A pitch never thrown in a count gets a 0% label, not a blank panel
   strips <- tidyr::complete(strips, situation, pitch_type) |>
     mutate(strip = if_else(is.na(n), "Usage 0%", strip))
   hm <- hm |> add_count(situation, pitch_type, name = "panel_n")
@@ -265,9 +147,7 @@ plot_heatmap <- function(df, hand, hide = character()) {
   }
   dense  <- filter(hm, panel_n >= KDE_MIN_N)
   sparse <- filter(hm, panel_n <  KDE_MIN_N)
-  # Drawing coordinates for the zone outline and the plate. These are rendering
-  # constants and are not the in_zone classification, which uses 0.8291 in
-  # features.R. Kept separate so a cosmetic nudge here cannot move a rate stat.
+  # Drawing coordinates only; in_zone uses in_zone_flag()
   sz <- data.frame(xmin = -0.83, xmax = 0.83, ymin = 1.5, ymax = 3.5)
   plate <- data.frame(x = c(-0.71,0.71,0.71,0,-0.71), y = c(0.05,0.05,0.20,0.30,0.20))
   ggplot(hm, aes(plate_x, plate_z)) +
@@ -277,10 +157,7 @@ plot_heatmap <- function(df, hand, hide = character()) {
     geom_polygon(data = plate, aes(x, y), inherit.aes = FALSE, fill = "white", color = "black", linewidth = 0.4) +
     geom_rect(data = sz, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
               inherit.aes = FALSE, fill = NA, color = "black", linewidth = 0.6) +
-    # The dots paint LAST, over the zone outline. Drawn before it, a pitch on
-    # the edge had the black line through it and read as a glyph: Harris's
-    # FC at x -0.84 against an edge at -0.83 rendered as a quote mark. A pitch
-    # on the black is the one a coach most wants to see whole.
+    # Dots over the zone outline
     geom_point(data = sparse, color = "white", size = 1.8, alpha = 0.9) +
     scale_fill_viridis_d(option = "viridis", guide = "none") +
     coord_fixed(xlim = c(-2.2, 2.2), ylim = c(0, 5)) +
@@ -294,48 +171,25 @@ plot_heatmap <- function(df, hand, hide = character()) {
 }
 
 
-# ---- Trends tab: one pitch, one line per panel ------------------------------
-#
-# Every other chart is one total over the window, so a pitcher who dropped his
-# slot four degrees in August reads the same as one who never moved. This puts
-# each game on the x axis against the window average.
-#
-# ONE pitch at a time, by request, 2026-10-06. The first build drew every pitch
-# type on every panel and was too busy to read at a glance: five coloured lines
-# crossing, and the legend had to be read before the chart said anything. Now
-# each panel is a single line, and its title states the change in words, so a
-# coach reads the title and only looks at the line to see when.
+# ---- Trends tab --------------------------------------------------------------
+# One pitch at a time, one game per point, against the window average.
 
-# Fewest pitches of a type in one game to plot that game's point. A two-pitch
-# game average is one pitch's noise. Per game rather than per window, so it is
-# much lower than MIN_PITCH_COUNT's job of deciding what is in the arsenal.
+# Fewest pitches of a type in a game to plot that game
 TREND_MIN_N <- 3
 
-# Every outing gets a usage point, sized by its pitches, but the line pools
-# back over at least TREND_USAGE_ROLL outings AND at least TREND_USAGE_POOL
-# pitches. A reliever's 14-pitch inning swings a share 7 points per pitch, so
-# one outing is noise; pooled to 50 pitches it is a plan.
-#
-# Until 2026-10-09 outings under 50 pitches were dropped instead, which left a
-# reliever with no usage panel at all (Bryan Hudson, 70 outings, longest 33)
-# and a swingman with his starts only. For a starter nothing moved: three starts
-# are well past 50 pitches to either side, so his line is the same last-3 pool.
+# Usage line pools at least this many outings and pitches
 TREND_USAGE_ROLL <- 3
 TREND_USAGE_POOL <- 50
 
-# "Recent" in the panel titles: the last 5 plotted games against the window.
+# "Last N games" in the titles
 TREND_LAST_N <- 5
 
 TREND_INK <- "#1f3a5f"
 
-# Smallest y range each panel draws, centred on the window average. Without it
-# free scales stretch whatever is there to the full panel, and a starter's
-# ordinary 1 mph game-to-game wobble looks like a collapse. These spans are
-# wider than normal game-to-game noise, so a real change still fills the panel.
+# Minimum y span per panel
 TREND_MIN_SPAN <- c(velo = 4, spin = 200, ivb = 8, hb = 8, arm_angle = 8)
 
-# Index of the first outing in each trailing pool: back at least k outings and
-# until the pool holds `min_tot` pitches, or to the first outing.
+# Index of the first outing in each trailing pool
 pool_start <- function(tot, k = TREND_USAGE_ROLL, min_tot = TREND_USAGE_POOL) {
   vapply(seq_along(tot), function(i) {
     j <- max(1, i - k + 1)
@@ -344,7 +198,7 @@ pool_start <- function(tot, k = TREND_USAGE_ROLL, min_tot = TREND_USAGE_POOL) {
   }, numeric(1))
 }
 
-# Pooled share per outing: pitches of the type over all pitches in the pool.
+# Pooled share per outing
 pool_share <- function(n, tot, ...) {
   st <- pool_start(tot, ...)
   vapply(seq_along(n), function(i) sum(n[st[i]:i]) / sum(tot[st[i]:i]) * 100, numeric(1))
@@ -359,18 +213,8 @@ trend_pitch_choices <- function(df, hide = character()) {
 }
 
 
-#' Per-game series and the window-vs-recent summary for one pitch type
-#'
-#' Velo, spin, IVB and HB are the selected pitch, both batter sides, like the
-#' movement chart; HB keeps the movement chart's raw sign. Usage follows the
-#' batter side selector, because that is where a platoon plan shows. Arm angle
-#' is the whole delivery, so it ignores the pitch selection.
-#'
-#' `season` is the window value the traits table prints: a mean over pitches,
-#' or for usage a share pooled over every outing. `last` is the
-#' same computed over the last TREND_LAST_N plotted games, NA when the window
-#' holds no more games than that. `sd` is the spread of the per-game values, his
-#' normal game-to-game range, which the band draws and trend_changes() tests.
+#' Per-game series and window vs last-games summary for one pitch type. Usage
+#' follows the batter side; arm angle covers every pitch.
 trend_series <- function(df, pt, hand) {
   one <- function(metric, rows, value) {
     g <- rows |> mutate(v = value) |> filter(!is.na(v)) |>
@@ -426,10 +270,7 @@ trend_titles <- function(summ, hand) {
 }
 
 
-#' The Trends chart for one pitch type
-#'
-#' Takes trend_panels() rather than the pitch frame, so the app builds the
-#' panels once and the plot and the click tooltip read the same rows.
+#' Build the Trends panels once, for the plot and the hover tooltip
 trend_panels <- function(df, pt, hand) {
   s <- trend_series(df, pt, hand)
   titles <- stats::setNames(trend_titles(s$summ, hand), s$summ$metric)
@@ -441,11 +282,9 @@ trend_panels <- function(df, pt, hand) {
 
 plot_trends <- function(tp) {
   pts <- tp$pts; base <- tp$base
-  # Usage plots its rolling line over faint single-game points; every other
-  # panel's line IS the per-game points.
+  # Usage plots a pooled line over faint per-game points
   faint <- pts$metric == "usage"
-  # Invisible points that widen each panel to its minimum span. Usage is pinned
-  # at zero instead, so a share is always read against nothing thrown.
+  # Invisible points widen each panel to its minimum span; usage starts at 0
   span <- base |> filter(metric %in% names(TREND_MIN_SPAN)) |>
     mutate(h = TREND_MIN_SPAN[metric] / 2)
   pad <- bind_rows(transmute(span, panel, y = season - h),
@@ -453,9 +292,7 @@ plot_trends <- function(tp) {
                    transmute(filter(base, metric == "usage"), panel, y = 0)) |>
     mutate(game_date = min(pts$game_date))
 
-  # The last TREND_LAST_N games, shaded, so "last 5" in the title points at
-  # something on a chart that otherwise shows the whole window. Starts half a
-  # day early so the first shaded point is not cut in half.
+  # Shade the last TREND_LAST_N games
   recent <- base |> filter(!is.na(from)) |>
     transmute(panel, xmin = as.Date(from) - 0.5, xmax = max(pts$game_date) + 0.5)
 
@@ -463,16 +300,13 @@ plot_trends <- function(tp) {
     geom_rect(data = recent, aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
               inherit.aes = FALSE, fill = "#dce6f2", alpha = 0.7) +
     geom_blank(data = pad, aes(y = y)) +
-    # His normal game-to-game range, average +/- one SD of the game values.
-    # Roughly two games in three land inside it, so a point outside is unusual
-    # for him and a run of them is a change.
+    # Band: average +/- one SD of his game values
     geom_rect(data = filter(base, is.finite(sd)),
               aes(xmin = -Inf, xmax = Inf, ymin = season - sd, ymax = season + sd),
               inherit.aes = FALSE, fill = "gray50", alpha = 0.10) +
     geom_hline(data = base, aes(yintercept = season), linetype = "dashed",
                color = "gray55", linewidth = 0.5) +
-    # Sized by pitches, so a 9-pitch inning at 100% reads as the small thing it
-    # is next to a 90-pitch start.
+    # Usage points sized by pitches thrown
     geom_point(data = pts[faint, ], aes(y = v, size = tot), color = TREND_INK, alpha = 0.3) +
     scale_size_area(max_size = 3.4, guide = "none") +
     geom_line(aes(y = line), color = TREND_INK, linewidth = 0.8) +
@@ -488,31 +322,14 @@ plot_trends <- function(tp) {
 }
 
 
-#' Pitch mix by outing: one stacked bar per outing, width = pitches thrown
-#'
-#' The usage panel follows one pitch; this shows what it traded with. Bars sit
-#' end to end on a pitch-count axis rather than dates, so a 90-pitch start is
-#' wide, a 9-pitch inning is a sliver, and the off days between outings take no
-#' room. Month labels mark where each month's first outing begins.
-#'
-#' Follows the Batter side selector like the usage panel. `hide` drops types
-#' AFTER the shares are computed, as plot_usage() does, so a hidden type leaves
-#' its sliver of white rather than inflating the rest.
-#'
-#' Each segment also carries its type's share pooled over recent outings by
-#' pool_share(), as the Trends usage line is, for the tooltip to compare
-#' against. One outing's mix swings with the opponent and a 15-pitch sample;
-#' the pooled share says whether this outing was a departure. `npool` is how
-#' many outings that pool spans, so the tooltip can name it.
-#' A trend line per boundary was drawn over the bars on 2026-10-19 and taken
-#' off the same day: it read as clutter, not as the plan.
+#' Pitch mix by outing: one stacked bar per outing, as wide as its pitch count.
+#' Follows the batter side.
 plot_mix_outings <- function(df, hand, hide = character()) {
   if (hand != "All") df <- df[df$stand == hand, ]
   if (nrow(df) == 0) return(NULL)
   g <- df |> count(game_date, name = "tot") |> arrange(game_date) |>
     mutate(x1 = cumsum(tot), x0 = x1 - tot)
-  # Velocity and break ride along so the hover tooltip can say what the pitch
-  # was doing that day, not just how often he threw it.
+  # Velo and break for the tooltip
   m <- df |> group_by(game_date, pitch_type) |>
     summarise(n = n(), velo = mean(release_speed, na.rm = TRUE),
               ivb = mean(ivb, na.rm = TRUE), hb = mean(hb, na.rm = TRUE), .groups = "drop") |>
@@ -522,8 +339,7 @@ plot_mix_outings <- function(df, hand, hide = character()) {
   m <- m |> mutate(pitch_type = droplevels(pitch_type)) |>
     arrange(game_date, pitch_type) |> group_by(game_date) |>
     mutate(y1 = cumsum(share), y0 = y1 - share) |> ungroup()
-  # Pooled shares need every type in every outing, zeros included, so the
-  # pool sums the right pitches.
+  # Pooled shares need every type in every outing, zeros included
   g$npool <- seq_len(nrow(g)) - pool_start(g$tot) + 1
   pl <- m |> distinct(pitch_type) |> tidyr::crossing(g) |>
     left_join(select(m, game_date, pitch_type, n), by = c("game_date", "pitch_type")) |>
@@ -532,20 +348,14 @@ plot_mix_outings <- function(df, hand, hide = character()) {
   m <- m |> left_join(select(pl, game_date, pitch_type, pooled, npool), by = c("game_date", "pitch_type"))
   mo <- g |> mutate(m = format(as.Date(game_date), "%b")) |>
     group_by(m) |> summarise(x = min(x0), d = min(game_date), .groups = "drop") |> arrange(d)
-  # A month with an outing or two (a late-March opener) puts its label on top
-  # of the next one's, so a label needs 4% of the axis before the next.
+  # Skip a month label that would overlap the next
   mo <- mo[c(diff(mo$x) >= 0.04 * max(g$x1), TRUE), ]
-  # One outing is a thin bar whose white edge would swallow it, so the edge
-  # thins as the outing count grows.
+  # Thinner bar edges for many outings
   edge <- if (nrow(g) > 40) 0.1 else 0.3
   ggplot(m) +
-    # Softened: at full strength the pitch colors over a whole chart of area
-    # shout. Not further than 0.8, or ST and SI blur together.
+    # Slightly faded fills
     geom_rect(aes(xmin = x0, xmax = x1, ymin = y0, ymax = y1, fill = pitch_type),
               color = "white", linewidth = edge, alpha = 0.8) +
-    # Legend in the same order as the Pitch usage chart above it on the Usage
-    # tab, so the two read as one key. The bars stack the other way up, with
-    # the lead pitch on the 0% baseline where its share reads off the axis.
     scale_fill_manual(values = pitch_colors) +
     scale_x_continuous(breaks = mo$x, labels = mo$m, expand = c(0, 0)) +
     scale_y_continuous(breaks = c(0, 25, 50, 75, 100), labels = \(x) paste0(x, "%"),
@@ -559,21 +369,14 @@ plot_mix_outings <- function(df, hand, hide = character()) {
 }
 
 
-#' The tooltip for one hovered segment of the pitch mix chart
-#'
-#' `row` is one row of plot_mix_outings()$data. Says the outing, the pitch, how
-#' much of the outing it was, and its average velocity and break that day.
-#' A mean of all-NA (Savant missing the tracking) prints as a dash.
+#' Tooltip lines for one hovered segment of the pitch mix chart
 mix_tip_text <- function(row, hand, tto = "All") {
   f <- function(x, unit) if (is.na(x) || is.nan(x)) "\u2013" else paste0(formatC(x, format = "f", digits = 1), unit)
   side <- switch(hand, L = " vs LHH", R = " vs RHH", "")
   if (!identical(tto, "All")) side <- paste0(side, ", ", TTO_TITLE[[tto]])
   nm <- PITCH_NAMES[as.character(row$pitch_type)]
-  # "Last 3 outings" counts this one: the pool as of this date.
   recent <- if (!is.null(row$pooled) && !is.na(row$pooled) && row$npool > 1)
     paste0("Last ", row$npool, " outings: ", formatC(row$pooled, format = "f", digits = 1), "%")
-  # Velo and break sit above the usage lines, so "Last 3 outings" closes the
-  # tip and reads as being about usage only, not the movement.
   c(format(as.Date(row$game_date), "%b %d, %Y"),
     paste0(row$pitch_type, if (!is.na(nm)) paste0(" \u00b7 ", nm)),
     paste0("Velo ", f(row$velo, " mph"), "  \u00b7  IVB ", f(row$ivb, "\""), "  \u00b7  HB ", f(row$hb, "\"")),
@@ -587,11 +390,7 @@ PITCH_NAMES <- c(FF = "Four-seam", SI = "Sinker", FC = "Cutter", SL = "Slider", 
                  KN = "Knuckleball", EP = "Eephus")
 
 
-#' The tooltip for one hovered point on the Trends chart
-#'
-#' `row` is one row of trend_panels()$pts, as nearPoints() returns it. Says the
-#' game, the sample behind the point, and the point against the window average,
-#' since the average is the thing the reader is comparing it to.
+#' Tooltip lines for one hovered point on the Trends chart
 trend_tip_text <- function(row, tp) {
   m <- row$metric
   avg <- tp$base$season[tp$base$metric == m]
@@ -613,32 +412,15 @@ trend_tip_text <- function(row, tp) {
 }
 
 
-# ---- What changed: last 5 games against his average, every pitch ------------
-#
-# The chart shows one pitch, so a change that runs through the whole arsenal
-# (Skenes lost 250 to 300 rpm on every pitch from March to July while the
-# league stayed flat) is only visible by clicking through every button. This
-# lists every pitch and metric whose last-5 value sits outside chance.
-#
-# Two bars, both required. Statistical: the last-5 difference is at least
-# TREND_CHANGE_Z standard errors, the SE being his game-to-game SD over the
-# root of TREND_LAST_N. Practical: at least TREND_CHANGE_MIN, so a pitch he
-# throws identically every night is not flagged for a 0.2 mph wobble that is
-# significant only because he is so consistent.
-#
-# Calibrated 2026-10-06 on 80 starters by shuffling each one's game order,
-# which keeps his values and destroys any real trend: 3.1 flags per pitcher on
-# real order against 0.5 on shuffled, so about one flag in six is chance. At
-# 2.5 that falls to one in eleven but real flags halve (3.1 to 1.25). A flag is
-# a prompt to look at the chart, not a verdict, so 2 keeps the real ones.
+# ---- What changed: last 5 games against his average --------------------------
+# Flag a change when the last-5 difference is at least TREND_CHANGE_Z standard
+# errors and at least TREND_CHANGE_MIN. Shuffling game order puts the chance
+# rate at about one flag in six.
 TREND_CHANGE_Z   <- 2
 TREND_CHANGE_MIN <- c(velo = 0.5, spin = 40, ivb = 1, hb = 1, usage = 3, arm_angle = 1)
 
 
-#' Every flagged change, one row per pitch and metric
-#'
-#' Arm angle is one delivery, so it is tested once, from the first pitch's
-#' series, under pitch "All".
+#' Every flagged change, one row per pitch and metric. Arm angle is tested once.
 trend_changes <- function(df, hand, hide = character()) {
   pts <- names(trend_pitch_choices(df, hide))
   rows <- lapply(seq_along(pts), function(i) {
@@ -657,10 +439,7 @@ trend_changes <- function(df, hand, hide = character()) {
 }
 
 
-#' The strip's sentences, one per metric and direction
-#'
-#' "Spin down: FF -222 rpm, ST -83 rpm". Grouped this way because a change
-#' that shows on several pitches at once is the finding the strip exists for.
+#' One line per metric and direction, e.g. "Spin down: FF -222 rpm, ST -83 rpm"
 trend_change_text <- function(ch, hand) {
   if (nrow(ch) == 0) return(character())
   name <- c(velo = "Velocity", spin = "Spin", ivb = "IVB", hb = "HB",
@@ -668,8 +447,7 @@ trend_change_text <- function(ch, hand) {
             arm_angle = "Arm angle")
   unit <- c(velo = " mph", spin = " rpm", ivb = "\"", hb = "\"", usage = " pts", arm_angle = "\u00b0")
   ch$dir <- ifelse(ch$diff > 0, "up", "down")
-  # HB's sign is raw, so "up" would mean toward third base, which reads as
-  # nothing. Say what it means for this pitch instead: more or less break.
+  # Describe HB as more or less break
   hb <- ch$metric == "hb"
   ch$dir[hb] <- ifelse(sign(ch$diff[hb]) == sign(ch$season[hb]), "more break", "less break")
   keys <- unique(ch[, c("metric", "dir")])

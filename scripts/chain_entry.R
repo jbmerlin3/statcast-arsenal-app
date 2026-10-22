@@ -1,30 +1,17 @@
 # chain_entry.R
-#
-# What launchd invokes:  Rscript scripts/chain_entry.R
-#
-# An R entry point rather than a bash wrapper, because macOS attributes Full
-# Disk Access to the FIRST binary in the plist's ProgramArguments. With
-# /bin/bash there, the grant would have to go to bash, which would hand every
-# bash script on the machine access to the Desktop. With Rscript there, only R
-# gets it.
-#
-# The repo lives directly under ~ and NOT under ~/Desktop, deliberately. TCC
-# guards Desktop, Documents and Downloads; a launchd agent can read ~ and
-# ~/Library but not ~/Desktop, verified 2026-08-20 by probe. Moving the repo
-# sidesteps the permission entirely rather than granting Full Disk Access.
-#
-# Do not move it back under any of those three, and note that everything the
-# chain READS has to stay out of them too, which is why the season store lives
-# in ~/baseball-store rather than beside the source project.
+# Runs the daily chain locally under launchd
+# (scripts/com.jonathanmerlin.arsenal-chain.plist). Logs to logs/chain.log.
+# The repo must live outside ~/Desktop, ~/Documents and ~/Downloads (blocked by
+# macOS for launchd agents).
 
-REPO <- "/Users/jonathanmerlin/statcast-arsenal-app"
+REPO <- dirname(dirname(normalizePath(sub("^--file=", "", grep("^--file=", commandArgs(), value = TRUE)[1]))))
 LOG  <- file.path(REPO, "logs", "chain.log")
 
 banner <- function(con, text) {
   writeLines(c("", strrep("=", 62), text, strrep("=", 62)), con)
 }
 
-# TCC denial looks like a missing directory from in here, so say which it is.
+# A TCC denial looks like a missing directory
 if (!dir.exists(REPO)) {
   dir.create("/tmp/arsenal-chain", showWarnings = FALSE)
   writeLines(c(
@@ -63,14 +50,13 @@ status <- tryCatch({
 sink(type = "message"); sink(); close(con)
 
 con <- file(LOG, open = "at")
-# The word FAILED appears here and nowhere else in a healthy log, which is what
-# the status command greps for.
+# chain_status.sh greps for RUN OK / RUN FAILED
 writeLines(if (status == 0L)
   paste("RUN OK    ", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"))
   else paste("RUN FAILED", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")), con)
 close(con)
 
-# Roughly a month of runs. Keeps the log findable rather than unbounded.
+# Keep about a month of runs
 lines <- readLines(LOG, warn = FALSE)
 if (length(lines) > 2000) writeLines(tail(lines, 2000), LOG)
 

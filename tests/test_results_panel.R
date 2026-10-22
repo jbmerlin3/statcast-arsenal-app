@@ -1,7 +1,5 @@
-# phase6_results.R
-#
-# The results panel. Two sources, two rows, and the one thing that must never
-# happen: the game-log row narrowing with the batter side.
+# Results panel: Statcast row vs game-log row, IP in thirds, hard-hit denominator,
+# and league shading (direction and window-scaled floors), on literal fixtures.
 suppressMessages({library(dplyr);library(tidyr);library(purrr);library(forcats)
                   library(ggplot2);library(gt);library(readr);library(shiny)})
 invisible(lapply(sort(list.files("R", full.names = TRUE)), source))
@@ -26,9 +24,7 @@ expect("vs RHH is a strict subset", sc$R$tbf < sc$All$tbf, TRUE)
 g <- results_gamelog(gl, 702070, win, cf)
 cat(sprintf("  game log: %d G  IP %s  ERA %.2f  WHIP %.2f  FIP %.2f\n", g$games, g$ip, g$era, g$whip, g$fip))
 
-# results_gamelog takes no hand argument at all, which is the structural
-# guarantee. If one is ever added, this stops compiling rather than silently
-# narrowing.
+# results_gamelog() has no hand argument
 expect("results_gamelog cannot see the batter side",
        "hand" %in% names(formals(results_gamelog)), FALSE)
 expect("results_gamelog cannot see stand either",
@@ -43,7 +39,7 @@ hR <- heads("R"); hA <- heads("All")
 cat("  vs RHH:", paste(gsub('rp-head">|<', "", hR), collapse = "  |  "), "\n")
 cat("  All   :", paste(gsub('rp-head">|<', "", hA), collapse = "  |  "), "\n")
 expect("the Statcast header moves with the side", hR[1] == hA[1], FALSE)
-expect("the game-log header does NOT move with the side", hR[2], hA[2])
+expect("the game-log header does not change with the side", hR[2], hA[2])
 
 win2 <- c("2026-07-01", "2026-07-14")
 g2 <- results_gamelog(gl, 702070, win2, cf)
@@ -53,8 +49,7 @@ cat("  other window, game-log header:", gsub('rp-head">|<', "", h2[2]), "\n")
 expect("the game-log header DOES move with the dates", h2[2] == hR[2], FALSE)
 
 cat("\n=== IP comes from the game log, never from events ===\n")
-# events is one row per PA, so a double play reads as one out. The two numbers
-# must NOT agree, and this is what catches IP being derived the wrong way.
+# Outs from pitch-level events undercount (a double play is one row)
 pa_outs <- sum(build_pitch_level(ad, 702070) |>
   filter(game_date >= win[1], game_date <= win[2]) |>
   pull(events) %in% c("field_out","strikeout","force_out","grounded_into_double_play",
@@ -62,7 +57,7 @@ pa_outs <- sum(build_pitch_level(ad, 702070) |>
 cat("  game-log outs:", g$ip_outs, "   outs if counted off events:", pa_outs, "\n")
 expect("game-log IP is not the events count", g$ip_outs == pa_outs, FALSE)
 expect("game-log outs exceed the events count", g$ip_outs > pa_outs, TRUE)
-# 5.2 is five and two thirds, not five point two.
+# "5.2" is five innings and two outs
 expect("IP parses as thirds, not decimals", ip_to_outs(c("5.0","5.1","5.2","6.0")), c(15L,16L,17L,18L))
 
 cat("\n=== absence is reported, not zeroed ===\n")
@@ -81,18 +76,8 @@ cat("  cFIP:", round(cf, 3), "\n")
 expect("cFIP is in the plausible band", cf > 2.5 && cf < 3.7, TRUE)
 
 cat("\n=== HH% counts batted balls, not every tracked exit velocity ===\n")
-# Statcast measures fouls, and fouls are weak, so a denominator of "rows with an
-# exit velocity" halves the rate. Kirby 2026 vs LHH read 28.3 against
-# FanGraphs' 45.4 until the denominator became type == "X".
-#
-# A literal fixture rather than a slice of app_data. The season store grows
-# every night, so a rate pinned off live data would have to be re-pinned daily,
-# and a fixture that moves with the data cannot pin anything. See CLAUDE.md
-# entry 5.
-#
-# The numbers discriminate three ways. Two of the four batted balls are hard
-# hit, so the answer is 50. Counting every tracked EV gives 4 of 5, 80. Dropping
-# the untracked batted ball gives 2 of 3, 66.7.
+# Hard hit% over batted balls: 2 of 4 = 50. Every tracked EV would give 80; dropping
+# the untracked batted ball would give 66.7.
 hh_frame <- tibble::tibble(
   stand        = "R",
   type         = c("X", "X", "X", "X", "S", "S", "S"),
@@ -107,11 +92,7 @@ expect("HH% denominator is batted balls, not tracked EVs", hh$n_bip, 4L)
 expect("a 105 mph foul does not count as hard hit", round(hh$hh, 1), 50)
 
 cat("\n=== league context: direction, floors, and the window ===\n")
-# A literal league. Ten pitchers spread evenly, so a percentile is a count and
-# every expectation below is arithmetic rather than a quantile of live data.
-# The plate appearances PARTITION: k strikeouts, bb walks, and the rest are
-# batted balls. Deriving bbe rather than passing it is the fix for the first
-# version, where a high strikeout count made the remainder negative.
+# A literal league of ten arms
 lg_arm <- function(id, tbf, k, bb, hard, date = "2026-08-01") {
   bbe <- tbf - k - bb
   stopifnot("the fixture must partition its plate appearances" = bbe >= 0,
@@ -130,8 +111,7 @@ lg_arm <- function(id, tbf, k, bb, hard, date = "2026-08-01") {
     launch_speed = c(rep(NA_real_, k + bb), rep(100, hard), rep(80, bbe - hard)),
     estimated_woba_using_speedangle = 0.300, woba_denom = 1)
 }
-# Ten arms at 40 TBF, strikeouts running 2 to 20, so K-BB% is 5% to 50% in even
-# steps and the two extremes are unambiguous.
+# K-BB% from 5% to 50% in even steps
 lg_ad <- dplyr::bind_rows(lapply(1:10, function(i)
   lg_arm(100L + i, tbf = 40, k = i * 2, bb = 0, hard = 10)))
 lg_gl <- tibble::tibble(
@@ -159,9 +139,7 @@ cat(sprintf("  best K-BB%% pctile %3.0f, worst %3.0f | ERA pctile best %3.0f wor
             pct_of(best, "k_bb"), pct_of(worst, "k_bb"),
             pct_of(best, "era"), pct_of(worst, "era")))
 
-# Direction, the least visible bug this feature can have. K-BB% is high-is-good
-# and ERA is low-is-good, so the arm at the TOP of the K-BB% league and the arm
-# at the BOTTOM of the ERA league must both come out red.
+# Best K-BB% and best ERA must both shade red (directions differ)
 red  <- function(hex) { r <- grDevices::col2rgb(hex); r[1] > r[3] }
 expect("the best K-BB% fills red",  red(fill_of(best,  "k_bb")), TRUE)
 expect("the worst K-BB% fills blue", red(fill_of(worst, "k_bb")), FALSE)
@@ -170,9 +148,7 @@ expect("the LOWEST ERA fills red, because low is good",
 expect("the highest ERA fills blue", red(fill_of(ctx_for(110L), "era")), FALSE)
 
 cat("\n=== the floor scales with the window, and greys below it ===\n")
-# Same arms, spread across 20 days instead of one. Each pitcher now has 40 TBF
-# either way, but the league median denominator is what moves the floor, so a
-# thin arm added below it must be excluded from the reference AND left unfilled.
+# A thin arm below the floor is excluded from the reference and left unfilled
 thin <- lg_arm(199L, tbf = 8, k = 4, bb = 0, hard = 2)
 L2 <- results_league(dplyr::bind_rows(lg_ad, thin), lg_gl, dts, "All", 3.1)
 cat(sprintf("  floor %.0f, qualified %d of 11 arms\n", L2$k_bb$floor, L2$k_bb$n))
@@ -183,8 +159,7 @@ expect("and its own K-BB% is left unfilled",
        fill_of(ctx_thin, "k_bb"), PCTILE_UNFILLED)
 expect("with no percentile at all", is.na(pct_of(ctx_thin, "k_bb")), TRUE)
 
-# The floor is half the median denominator, so halving everyone's TBF must halve
-# it. A fixed floor passes every other check in this file.
+# Halving everyone's TBF must halve the floor
 half <- dplyr::bind_rows(lapply(1:10, function(i)
   lg_arm(200L + i, tbf = 20, k = i, bb = 0, hard = 5)))
 L3 <- results_league(half, lg_gl, dts, "All", 3.1)
@@ -203,7 +178,7 @@ plain  <- html(results_statcast(dplyr::filter(lg_ad, pitcher == 110L), "All"),
 shaded <- as.character(results_panel(
   results_statcast(dplyr::filter(lg_ad, pitcher == 110L), "All"),
   results_gamelog(lg_gl, 110L, dts, 3.1), dts, "All", "2026-08-01", ctx = best))
-expect("ctx = NULL still renders, so every old caller is unaffected",
+expect("ctx = NULL renders",
        grepl("rp-cells", plain), TRUE)
 expect("and paints nothing", grepl("rp-filled", plain), FALSE)
 expect("with context, cells carry a background", grepl("rp-filled", shaded), TRUE)
@@ -212,5 +187,5 @@ expect("TBF is never filled: it is the sample, not a result",
 
 cat("\n", strrep("-", 58), "\n", sep = "")
 if (length(fails)) { cat("FAILURES:\n"); for (f in fails) cat("  ", f, "\n") }
-cat("PHASE 6 RESULTS: ", if (length(fails)) "FAIL" else "PASS", "\n", sep = "")
+cat("RESULTS PANEL: ", if (length(fails)) "FAIL" else "PASS", "\n", sep = "")
 quit(status = if (length(fails)) 1 else 0)

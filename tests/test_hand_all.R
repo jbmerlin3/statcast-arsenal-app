@@ -1,20 +1,5 @@
-# phase4_hand_all.R
-#
-#   Rscript tests/phase4_hand_all.R
-#
 # Property tests for hand = "All" on arsenal_table(), count_usage_tbl() and
-# plot_heatmap().
-#
-# Why these are not part of the Phase 1 regression. That harness compares the
-# new code against the original script, and the original has no "All" path to
-# compare against. Generating the expected values from the new code would be a
-# test that passes by construction and proves nothing. So "All" is checked
-# against properties that must hold regardless of implementation, chiefly that
-# pooling equals the sum of the parts.
-#
-# The "L" and "R" paths need nothing here. They are byte-identical after the
-# widening, which is exactly what scripts/phase1_check.R already verifies.
-
+# plot_heatmap(): pooling both batter sides must equal the sum of the parts.
 suppressMessages({library(dplyr); library(ggplot2)})
 
 REPO <- local({
@@ -42,8 +27,7 @@ aR <- arsenal_table(d, "R", empty_stuff)
 aL <- arsenal_table(d, "L", empty_stuff)
 aA <- arsenal_table(d, "All", empty_stuff)
 
-# Pooling must equal the sum of the parts. This is the check that catches a
-# filter skipped in the wrong place, or applied twice.
+# Pooled = L + R
 parts <- bind_rows(aR["count"] |> mutate(pitch_type = aR$pitch_type),
                    aL["count"] |> mutate(pitch_type = aL$pitch_type)) |>
   group_by(pitch_type) |> summarise(count = sum(count), .groups = "drop")
@@ -68,8 +52,7 @@ ok("All covers every pitch type either side saw",
 cat("\n== plot_heatmap ==\n")
 dense_panels <- function(hand) {
   p <- suppressWarnings(ggplot_build(plot_heatmap(d, hand)))
-  # Layer 1 is stat_density_2d_filled, fitted only to panels at or above
-  # KDE_MIN_N, so counting its distinct panels counts the dense ones.
+  # Layer 1 (the KDE) only draws panels at or above KDE_MIN_N
   length(unique(p$data[[1]]$PANEL))
 }
 hR <- dense_panels("R"); hL <- dense_panels("L"); hA <- dense_panels("All")
@@ -86,10 +69,7 @@ ok("unknown value stops rather than mislabelling",
 
 cat("\n== titles ==\n")
 title_of <- function(g) g[["_heading"]]$title
-# Titles changed on 2026-08-31 with the table split. What these assertions are
-# actually guarding is hand_label() reaching the heading at all, and that the
-# "All" case does not silently fall through to "vs LHH", which is the bug they
-# were written for. Both survive the rename.
+# "All" must not fall through to "vs LHH" in the title
 ok("traits_gt R title",
    identical(title_of(traits_gt(traits_tbl(aR), "R")), "PITCH TRAITS (vs RHH)"))
 ok("traits_gt L title",
@@ -102,12 +82,12 @@ ok("results_gt All title is not 'vs LHH'",
    identical(title_of(results_gt(results_tbl(aA), "All")), "PITCH RESULTS (vs All Batters)"))
 ok("count_usage_gt All title",
    identical(title_of(count_usage_gt(cA, "All")), "USAGE BY COUNT vs All Batters"))
-ok("label argument overrides, for Phase 4 date ranges",
+ok("label argument overrides",
    identical(title_of(traits_gt(traits_tbl(aR), "R", label = "2nd Half, vs RHH")),
              "PITCH TRAITS (2nd Half, vs RHH)"))
 ok("label argument overrides on results too",
    identical(title_of(results_gt(results_tbl(aR), "R", label = "2nd Half, vs RHH")),
              "PITCH RESULTS (2nd Half, vs RHH)"))
 
-cat(sprintf("\nPHASE 4 HAND=ALL: %s\n", if (fails == 0L) "PASS" else paste(fails, "FAILED")))
+cat(sprintf("\nHAND = ALL: %s\n", if (fails == 0L) "PASS" else paste(fails, "FAILED")))
 quit(status = if (fails == 0L) 0 else 1)
