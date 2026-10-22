@@ -1,85 +1,47 @@
 # app.R
-#
-# Thin by design. Every function it calls lives in R/, so the same code path
-# serves the app and the console. Logic added here rather than in R/ becomes
-# untestable outside a running server.
-#
-# Tabs are inline rather than R/mod_*.R modules. At this size a module would be
-# a function call with NS() ceremony around it: no tab owns an input of its own,
-# and none is instantiated twice. See CLAUDE.md for the trigger to revisit.
+# Pitcher Arsenal: UI and server. Logic lives in R/, which Shiny sources automatically.
 
 library(shiny)
 library(dplyr)
 library(ggplot2)
 
 
-# ---- Global scope ------------------------------------------------------------
-#
-# Everything here runs ONCE when the process starts, not per session. app_data
-# is 103 MB in memory, measured 2026-08-21 after the column trim, and the three
-# startup objects put 191 MB on the R heap between them. Loading them inside
-# server() would mean one copy per connected user, which the free tier ceiling
-# would not survive twice. Loaded here, every session shares the one copy.
-#
-# R/ is NOT sourced here. Shiny auto-sources every .R file in R/ into the app's
-# own environment before this file runs. Calling source() explicitly would put
-# those functions in the global environment instead, since source() defaults to
-# local = FALSE, which leaves the app reading from one environment and its
-# helpers living in another. From the console, source them yourself as usual.
+# ---- Data, loaded once at startup --------------------------------------------
 
+# Shared by every session to stay under the free tier's memory limit
 app_data     <- load_app_data()
-# Same reasoning as app_data: loaded once, shared by every session. It is small
-# next to app_data, but the app never rebuilds it either. scripts/update_data.R
-# step 2 owns that, per the daily chain in CLAUDE.md.
 league_ref   <- load_league_ref()
-# Step 4 of the chain, and the only input the app tolerates missing: it depends
-# on somebody else's uptime. NULL degrades the results panel's game-log row to
-# an absence message rather than taking the app down.
+# Optional: without game logs the results panel shows only the Statcast row
 game_logs    <- load_game_logs()
-# One constant for the whole file, so every FIP on the page is on the same
-# scale. Computed here rather than per render: it is a property of the log file.
 FIP_CONST    <- if (is.null(game_logs)) NA_real_ else fip_constant(game_logs)
 LOG_THROUGH  <- if (is.null(game_logs)) NULL else max(game_logs$game_date)
 player_index <- build_player_index(app_data, exclude = load_position_players())
-# Read off the data, not hardcoded, for the same reason player_index is: a list
-# of 30 written out here would go stale on a relocation and would silently drop
-# a team the store does have. Sorted so the dropdown is alphabetical.
 TEAM_CODES   <- sort(unique(app_data$pitch_team))
 HALVES       <- season_halves(app_data)
-# League-wide Search and Context tables for the preset windows, built by the
-# daily chain (step 6). NULL when missing or built for other data or code, in
-# which case both tabs compute live. See R/league_pool.R for why this exists:
-# computing them on a click ran the 1 GB instance out of memory.
+# Precomputed Search and Context league tables (NULL: compute live)
 LEAGUE_POOL  <- load_league_pool(app_data)
 
-# game_date is stored as character. Keep the bounds as Date for the input widget
-# and convert back at comparison time, see pitcher_data() below.
+# game_date is stored as character; the date inputs use Date
 DATE_MIN <- HALVES$full[1]
 DATE_MAX <- HALVES$full[2]
 
-DEFAULT_PITCHER <- 702070   # Cameron, so the page renders something on load
+DEFAULT_PITCHER <- 702070  # Noah Cameron
 
-# Stuff+ grades (v2, Jonathan's model), loaded once. Daily sums, so a grade
-# follows the date window and the Batter side selector like every other column.
-# A missing file degrades to a blank Stuff+ column rather than taking the app
-# down, since every other column is still worth reading. See R/stuff.R.
 STUFF_V2 <- load_stuff_v2()
 
-# Listed height per MLBAM id, for the Context tab's release model. A tracked
-# CSV rather than chain-built data, for the reason in
-# scripts/build_pitcher_heights.R. NULL degrades the Context tab's residual
-# columns to blank rather than taking the app down; every other tab is
-# unaffected.
 PITCHER_HEIGHTS <- load_pitcher_heights()
 
-# The stuff_all contract, two columns, as stuff_for() returns on no match.
-# arsenal_table() takes this as an argument and never learns where it came from.
-# See CLAUDE.md.
 EMPTY_STUFF <- tibble::tibble(pitch_type = character(), stuff_plus = numeric())
 
 
-# 1H and 2H are omitted entirely when no break has happened yet, rather than
-# rendering buttons that would set an invented boundary.
+# Context tab note: pitches each trait needs, read from METRIC_SPEC$shape_floor
+FLOOR_LABELS <- c(rel_ht = "release height", rel_side = "release side", ext = "extension",
+                  velo = "velocity", spin = "spin", vaa = "approach angle", ivb = "ride",
+                  hb = "run")
+floor_n    <- vapply(names(FLOOR_LABELS), shape_floor, numeric(1))
+floor_text <- paste(sprintf("%s %d", FLOOR_LABELS[order(floor_n)], sort(floor_n)), collapse = ", ")
+
+# 1H and 2H appear once the season has a break
 preset_buttons <- if (is.null(HALVES$first)) {
   actionButton("preset_all", "All", class = "btn-sm")
 } else {
@@ -89,38 +51,15 @@ preset_buttons <- if (is.null(HALVES$first)) {
 }
 
 
+# ---- UI ----------------------------------------------------------------------
+
 ui <- fluidPage(
-  # ---- Say when the app is working -----------------------------------------
-  #
-  # Switching pitcher or window leaves the previous pitcher's numbers on screen
-  # for a second or two while the reactives rebuild. Stale figures under a new
-  # name read as the app being WRONG rather than busy, which is the worst
-  # second a page can spend with a reader who is evaluating it.
-  #
-  # Shiny's own indicators rather than a package: a spinner over each output
-  # that is recalculating, and a pulse at the top of the page while anything is
-  # in flight. No new dependency in the bundle, and nothing in the server code
-  # has to know about it.
+  # Spinner on recalculating outputs; stale results fade
   shiny::useBusyIndicators(spinners = TRUE, pulse = TRUE),
-  # The spinner says "working"; fading what it sits on says "do not read this
-  # yet". Held at 0.35 rather than hidden so the layout cannot jump, and the
-  # delay means a fast recalculation never flickers.
   tags$style(HTML(paste0(
     ".recalculating{opacity:.35 !important;transition:opacity .15s ease-in .25s;}",
     ".shiny-busy-pulse{--shiny-pulse-color:#1f3a5f;}"))),
-
-  # ---- One visual language for every tab ----------------------------------
-  #
-  # Normalised 2026-09-21. Each tab had grown its own spacing, its own grey,
-  # and its own way of writing a note under a chart; Context had been restyled
-  # and the rest had not, so moving between tabs felt like moving between apps.
-  # Every tab now opens with the same section header and writes notes the same
-  # way, and those rules live HERE, once, rather than in each tab.
-  #
-  # Page-level only, deliberately. The gt tables keep their own internal
-  # styling, because tests/step3_null_identical.R pins their rendered HTML byte
-  # for byte and a stylesheet that reached inside them would move every
-  # baseline for a cosmetic reason.
+  # Page styles (gt tables style themselves)
   tags$head(tags$style(HTML(paste0(
     "body{color:#1a1a1a;}",
     ".nav-tabs{margin-bottom:4px;}",
@@ -133,18 +72,13 @@ ui <- fluidPage(
     "margin:-6px 0 10px 14px;}",
     ".sec-note,.ctx-note{font-size:11.5px;color:#888;margin:8px 0 0 0;max-width:900px;",
     "line-height:1.45;}",
-    # Usage tab top row. The chart flexes and the table keeps its natural
-    # width (~615px); under 340px of chart they wrap, which holds them side by
-    # side from about a 1380px window, so on a 1440 laptop. gt centers its table with an
-    # inline margin, so the override needs !important to sit it under its header.
+    # Usage tab layout
     ".usage-row{display:flex;flex-wrap:wrap;gap:0 28px;align-items:flex-start;}",
     ".usage-chart{flex:1 1 340px;min-width:0;}",
     ".usage-count{flex:0 1 auto;max-width:100%;overflow-x:auto;}",
     ".usage-count .gt_table{margin-left:0 !important;}",
     ".app-codes{font-size:11.5px;color:#999;margin:2px 0 6px 0;}",
-    # Times-through toggle on the Usage tab. The radio circles are hidden and the
-    # span after each is the pill, so the selected and disabled looks come from
-    # the input's own state and cannot disagree with the value Shiny reads.
+    # Times-through pills
     ".tto-bar{display:flex;align-items:center;gap:14px;margin:14px 0 -8px 0;}",
     ".tto-lab{font-size:10.5px;color:#888;text-transform:uppercase;letter-spacing:.5px;}",
     ".tto-pills{display:flex;gap:6px;margin:0;}",
@@ -157,7 +91,7 @@ ui <- fluidPage(
     ".tto-pill input:checked+span .tto-n{color:#c8d3e3;}",
     ".tto-pill input:focus-visible+span{outline:2px solid #1f3a5f;outline-offset:2px;}",
     ".tto-pill input:disabled+span{opacity:.4;cursor:not-allowed;}",
-    # Trends hover tooltip, over the plot at the hovered point.
+    # Hover tooltips
     ".trend-tip{position:absolute;z-index:10;background:#fff;border:1px solid #cfd5dd;",
     "border-radius:6px;padding:7px 10px;font-size:12.5px;line-height:1.45;",
     "box-shadow:0 2px 8px rgba(0,0,0,.12);pointer-events:none;white-space:nowrap;}",
@@ -167,22 +101,14 @@ ui <- fluidPage(
     ".trend-none{font-size:13px;color:#666;margin-top:3px;}",
     "#trends img, #mix_outings img{cursor:crosshair;}"
   )))),
-  # The deploy bundles the rds files rather than fetching them at startup, so
-  # the page has to say how current they are. Read off app_data itself and not
-  # a build-time constant: a redeploy that ships stale data then shows the
-  # stale date rather than the date of the deploy.
+  # Date read from the data, so a stale deploy shows a stale date
   titlePanel(div("Pitcher Arsenal",
                  span(paste("Data through", DATE_MAX),
                       style = "font-size:14px; color:#666; margin-left:12px;")),
-             # Explicit, because titlePanel defaults windowTitle to the title
-             # itself, and with a tag there that puts raw markup in the browser
-             # tab. Verified on the rendered page, not assumed.
              windowTitle = "Pitcher Arsenal"),
   sidebarLayout(
     sidebarPanel(
       width = 3,
-      # choices = NULL because the list is filled server-side below. Passing 800
-      # names here would ship them all to the browser on every page load.
       selectizeInput("pitcher", "Pitcher", choices = NULL),
       dateRangeInput("dates", "Date range",
                      start = DATE_MIN, end = DATE_MAX,
@@ -191,61 +117,33 @@ ui <- fluidPage(
       radioButtons("hand", "Batter side",
                    choices  = c("All" = "All", "vs LHH" = "L", "vs RHH" = "R"),
                    selected = "All", inline = TRUE),
-      # Was "Pitch types under 5 pitches in the selected window are dropped",
-      # which described behaviour that is gone. Every pitch type is charted now;
-      # what varies is whether a RATE off it is trustworthy, which the table
-      # already says per cell in grey with its denominator.
-      # "are greyed" until 2026-09-23, which had been false since 2026-09-08,
-      # when thin cells went from grey to shaded with their n kept.
       helpText("Every pitch type is in the tables. Rates from small samples carry",
                " their own denominator."),
-      # Under the controls rather than over the tabs. The panel describes the
-      # whole selection, which is what this column already is, and moving it
-      # here fills the dead space below the inputs and lets the tabs start at
-      # the top of the main area.
       shiny::tags$head(shiny::tags$style(shiny::HTML(RESULTS_PANEL_CSS))),
       shiny::tags$hr(style = "margin:14px 0 12px 0; border-color:#e0e0e0;"),
       uiOutput("results_panel")
     ),
     mainPanel(
       width = 9,
-      # Sits above the tabs so a remap or drop is visible on whichever tab is
-      # open, rather than only on the one that would have crashed. It stays here
-      # and does not follow the results panel into the sidebar: it describes
-      # what the CHARTS dropped, not how the pitcher performed.
       div(class = "app-codes", uiOutput("pitch_code_note")),
       tabsetPanel(
         id = "tabs",
-        # Every tab opens with the same section header (.sec-h, defined once at
-        # the top of the page) and writes notes the same way (.sec-note).
         tabPanel("Movement",
                  div(class = "sec",
                      div(class = "sec-h", "Movement profile"),
-                     div(class = "sec-sub", "Induced vertical vs horizontal break, pitcher's view"),
+                     div(class = "sec-sub", "Induced vertical vs horizontal break, pitcher's view. About 100 pitches shown, in proportion to usage"),
                      plotOutput("movement", height = "620px"))),
         tabPanel("Usage",
-                 # Empty unless the window holds something beyond the first time
-                 # through, so a reliever's Usage tab is exactly what it was.
                  uiOutput("tto_toggle"),
-                 # Season usage and usage by count side by side, so the count
-                 # table is on the first screen. They wrap to one column when
-                 # the panel is too narrow for the table beside the chart.
                  div(class = "usage-row",
                      div(class = "sec usage-chart",
                          div(class = "sec-h", "Pitch usage"),
                          plotOutput("usage", height = "330px"),
-                         # Said out loud because the batter side control is
-                         # visible and this chart deliberately ignores it.
-                         # Without the note the toggle looks broken on this tab.
                          div(class = "sec-note",
                              "Always both batter sides. Usage by count and the mix by outing follow the Batter side selector.")),
                      div(class = "sec usage-count",
                          div(class = "sec-h", "Usage by count"),
                          gt::gt_output("usage_table"))),
-                 # The season mix above, how it moved outing to outing here.
-                 # It sat under the 780px Trends chart until 2026-10-19, where
-                 # nobody scrolled far enough to find it, and the top of Trends
-                 # belongs to the one-pitch panels.
                  div(class = "sec",
                      div(class = "sec-h", "Pitch mix by outing"),
                      div(class = "sec-sub", "One bar per outing, as wide as his pitch count. Hover for the pitch's velo and break."),
@@ -254,9 +152,6 @@ ui <- fluidPage(
                                     hover = hoverOpts("mix_hover", delay = 60,
                                                       delayType = "debounce")),
                          uiOutput("mix_tip")))),
-        # Two tables, traits above results, from one arsenal_table() pass. The
-        # order is deliberate: what the pitch IS reads before what it DID, so a
-        # reader who stops after the first table has still learned the arsenal.
         tabPanel("Characteristics",
                  div(class = "sec",
                      div(class = "sec-h", "Pitch traits"),
@@ -267,13 +162,10 @@ ui <- fluidPage(
         tabPanel("Heat Maps",
                  div(class = "sec",
                      div(class = "sec-h", "Location by count"),
-                     # Taller than the other outputs: facet_grid lays out three
-                     # situations by however many pitch types the window holds,
-                     # and coord_fixed keeps each panel square.
                      plotOutput("heatmap", height = "700px"),
                      div(class = "sec-note", paste0(
-                       "Three coarse count buckets, not the six in the usage table. A density ",
-                       "estimate needs a larger per-panel sample than a usage percentage does. ",
+                       "Two count buckets, before and with two strikes, not the six in the usage table: ",
+                       "a density estimate needs more pitches per panel than a usage percentage does. ",
                        "Panels under ", KDE_MIN_N, " pitches show the raw locations as white ",
                        "dots instead of a smoothed surface.")))),
         tabPanel("Trends",
@@ -284,8 +176,6 @@ ui <- fluidPage(
                      div(class = "sec-sub", paste0("One point per game. Dashed line: average over the date range. ",
                                                    "Grey band: his normal game-to-game range. ",
                                                    "Blue: the last ", TREND_LAST_N, " games.")),
-                     # The tip is absolutely positioned over the plot at the
-                     # click, so the wrapper is the positioning context.
                      div(style = "position:relative;",
                          plotOutput("trends", height = "780px",
                                     hover = hoverOpts("trends_hover", delay = 60,
@@ -296,17 +186,6 @@ ui <- fluidPage(
                        "needs ", TREND_MIN_N, " of it to plot. Usage has a dot for every outing, sized by its ",
                        "pitches, and follows the Batter side selector; its line pools the last ",
                        TREND_USAGE_ROLL, " outings, more until it holds ", TREND_USAGE_POOL, " pitches.")))),
-        # ---- Context: one pitcher, read the way a coach reads him ----------
-        #
-        # Laid out 2026-09-21 around two questions: is he funky (the percentile
-        # chart, left, and the release profile, right) and what do his pitches
-        # do (full width below). An attack plan sat on the right until later
-        # that day and was cut by request: it was too simple, and how to attack
-        # a pitcher depends on the hitter, which this page does not know. A
-        # location strip was tried and removed the same day: the Heat Maps tab
-        # already draws every pitch's location. A collapsed Details section
-        # (peer-group controls, release scatter, baselines, comparables) was
-        # also cut by request, and the peer-group engine behind it deleted.
         tabPanel("Context",
                  tags$style(HTML(paste0(
                    ".ctx-wrap{max-width:1380px;margin-top:12px;}",
@@ -314,7 +193,6 @@ ui <- fluidPage(
                    ".ctx-top .form-group{margin-bottom:0;}",
                    ".ctx-card{background:#fff;border:1px solid #ececec;border-radius:6px;",
                    "padding:16px 18px;}",
-                   # stat row
                    ".ctx-stats{display:flex;flex-wrap:wrap;gap:6px 30px;margin:2px 0 14px 0;}",
                    ".ctx-stat{min-width:96px;}",
                    ".ctx-stat-v{font-size:21px;font-weight:800;line-height:1.2;color:#111;}",
@@ -323,7 +201,6 @@ ui <- fluidPage(
                    ".ctx-sub{color:#999;font-weight:400;font-size:13px;}",
                    ".ctx-flag{flex-basis:100%;margin-top:6px;padding:7px 10px;",
                    "background:#FAF6EC;border-left:3px solid #C9A227;font-size:12px;color:#5a4a1e;}",
-                   # percentile chart
                    ".ctx-pk{font-size:10.5px;color:#888;text-transform:uppercase;",
                    "letter-spacing:.5px;margin:4px 0 8px 0;}",
                    ".ctx-prow{display:flex;align-items:center;gap:14px;padding:6px 0;}",
@@ -340,7 +217,6 @@ ui <- fluidPage(
                    "box-shadow:0 1px 2px rgba(0,0,0,.18);}",
                    ".ctx-pend{display:flex;justify-content:space-between;font-size:9.5px;",
                    "color:#aaa;text-transform:uppercase;letter-spacing:.4px;margin-top:-2px;}",
-                   # arsenal
                    ".ctx-arow{display:grid;grid-template-columns:44px 58px 1fr 1fr;",
                    "align-items:center;gap:0 26px;padding:8px 0;border-bottom:1px solid #f3f3f3;}",
                    ".ctx-ahead{border-bottom:1px solid #ddd;padding:0 0 6px 0;}",
@@ -352,14 +228,11 @@ ui <- fluidPage(
                    ".ctx-cell{display:flex;align-items:center;gap:10px;}",
                    ".ctx-bar-val{width:66px;font-size:13px;font-weight:700;text-align:right;}",
                    ".ctx-bar{flex:1;max-width:300px;}",
-                   # profile, stacked in the side column
                    ".ctx-side .ctx-stats{display:grid;grid-template-columns:1fr 1fr;gap:16px 24px;}",
                    ".ctx-side .ctx-flag{grid-column:1 / -1;}",
                    ".ctx-line{color:#444;font-size:13px;margin:0 0 4px 0;}"))),
 
                  div(class = "ctx-wrap",
-                   # The only control on the page. Pitcher, dates and batter
-                   # side are global.
                    div(class = "ctx-top",
                        selectInput("ctx_pitch", "Pitch type",
                                    choices = names(pitch_colors), selected = "FF",
@@ -381,10 +254,6 @@ ui <- fluidPage(
                        uiOutput("ctx_arsenal"))
                  )),
         tabPanel("Search",
-                 # The one tab that owns its own inputs. The pitcher selector,
-                 # the dates and the batter side stay global and still apply:
-                 # the dates and the side narrow the population searched, and
-                 # the pitcher selector is where a result LANDS.
                  div(class = "sec",
                    div(class = "sec-h", "Find pitchers by shape"),
                    fluidRow(
@@ -392,9 +261,6 @@ ui <- fluidPage(
                                            choices = c("RHP" = "R", "LHP" = "L"))),
                      column(2, selectInput("s_pitch", "Pitch type",
                                            choices = names(pitch_colors), selected = "FF")),
-                     # Teams come from the data rather than a hardcoded list of
-                     # 30, so a relocation or an expansion club needs no edit
-                     # here and cannot silently go missing from the dropdown.
                      column(2, selectInput("s_team", "Team",
                                            choices = c("All teams" = "All", TEAM_CODES))),
                      column(3, numericInput("s_min", "Min pitches", value = 25,
@@ -402,10 +268,6 @@ ui <- fluidPage(
                      column(3, div(style = "margin-top:25px;",
                                    actionButton("s_reset", "Reset sliders", class = "btn-sm")))
                    ),
-                   # Seeded from the data on every change of hand, pitch type,
-                   # window or batter side, so each slider ends where that group
-                   # actually ends. A typed threshold is how you ask for a shape
-                   # nobody has: 95 mph with 18 IVB and 12 HB is zero righties.
                    uiOutput("search_sliders"),
                    uiOutput("search_count"),
                    gt::gt_output("search_table")
@@ -416,19 +278,15 @@ ui <- fluidPage(
 )
 
 
-server <- function(input, output, session) {
+# ---- Server ------------------------------------------------------------------
 
-  # Server-side filtering. The browser holds only what it is showing and asks
-  # for matches as the user types, so the 800-name index never crosses the wire
-  # in full and never touches the pitch store.
+server <- function(input, output, session) {
+  # ---- Pitcher and date window -----------------------------------------------
   updateSelectizeInput(session, "pitcher",
                        choices  = player_choices(player_index),
                        selected = DEFAULT_PITCHER,
                        server   = TRUE)
 
-  # Presets write to the date input rather than acting as a second filter, so
-  # the input always shows the window actually applied and the two can never
-  # disagree.
   set_range <- function(r) updateDateRangeInput(session, "dates", start = r[1], end = r[2])
   observeEvent(input$preset_all, set_range(HALVES$full))
   if (!is.null(HALVES$first)) {
@@ -436,36 +294,23 @@ server <- function(input, output, session) {
     observeEvent(input$preset_2h, set_range(HALVES$second))
   }
 
-  # The one data reactive. It is deliberately NOT filtered by batter side.
-  # arsenal_table(), count_usage_tbl() and plot_heatmap() filter `stand`
-  # internally and take hand as an argument, while plot_usage() reads `stand`
-  # itself to draw both sides at once. Filtering here would double-filter the
-  # first three and silently halve the usage chart.
-  #
-  # It also means outputs that never read input$hand do not re-render when the
-  # toggle changes, because Shiny discovers dependencies by watching which
-  # inputs are read. That falls out for free rather than needing any condition.
-  pitcher_data <- reactive({
+  # The selected pitcher and dates. Not filtered by batter side: the tables and plots
+  # filter `stand` themselves. Raw, so batters faced survives when no pitch is chartable.
+  pitcher_window <- reactive({
     req(input$pitcher, input$dates)
-    id <- as.integer(input$pitcher)
+    app_data |> filter(pitcher == as.integer(input$pitcher),
+                       game_date >= as.character(input$dates[1]),
+                       game_date <= as.character(input$dates[2]))
+  })
 
-    # Compare character to character. Mixed character/Date comparison happens to
-    # be correct for zero-padded ISO dates, but relying on that is a trap the
-    # moment a date arrives in another format.
-    from <- as.character(input$dates[1])
-    to   <- as.character(input$dates[2])
-
-    raw <- app_data |> filter(pitcher == id, game_date >= from, game_date <= to)
-
-    # An empty window is a normal thing for a user to select, not an error.
+  # The same window with pitch codes reconciled and pitch types counted
+  pitcher_data <- reactive({
+    raw <- pitcher_window()
     validate(need(nrow(raw) > 0,
                   "No pitches for this pitcher in the selected window."))
 
     d <- shape_arsenal(raw)
 
-    # Three different reasons the frame can come back empty, and saying the
-    # wrong one is worse than saying nothing. A position player who threw only
-    # eephuses has pitches; none of them are a type this app charts.
     validate(need(nrow(d) > 0, {
       note <- pitch_code_note(d)
       paste0(nrow(raw), " pitches in this window, but none chartable.",
@@ -475,29 +320,6 @@ server <- function(input, output, session) {
     d
   })
 
-  # The window before any pitch-type reconciliation or charting decisions.
-  #
-  # A plain reactive that recomputes the same filter, rather than a reactiveVal
-  # written from inside pitcher_data(). Setting a reactiveVal from within a
-  # reactive() is an anti-pattern and it failed silently here: the deployed app
-  # kept reporting 0 batters faced for Fuentes on 2026-08-05 while the same call
-  # returned 4 locally, because the value was never written and the panel was
-  # reading NULL. Recomputing a filter over one pitcher is cheap; being wrong is
-  # not.
-  #
-  # Deliberately does NOT depend on pitcher_data(). Batters faced must survive
-  # even when nothing in the window is chartable and pitcher_data() validates
-  # its way out.
-  pitcher_window <- reactive({
-    req(input$pitcher, input$dates)
-    app_data |> filter(pitcher == as.integer(input$pitcher),
-                       game_date >= as.character(input$dates[1]),
-                       game_date <= as.character(input$dates[2]))
-  })
-
-  # Types too rare to draw in this window, per CHART_MIN_SHARE and CHART_MIN_N.
-  # One reactive so the Movement chart, the usage chart, the heat maps and the
-  # note can never disagree about what was left off.
   chart_hide <- reactive(chart_hidden_types(pitcher_data()))
 
   output$pitch_code_note <- renderUI({
@@ -506,27 +328,16 @@ server <- function(input, output, session) {
     parts <- c(if (!is.null(codes)) paste0("Pitch codes: ", codes),
                chart_hidden_note(d, chart_hide()))
     if (!length(parts)) return(NULL)
-    # One string. Passing pieces as separate div() arguments inserts whitespace
-    # between them, which once left a space before the full stop.
     div(style = "color:#666; font-size:12px; margin-bottom:6px;",
         paste0(paste(parts, collapse = ". "), "."))
   })
 
-  # ---- Pitch trait search ----------------------------------------------------
-  #
-  # Three stages, cheapest last. search_pool() reads input$dates and input$hand
-  # and nothing else, so dragging a slider never re-runs the 0.78 s aggregate
-  # over all 818 pitchers. The sliders are seeded off that pool. The filter runs
-  # on the 3,665-row result in 6 ms, which is what makes dragging feel live.
-  #
-  # Deliberately NOT built on pitcher_data(), which is one pitcher. Reusing it
-  # would mean running it once per pitcher in the league.
+  # ---- Search tab ------------------------------------------------------------
+  # The league pool depends only on dates and side; sliders just filter it
   search_pool <- reactive({
     req(input$dates, input$s_team)
     from <- as.character(input$dates[1])
     to   <- as.character(input$dates[2])
-    # A preset window with All teams is read from the pool; anything else, a
-    # typed date range or one club, is computed live on the lean path.
     hit <- if (identical(input$s_team, "All")) pool_search(LEAGUE_POOL, from, to, input$hand)
     if (!is.null(hit)) return(hit)
     search_aggregate(app_data, input$hand, input$s_team, from = from, to = to)
@@ -537,48 +348,19 @@ server <- function(input, output, session) {
     search_ranges(search_pool(), input$s_throws, input$s_pitch, input$s_min)
   })
 
-  # Rebuilt rather than updated, so switching pitch type resets the sliders onto
-  # the new population instead of leaving a righty four-seam's range in place
-  # while a lefty curveball is selected. The reset button re-triggers it.
   output$search_sliders <- renderUI({
     rg <- search_bounds()
     input$s_reset
     cols <- lapply(seq_len(nrow(rg)), function(i) {
       spec <- SEARCH_TRAITS[SEARCH_TRAITS$trait == rg$trait[i], ]
-      # ticks = FALSE, deliberately. ionRangeSlider draws its grid at a
-      # prettified interval and then ALWAYS labels the max, so whenever the
-      # span is not a multiple of that interval the last tick and the max
-      # overlap: RHP four-seams span 13.6 mph with ticks every 1.4, which
-      # printed 100.6 and 101.6 on top of each other. Shiny's sliderInput
-      # exposes no control over the grid count, so the grid goes.
-      #
-      # The range the grid was carrying moves into the label, where it reads
-      # better anyway: it names the population rather than the axis.
-      # Label is the trait NAME only, as of 2026-09-08. It used to carry the
-      # population range too, "Velocity (mph): 84.3 to 101.5", which was where
-      # the range went when ticks = FALSE removed the grid. But ionRangeSlider
-      # prints both handle values in bubbles directly below, and at full extent
-      # those bubbles ARE the range, so the label was restating the two numbers
-      # sitting an inch under it.
       column(4, sliderInput(paste0("s_", rg$trait[i]), spec$label,
                             min = rg$lo[i], max = rg$hi[i], ticks = FALSE,
                             value = c(rg$lo[i], rg$hi[i]), step = spec$step))
     })
-    # Chunked from the actual slider count rather than hardcoded. This read
-    # fluidRow(cols[1:3]), fluidRow(cols[4:5]) while SEARCH_TRAITS held exactly
-    # five traits, so adding a sixth rendered five sliders and silently dropped
-    # the new one: no error, no gap, just a control that was never drawn.
     rows <- split(cols, ceiling(seq_along(cols) / 3))
-    # do.call, not tagList(!!!...). tagList collects with list(...) and does not
-    # process rlang's splice operator, so !!! reaches it as a literal call and
-    # errors at render.
     do.call(tagList, unname(lapply(rows, function(r) fluidRow(r))))
   })
 
-  # Sort state, owned here rather than in the table, because a click has to know
-  # what the last click did. Same column flips the direction, a new column starts
-  # at descending: for every column in this table the interesting end is the top,
-  # whether that is the hardest thrower or the most pitches.
   sort_state <- reactiveValues(col = "pitches", desc = TRUE)
   observeEvent(input$search_sort, {
     cl <- input$search_sort
@@ -596,21 +378,12 @@ server <- function(input, output, session) {
     rg <- search_bounds()
     bounds <- lapply(rg$trait, function(tr) input[[paste0("s_", tr)]])
     names(bounds) <- rg$trait
-    # renderUI builds the sliders, so on the first pass they do not exist yet and
-    # every bound is NULL. search_filter() reads a missing bound as no filter,
-    # which is the right reading of a partial query in any case.
     search_filter(search_pool(), input$s_throws, input$s_pitch, bounds, input$s_min,
                   sort_by = sort_state$col, desc = sort_state$desc)
   })
 
   output$search_count <- renderUI({
     res <- search_results()
-    # paste0 rather than separate arguments to div(), which inserts whitespace
-    # between them. The same slip put a space before a full stop in the
-    # pitch-code note once already.
-    # A trait with no reading cannot satisfy a range, so those pitchers are
-    # dropped even with every slider at full width. Named rather than swallowed,
-    # since otherwise the count silently disagrees with the population.
     miss <- search_missing(search_pool(), input$s_throws, input$s_pitch, input$s_min)
     note <- if (nrow(miss)) paste0(
       " ", sum(miss$n), " excluded for no ",
@@ -627,27 +400,17 @@ server <- function(input, output, session) {
 
   output$search_table <- gt::render_gt({
     res <- search_results()
-    # Two different empty results, and telling the reader to widen a slider when
-    # nobody throws the pitch at all is the wrong advice. No LHP throws a KN with
-    # 25+ pitches in a season, and the sliders are a 0-to-step stub in that case,
-    # so widening them would achieve nothing.
     validate(need(search_bounds()$n[1] > 0, paste0(
       "No ", if (input$s_throws == "R") "RHP" else "LHP", " throws a ",
       input$s_pitch, " with ", input$s_min, "+ pitches in this window.")))
     validate(need(nrow(res) > 0,
                   "No pitcher matches. Widen a slider, or lower the minimum pitch count."))
-    # ref = NULL: no percentile fill here. This table is already 50 rows of one
-    # pitch type, so a fill on every cell reads as a wall rather than as
-    # context, and the column you sorted on is the comparison you actually
-    # asked for. It also drops the resolve pass, which was the expensive half.
     shown <- head(res, SEARCH_MAX_ROWS)
-    search_gt(shown, input$s_pitch, input$s_throws, input$hand, ref = NULL,
+    search_gt(shown, input$s_pitch, input$s_throws, input$hand,
               n_total = nrow(res), sort_by = sort_state$col, desc = sort_state$desc)
   })
 
-  # The click. The payload is an id and the name is looked up here rather than
-  # trusted from the page. Moving to Movement is deliberate: without it the click
-  # updates a selector the reader cannot see, and the page looks broken.
+  # A clicked name loads that pitcher and switches to Movement
   observeEvent(input$search_pick, {
     id <- suppressWarnings(as.integer(input$search_pick))
     req(!is.na(id), id %in% player_index$pitcher)
@@ -656,30 +419,8 @@ server <- function(input, output, session) {
     updateTabsetPanel(session, "tabs", selected = "Movement")
   })
 
-  # ---- Plot sizing guard -----------------------------------------------------
-  #
-  # Shiny draws a plot as soon as the client reports that output's size, and on
-  # a cold connection the first report can carry a zero width: the element is in
-  # the DOM but the browser has not laid it out yet. The graphics device refuses
-  # the size, and Shiny paints a red error box. On a free shinyapps instance that
-  # box is what a first-time visitor looks at for the ten or so seconds the first
-  # plot takes. The message differs by platform, "invalid 'width' argument" from
-  # the PNG device on the server and "invalid quartz() device size" locally,
-  # which is the same fault.
-  #
-  # This has to be a width function and not a req() at the top of the render
-  # expression. renderPlot() OPENS THE DEVICE BEFORE it evaluates the expression,
-  # so a guard inside the expression runs after the failure it is trying to
-  # prevent. Tried that first; the error was unchanged, which is also why the
-  # original traceback goes straight from output$movement to startPNG with no
-  # app code in between.
-  #
-  # req() here suspends the output instead, and the suspension is temporary: the
-  # client re-reports the size once layout settles, this function is reactive on
-  # clientData, and the plot draws on the corrected width. That second report is
-  # known to arrive rather than hoped for, observed on the live app before any
-  # guard existed, where a failed render was followed by a successful one with no
-  # user action.
+  # ---- Movement tab ----------------------------------------------------------
+  # Used by every plot: on a cold load the browser can report a width of 0, so wait
   sized_width <- function(id) function() {
     w <- session$clientData[[paste0("output_", id, "_width")]]
     req(!is.null(w), is.finite(w), w > 0)
@@ -687,16 +428,10 @@ server <- function(input, output, session) {
   }
 
   output$movement <- renderPlot({
-    # league_ref was wired into the characteristics table in Phase 5 but not
-    # here, so the reference marks existed and never reached the page.
     plot_movement(pitcher_data(), hide = chart_hide())
   }, width = sized_width("movement"))
 
-  # ---- Trends tab --------------------------------------------------------
-  #
-  # One pitch at a time. The selected pitch survives a pitcher change when the
-  # new pitcher throws it, and falls back to his most-used pitch when he does
-  # not, so the chart never asks for a pitch the window does not hold.
+  # ---- Trends tab ------------------------------------------------------------
   trend_choices <- reactive(trend_pitch_choices(pitcher_data(), chart_hide()))
   trend_pt <- reactive({
     ch <- names(trend_choices())
@@ -720,8 +455,6 @@ server <- function(input, output, session) {
   trend_tp <- reactive(trend_panels(pitcher_data(), trend_pt(), input$hand))
 
   output$trends <- renderPlot(plot_trends(trend_tp()), width = sized_width("trends"))
-  # Lives on the Usage tab, so it follows the times-through pick like the
-  # chart and table beside it.
   mix_p <- reactive(plot_mix_outings(filter_tto(pitcher_data(), tto()), input$hand, chart_hide()))
   output$mix_outings <- renderPlot({
     p <- mix_p()
@@ -729,9 +462,6 @@ server <- function(input, output, session) {
     p
   }, width = sized_width("mix_outings"))
 
-  # Hover a segment for that pitch in that outing. The bars are rects on
-  # continuous axes, so the hit is the rect the cursor sits inside rather than
-  # a nearPoints() match. Same placement rules as the Trends tip.
   output$mix_tip <- renderUI({
     cl <- input$mix_hover
     p <- mix_p()
@@ -752,9 +482,6 @@ server <- function(input, output, session) {
         tags$b(lines[1]), lapply(lines[-1], div))
   })
 
-  # Every pitch at once, so a change that runs through the arsenal shows
-  # without clicking through the buttons. Follows the Batter side selector for
-  # usage, like the chart.
   output$trend_changes_ui <- renderUI({
     lines <- trend_change_text(trend_changes(pitcher_data(), input$hand, chart_hide()), input$hand)
     div(class = "trend-changes",
@@ -763,9 +490,6 @@ server <- function(input, output, session) {
         else tags$ul(lapply(lines, tags$li)))
   })
 
-  # Hover a point for its game. Leaving the plot sends NULL (nullOutside), and
-  # a hover away from any point matches nothing, so either clears the tip. A
-  # new pitch, pitcher, window or side re-renders this through trend_tp().
   output$trends_tip <- renderUI({
     cl <- input$trends_hover
     tp <- trend_tp()
@@ -774,10 +498,6 @@ server <- function(input, output, session) {
                       threshold = 12, maxpoints = 1)
     if (nrow(hit) == 0) return(NULL)
     lines <- trend_tip_text(hit[1, ], tp)
-    # Open toward the middle of the plot so the tip never runs off the page:
-    # left of the cursor on the right part of the chart, above it near the
-    # bottom. translate() moves it by its own size, which the server does not
-    # know.
     x <- round(cl$coords_css$x); y <- round(cl$coords_css$y)
     w <- session$clientData$output_trends_width
     h <- session$clientData$output_trends_height
@@ -790,21 +510,11 @@ server <- function(input, output, session) {
         tags$b(lines[1]), lapply(lines[-1], div))
   })
 
-  # ---- Usage tab: times through the order --------------------------------
-  #
-  # Three reactives. tto_n() counts the window's pitches by time through for the
-  # batter side on screen. tto() is the view actually APPLIED: the reader's pick
-  # when it has pitches, Overall otherwise. The chart and the table read tto()
-  # and never input$tto, because the input keeps its last value when the toggle
-  # is hidden, so a "2nd" picked on a starter would otherwise follow the reader
-  # to a reliever who has no second time through. Rules live in R/tto.R.
+  # ---- Usage tab -------------------------------------------------------------
+  # Outputs read tto(), not input$tto, which keeps a stale pick when the toggle hides
   tto_n <- reactive(tto_counts(pitcher_data(), input$hand))
   tto   <- reactive(tto_effective(input$tto, tto_n()))
 
-  # isolate() so a click does not rebuild the control it came from. It rebuilds
-  # when the counts change, and at that point takes whatever tto() resolved to,
-  # which is how a pick the new window cannot honour falls back to Overall
-  # visibly rather than silently.
   output$tto_toggle <- renderUI(tto_toggle_ui(tto_n(), isolate(tto())))
 
   output$usage <- renderPlot({
@@ -818,40 +528,14 @@ server <- function(input, output, session) {
                    label = tto_table_label(input$hand, tto()), heading = NULL)
   })
 
-  # Stuff+ for the selected pitcher, window and batter side: a sum over the
-  # pitcher's daily rows, so it costs a filter and a summarise per input change.
-  stuff_all <- reactive({
-    req(input$pitcher, input$dates)
-    if (is.null(STUFF_V2)) return(EMPTY_STUFF)
-    stuff_for(STUFF_V2, as.integer(input$pitcher), input$dates, input$hand)
-  })
-
-  output$heatmap <- renderPlot({
-    plot_heatmap(pitcher_data(), input$hand, hide = chart_hide())
-  }, width = sized_width("heatmap"))
-
-  # Two sources, two rows, deliberately not merged. The Statcast half reads
-  # input$hand and narrows with it; the game-log half does not read it at all,
-  # so it cannot narrow, and its header says so. A game log has no platoon
-  # split, so a vs-RHH ERA does not exist rather than being merely unavailable.
-  # The league over the SAME window and batter side the panel is showing, which
-  # is what makes IP gradeable at all: it is a counting stat, and the league
-  # median IP over two weeks is 5.7 against 29.7 across the season. Keyed on
-  # dates and side only, so it survives a change of pitcher and a tab switch and
-  # costs 0.40 s when the window actually moves.
+  # ---- Results panel ---------------------------------------------------------
+  # League over the same window and side, since IP is a counting stat
   results_ref <- reactive({
     req(input$dates)
     results_league(app_data, game_logs, input$dates, input$hand, FIP_CONST)
   })
 
   output$results_panel <- renderUI({
-    # The RAW window, not pitcher_data(). Batters faced is a property of the
-    # outing, not of which pitch types survived charting. Fed the charted frame,
-    # this read 0 TBF for a reliever whose every PA-ending pitch was a type the
-    # display had dropped, and blanked every rate computed over it. Even with
-    # that floor gone, reconcile_pitch_codes() still drops genuinely unchartable
-    # codes, and a plate appearance must not disappear because it ended on one.
-    d  <- pitcher_data()
     sc <- results_statcast(pitcher_window(), input$hand)
     gl <- if (is.null(game_logs)) {
       list(have = FALSE, games = 0L, through = NA_character_)
@@ -862,26 +546,14 @@ server <- function(input, output, session) {
                   ctx = results_context(sc, gl, results_ref()))
   })
 
-  # League context, on white rows. What made this table a patchwork was carrying
-  # two colour systems at once: a pitch-colour wash saying WHICH pitch and a
-  # percentile fill saying HOW GOOD. The wash is gone, the pitch code keeps the
-  # colour, and the fill is the only thing that varies across the row.
-  #
-  # The reference is `league_ref`, which is season-wide and precomputed, rather
-  # than the window-matched reference the results panel builds. Deliberate: the
-  # panel had to match the window because IP is a counting stat, while every
-  # cell here is a rate or a shape whose league value barely moves between a
-  # two-week and a season measurement. league_ref also costs nothing at runtime
-  # and carries the fallback ladder, which a per-window rebuild would lose.
-  #
-  # resolve_table() reads league_ref and the table, never app_data, so this
-  # stays cheap enough to run on every input change.
-  # One computation, two projections. arsenal_table() and arsenal_denoms() both
-  # group over the window, so calling them once per table would double that work
-  # on every input change for two tables that are by construction consistent.
-  # This reactive is also the only thing keeping them consistent: split the
-  # computation and a future edit to one table's filter silently desynchronises
-  # the pitch counts between them.
+  # ---- Characteristics tab ---------------------------------------------------
+  stuff_all <- reactive({
+    req(input$pitcher, input$dates)
+    if (is.null(STUFF_V2)) return(EMPTY_STUFF)
+    stuff_for(STUFF_V2, as.integer(input$pitcher), input$dates, input$hand)
+  })
+
+  # One pass feeds both tables so their pitch counts match
   chars_parts <- reactive({
     d   <- pitcher_data()
     tbl <- arsenal_table(d, input$hand, stuff_all())
@@ -889,11 +561,6 @@ server <- function(input, output, session) {
          p_throws = d$p_throws[1])
   })
 
-  # resolve_table() is called separately per table rather than once and split,
-  # because it narrows ARSENAL_METRIC_COLS by the columns present in the frame
-  # it is handed. Resolving the wide table and slicing the cells afterwards
-  # would work today and would break the first time a column name appears in one
-  # table and not the other.
   output$traits_table <- gt::render_gt({
     p   <- chars_parts()
     tbl <- traits_tbl(p$tbl)
@@ -908,20 +575,12 @@ server <- function(input, output, session) {
                ref = resolve_table(tbl, p$denoms, league_ref, p$p_throws, input$hand))
   })
 
-  # ---- Context tab ---------------------------------------------------------
-  #
-  # One reactive builds the league-wide profile and one builds the shape table,
-  # and every block on the tab projects from those two. Split them and a future
-  # edit to one filter silently desynchronises the blocks on the tab, which is
-  # the same failure chars_parts() exists to prevent.
-  #
-  # Both are scoped by the GLOBAL date range, so the explorer answers "unusual
-  # over the window I am looking at" rather than always over the season. That
-  # also means arm angle thins out on a short recent window, which is why
-  # n_arm rides along and the note above the table reports it.
-  # The window as two strings, not as a copy of its rows. This used to return
-  # the filtered frame itself, a ~150 MB copy of app_data per visit that the
-  # 1 GB instance could not afford next to Search (see R/league_pool.R).
+  # ---- Heat Maps tab ---------------------------------------------------------
+  output$heatmap <- renderPlot({
+    plot_heatmap(pitcher_data(), input$hand, hide = chart_hide())
+  }, width = sized_width("heatmap"))
+
+  # ---- Context tab -----------------------------------------------------------
   ctx_range <- reactive({
     req(input$dates)
     from <- as.character(input$dates[1]); to <- as.character(input$dates[2])
@@ -930,9 +589,6 @@ server <- function(input, output, session) {
     c(from, to)
   })
 
-  # The single source of truth for handedness on this tab. Read from the
-  # pitcher's own rows rather than from ctx_profile(), so it still resolves when
-  # he is below the Context minimum and the profile has dropped him.
   ctx_hand <- reactive({
     req(input$pitcher)
     h <- app_data$p_throws[app_data$pitcher == as.integer(input$pitcher)]
@@ -940,11 +596,7 @@ server <- function(input, output, session) {
     as.character(h[1])
   })
 
-
-
-  # Hardcoded, not inputs. 100 matches the Search tab's own minimum so the two
-  # surfaces agree on who counts as a real pitcher, and 0.75 SD is the radius
-  # the rarity counts were calibrated against.
+  # Rarity radius is in standard deviations
   CTX_MIN_PITCHES <- 100
   CTX_RARITY_RADIUS <- 0.75
 
@@ -955,8 +607,6 @@ server <- function(input, output, session) {
       pitcher_release_profile(window_rows(app_data, r[1], r[2], RELEASE_PROFILE_COLS),
                               PITCHER_HEIGHTS, min_pitches = CTX_MIN_PITCHES)
     } else {
-      # The pool is built with min_pitches = 1; the floor is the function's
-      # last step, so applying it here gives the same rows.
       prof[prof$n >= CTX_MIN_PITCHES, , drop = FALSE]
     }
     prof |>
@@ -964,15 +614,6 @@ server <- function(input, output, session) {
       release_rarity(radius = CTX_RARITY_RADIUS)
   })
 
-  # Scoped to the global batter-side selector, because the outcome rates it now
-  # carries describe a split. Release point is NOT split this way: it is a
-  # property of the pitcher, so ctx_profile() takes the whole window.
-  #
-  # No floor here. Every pitch he threw is a row, and the percentile chart fades
-  # a trait whose own METRIC_SPEC$shape_floor the count misses. It was
-  # pitch_shape()'s default of 50 until 2026-09-21, left over from the deleted
-  # peer groups, and the chart refused to rank Tolle's 43 FF vs LHH over the 2H
-  # while the Arsenal listed them.
   ctx_shape <- reactive({
     r <- ctx_range()
     agg <- pool_search(LEAGUE_POOL, r[1], r[2], input$hand)
@@ -980,12 +621,6 @@ server <- function(input, output, session) {
     pitch_shape_finish(agg, min_pitches = 1)
   })
 
-  # A row of figures, no sentence. The verdict line above it ("releases the ball
-  # about where a 6-3 pitcher from a high 3/4 slot normally does") and the
-  # rounding caveat under it were both removed on 2026-09-18: the figures say
-  # the same thing in a third of the space, and a caveat nobody can act on is
-  # furniture on a page a coach reads in twenty seconds. The rounding is still
-  # real and still documented in expected_release_height().
   output$ctx_release_card <- renderUI({
     p <- ctx_profile(); id <- as.integer(input$pitcher)
     r <- p[p$pitcher == id, ]
@@ -999,14 +634,11 @@ server <- function(input, output, session) {
     gap  <- 12 * r$rel_z_resid[1]
     band <- 12 * (r$resid_hi[1] - r$rel_z_resid[1])
 
-    box <- function(v, lab, sub = NULL) div(
+    box <- function(v, lab) div(
       class = "ctx-stat",
       div(class = "ctx-stat-v", HTML(v)),
       div(class = "ctx-stat-l", lab))
 
-    # EXPECTED and VS EXPECTED were two tiles until 2026-09-21 and neither said
-    # expected by WHAT, once the explanatory caveat was cut. One tile, labelled
-    # with its own basis.
     div(class = "ctx-stats",
       box(ht, "listed height"),
       box(sprintf("%s <span class='ctx-sub'>%.0f\u00b0</span>", slot, r$arm[1]), "arm slot"),
@@ -1023,25 +655,10 @@ server <- function(input, output, session) {
                 r$support_window[1])) else NULL)
   })
 
-  # The league percentile, said out loud. Reads the SAME league_ref the
-  # Characteristics tab shades from, through the same lg_pctile(), so a sentence
-  # here and a fill there can never disagree. What is new is only that it is a
-  # sentence: "lower than 84% of LHP four-seams" is the unit a scouting report
-  # repeats, and no surface in this app produced one.
-  #
-  # Ordered by distance from the 50th rather than by a fixed list, so the
-  # unusual traits lead. A writeup opens with the thing that stands out, not
-  # with velocity because velocity is first in the schema.
-  # One percentile track: a faint fill to the percentile and a numbered dot on
-  # it. Shared by the percentile chart and the Arsenal so the two read as one
-  # scale. Near the 50th the app's ramp is nearly white, so white text on it
-  # vanished: an extension at the 31st and a velocity at the 38th rendered as
-  # blank circles. Light fills get dark text and a rim. faded marks a sample
-  # under the floor.
   pctile_bubble <- function(q, faded = FALSE) {
     col <- pctile_fill(q, "high")
-    rgb <- grDevices::col2rgb(col)[, 1]
-    light <- (0.299 * rgb[1] + 0.587 * rgb[2] + 0.114 * rgb[3]) > 170
+    rgb_val <- grDevices::col2rgb(col)[, 1]
+    light <- (0.299 * rgb_val[1] + 0.587 * rgb_val[2] + 0.114 * rgb_val[3]) > 170
     dot_style <- sprintf("left:%.0f%%;background:%s;%s%s", q, col,
                          if (light) "color:#333;border:1px solid #bbb;" else "",
                          if (faded) "opacity:.45;" else "")
@@ -1062,11 +679,7 @@ server <- function(input, output, session) {
                              metrics = c("velo","ivb","hb","vaa","spin",
                                          "ext","rel_ht","rel_side"))
     if (is.null(lp)) return(NULL)
-    # Ordered by distance from the 50th so the unusual traits lead, with one
-    # exception: the three release traits stay together, as a block, at the
-    # position their most extreme member earns. Where he lets go of the ball is
-    # one idea read across three numbers, and splitting them across the chart
-    # made the reader reassemble it.
+    # Most unusual traits first, release traits kept together
     REL_GROUP <- c("ext", "rel_ht", "rel_side")
     dev <- abs(lp$pctile - 50)
     in_rel <- lp$metric %in% REL_GROUP
@@ -1074,18 +687,6 @@ server <- function(input, output, session) {
     lp <- lp[order(-dev, ifelse(in_rel, match(lp$metric, REL_GROUP), 0L)), , drop = FALSE]
     hand_word <- if (identical(r$p_throws[1], "R")) "RHP" else "LHP"
 
-    # ---- A percentile chart, not seven sentences ----
-    #
-    # The block was seven lines ending "...of LHP FFs", which is the problem
-    # Savant's percentile-ranking chart was designed to solve and a format every
-    # coach already reads. The dot sits at the RAW percentile, so right is
-    # always "more of this trait" and the two end labels say what more means.
-    #
-    # Colour only where one end is better for the pitcher, per
-    # METRIC_SPEC$context_better: velocity and extension. Ride, run, approach
-    # angle, spin and release height are shapes, not grades, and a red dot on a
-    # sinker's low ride would assert something the data cannot support. Those
-    # render slate, and the note says why.
     ends <- function(m) {
       ph <- LEAGUE_PHRASE[[m]]
       c(sub(" than$", "", ph$low), sub(" than$", "", ph$high))
@@ -1093,16 +694,9 @@ server <- function(input, output, session) {
     row <- function(i) {
       m   <- lp$metric[i]
       raw <- lp$pctile[i]
-      # Red above the league, blue below, on every trait. Slate was tried for
-      # the shape traits (ride, run, approach angle, spin, release height) on the
-      # grounds that more of them is not better, and dropped 2026-09-21 by
-      # request: the chart reads as one scale, and "red means more" is already
-      # what the Characteristics tab's IVB and HB shading means.
       e   <- ends(m)
       val <- sprintf(paste0("%.", lp$digits[i], "f%s"), lp$value[i], lp$unit[i])
-      # Per trait, not per pitch: they settle at very different rates, so one
-      # count can leave release height solid and approach angle faded on the
-      # same row of pitches. See METRIC_SPEC$shape_floor.
+      # Faded when the sample is under the trait's stability floor
       fl   <- shape_floor(m)
       thin <- is.finite(fl) && n_pitches < fl
       div(class = "ctx-prow",
@@ -1111,8 +705,6 @@ server <- function(input, output, session) {
           div(class = "ctx-pv", style = if (thin) "color:#999;font-style:italic;" else "", val),
           div(style = "flex:1;",
               pctile_bubble(raw, faded = thin),
-              # The high end only. The low end is its opposite and the reader
-              # supplies it; printing both doubled the text under every track.
               div(class = "ctx-pend", style = "justify-content:flex-end;", tags$span(e[2]))))
     }
     tagList(
@@ -1121,30 +713,15 @@ server <- function(input, output, session) {
                     sprintf(" \u00b7 %d pitches", n_pitches))),
       lapply(seq_len(nrow(lp)), row),
       div(class = "ctx-note", paste0(
-        "Red is above the league, blue below. A faded trait has too few pitches ",
-        "here to place precisely: release height and side settle in 4, velocity ",
-        "in 13, spin in 14, approach angle in 19, ride in 31, run in 50.")))
+        "Red is above the league, blue below. A faded trait has too few pitches here ",
+        "to place precisely. Pitches needed: ", floor_text, ".")))
   })
 
-  # His whole arsenal over the window and batter side on screen, not just the
-  # selected pitch type. The pitch-type selector still drives the percentile
-  # block above, which is a per-pitch question; these two blocks are about the
-  # pitcher.
-  #
-  # Read from ctx_shape(), which has no pitch floor, so every pitch he threw is
-  # a row and usage divides by all of them. Until 2026-09-21 the shape table was
-  # floored at 50 and this panel hid Tolle's 43 FF and 19 CU vs LHH over the 2H,
-  # reading his sinker as 58% instead of 38%.
   ctx_arsenal_rows <- reactive({
     shp <- ctx_shape()
     shp[shp$pitcher == as.integer(input$pitcher), , drop = FALSE]
   })
 
-  # The selector offers what he actually threw in this window and batter side,
-  # most-used first, rather than every pitch code in the app. Picking a pitch he
-  # has never thrown answered with an empty chart, and a control that can select
-  # nothing teaches the reader the page is broken. isolate() on the current
-  # value so this reacts to the window changing, not to its own update.
   observe({
     d  <- ctx_arsenal_rows()
     ch <- as.character(d$pitch_type[order(-d$pitches)])
@@ -1154,28 +731,7 @@ server <- function(input, output, session) {
                       selected = if (isTRUE(cur %in% ch)) cur else ch[1])
   })
 
-  # NOT a table. The Characteristics tab already prints every one of these
-  # numbers in a grid, and repeating a grid here made the page read as two
-  # tables stacked. Two results per pitch, drawn as the same percentile bubbles
-  # as the chart above (bars until 2026-09-21, changed by request so the page
-  # reads as one scale).
-  #
-  # ---- Dot POSITION is "better for the pitcher", on every row ----
-  #
-  # The first version filled each bar to the raw league percentile. For whiff%
-  # that is right, since more is better. For xwOBA it is backwards: a .370
-  # four-seam sits at the 75th percentile of contact damage, so it drew a LONG
-  # bar, and a long bar reads as "good" before anyone looks at the colour. The
-  # colour said bad and the length said good, which is why the panel looked
-  # inverted even though every colour on it was correct.
-  #
-  # So each bar now fills to the PITCHER percentile: the raw percentile for a
-  # high-is-good metric, 100 minus it for a low-is-good one. Longer and redder
-  # both mean better for him on every row, and the number beside the bar is that
-  # same pitcher percentile. It is the convention Savant's own percentile
-  # rankings use, for the same reason.
-  #
-  # The direction comes from METRIC_SPEC$context_better, not from this code.
+  # Further right is better for the pitcher, so low-is-good metrics are flipped
   pitcher_pct <- function(p, metric) {
     if (!is.finite(p)) return(NA_real_)
     if (identical(context_better(metric), "low")) 100 - p else p
@@ -1201,7 +757,7 @@ server <- function(input, output, session) {
           div(class = "ctx-bar", pctile_bubble(q, faded = thin)))
     }
 
-    head <- div(class = "ctx-arow ctx-ahead",
+    header_row <- div(class = "ctx-arow ctx-ahead",
                 div("Pitch"), div("Usage"),
                 div(style = "text-align:center;", "Whiff%"),
                 div(style = "text-align:center;", "xwOBA"))
@@ -1218,8 +774,6 @@ server <- function(input, output, session) {
       u <- 100 * d$pitches[i] / tot
       div(class = "ctx-arow",
           div(class = "ctx-pt", style = sprintf("color:%s;", col), pt),
-          # Usage drawn, not just printed, so the row's weight is visible: a 45%
-          # four-seam and a 3% changeup should not look like equals.
           div(class = "ctx-use",
               div(class = "ctx-usebar", style = sprintf("width:%.0fpx;", max(2, u * 0.5))),
               sprintf("%.0f%%", u)),
@@ -1228,7 +782,7 @@ server <- function(input, output, session) {
     })
 
     tagList(
-      div(class = "ctx-card", head, rows),
+      div(class = "ctx-card", header_row, rows),
       div(class = "ctx-note", sprintf(
         "Percentile vs every %s throwing that pitch, scored so further right and redder is better for him. (n) = sample under the floor.",
         if (identical(ctx_hand(), "R")) "RHP" else "LHP")))

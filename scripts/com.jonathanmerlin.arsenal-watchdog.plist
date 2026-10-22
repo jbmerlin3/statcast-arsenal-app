@@ -5,19 +5,13 @@
   <key>Label</key>
   <string>com.jonathanmerlin.arsenal-watchdog</string>
 
-  <!-- /bin/bash rather than Rscript, unlike the chain agent: this script reads
-       nothing on disk except its own log, so the TCC reasoning that put Rscript
-       first in the chain's plist does not apply. -->
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
     <string>/Users/jonathanmerlin/statcast-arsenal-app/scripts/watchdog.sh</string>
   </array>
 
-  <!-- Hourly, not on a calendar. The question "is the live page stale" is worth
-       asking whenever this machine happens to be awake, not at fixed times it
-       might sleep through. StartInterval also fires once shortly after load,
-       so a laptop opened at noon gets checked at noon. -->
+  <!-- Hourly whenever the machine is awake; also fires shortly after load -->
   <key>StartInterval</key>
   <integer>3600</integer>
 
@@ -27,9 +21,7 @@
   <key>WorkingDirectory</key>
   <string>/Users/jonathanmerlin/statcast-arsenal-app</string>
 
-  <!-- gh lives in /opt/homebrew/bin, which launchd's default PATH does not
-       include. Without this the staleness check works and the self-heal
-       silently cannot fire, which is the worst of both. -->
+  <!-- gh is in /opt/homebrew/bin, which launchd's default PATH lacks -->
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>

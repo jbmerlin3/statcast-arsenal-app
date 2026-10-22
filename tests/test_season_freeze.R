@@ -1,16 +1,7 @@
-# step15_season_freeze.R
-#
-#   Rscript tests/step15_season_freeze.R
-#
-# The chain stops asking Savant for data once the regular season is over
-# (SEASON_LAST_DAY in scripts/update_data.R, set 2026-09-28). Savant and the
-# schedule API are replaced by recorders here, so every check is about which
-# request refresh_store() makes, and none of them touches the network.
-#
-#  1. After the season, with the store holding its last day: no request.
-#  2. After the season, with the store short of its last day: one request,
-#     ending ON the last day, never after it.
-#  3. During the season: the request runs to the date asked, as before.
+# Season freeze in refresh_store(), with Savant and the schedule API stubbed:
+#   after the season and fully held: no request
+#   after the season but short: one request ending on the last day
+#   during the season: the request runs to the date asked
 suppressMessages({library(dplyr); library(purrr)})
 invisible(lapply(sort(list.files("R", full.names = TRUE)), source))
 suppressMessages(source("scripts/update_data.R"))
@@ -63,4 +54,5 @@ expect("in season: request runs to the date asked", unname(r$calls[[1]]["end"]),
 
 cat("\n", strrep("-", 60), "\n", sep = "")
 if (length(fails)) { cat("FAILURES:\n"); for (f in fails) cat("  ", f, "\n") }
-cat("STEP 15 SEASON FREEZE: ", if (!length(fails)) "PASS" else "FAIL", "\n", sep = "")
+cat("SEASON FREEZE: ", if (!length(fails)) "PASS" else "FAIL", "\n", sep = "")
+quit(status = if (length(fails)) 1 else 0)

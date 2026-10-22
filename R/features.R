@@ -1,43 +1,18 @@
 # features.R
-#
-# Pitch-level construction. Turns the season-wide Statcast frame into the
-# one-pitcher, trimmed frame every plot and table downstream expects.
-#
-# Requires theme.R for MIN_PITCH_COUNT.
+# Pitch-level columns: zone flag, movement, VAA, pitching team, pitch codes
 
 library(dplyr)
 
 
-# The zone a pitch is called in, in feet. A pitch is a strike if ANY part of the
-# ball crosses the zone, so both bounds carry a ball radius. Half of a 17 inch
-# plate is 0.7083 ft and the ball's radius is 0.1208 ft, which is where 0.8291
-# comes from.
-#
-# The vertical bound carried no radius until 2026-08-23, and that was the bug:
-# the same allowance was in one axis and not the other. Measured against
-# Savant's own zone% and chase% over 105 pitchers with 100+ PA:
-#
-#   vertical pad   zone% MAE   zone% bias   chase% MAE
-#   0 ft (before)      4.646       -4.646        2.193
-#   0.1208 ft          0.105       +0.098        0.192
-#
-# A grid search over half width and pad lands on the same 0.12, so this is the
-# ball radius and not a fitted fudge factor.
+# Zone edges include the ball radius on both axes (any part of the ball counts):
+# half the 17 in plate (0.7083 ft) + 0.1208 ft
 PLATE_HALF_FT  <- 0.7083
 BALL_RADIUS_FT <- 0.1208
 ZONE_HALF_FT   <- PLATE_HALF_FT + BALL_RADIUS_FT   # 0.8291
 
 
-#' Strike zone membership, as a 0/1 integer
-#'
-#' Vertical bounds are the batter-specific zone Savant reports per pitch, not a
-#' constant, widened by the ball radius the same way the half-width is.
-#'
-#' Its own function because the season store carries `in_zone` too and
-#' `scripts/update_data.R` has to recompute it. Two copies of this geometry in
-#' two files is exactly how a rate stat drifts from itself. The drawn zone box in
-#' plot_heatmap() is deliberately NOT this: that one is a rendering coordinate
-#' and must not move a rate.
+#' Strike zone membership (0/1), using the batter's own vertical zone.
+#' Also used by scripts/update_data.R.
 in_zone_flag <- function(plate_x, plate_z, sz_bot, sz_top) {
   as.integer(plate_x >= -ZONE_HALF_FT & plate_x <= ZONE_HALF_FT &
                plate_z >= (sz_bot - BALL_RADIUS_FT) &
@@ -45,14 +20,8 @@ in_zone_flag <- function(plate_x, plate_z, sz_bot, sz_top) {
 }
 
 
-#' Row-wise derived columns
-#'
-#' Depends only on the pitch itself, never on which other pitches are in the
-#' frame, so this runs once over every pitcher when app_data.rds is built rather
-#' than per query. Idempotent, so re-running it is harmless.
-#'
-#' Savant reports break in feet from the catcher's view. The sign flip on pfx_x
-#' is what makes arm side read positive, per CLAUDE.md.
+#' Row-wise derived columns: hb, ivb, in_zone, vaa, pitch_team. Idempotent.
+#' HB is -pfx_x * 12 (arm side positive for a right-hander).
 add_pitch_features <- function(df) {
   df <- df |>
     mutate(
@@ -61,51 +30,8 @@ add_pitch_features <- function(df) {
       in_zone = in_zone_flag(plate_x, plate_z, sz_bot, sz_top)
     )
 
-  # VAA, the vertical angle the ball crosses the front of the plate at, in
-  # degrees and always negative. Savant ships no such column and has no name for
-  # it: all 120 columns of the season store were checked on 2026-08-31. It is
-  # derived from the trajectory primitives, which live in the season store and
-  # NOT in app_data, so this takes the pitch_team pattern below rather than
-  # in_zone's. Deriving it here is exactly what lets the seven primitives stay
-  # off the deploy artifact while the one number that reads them ships.
-  #
-  # Same formula as sc_add_trajectory() in 02_StuffPlus/scripts/stuffv4.R. Kept
-  # in step by hand, which is tolerable only because it is four lines of physics
-  # with no fitted constant in it. If either side gains a constant, this becomes
-  # a shared file instead.
-  #
-  # yf is the front of the plate, 17/12 ft. A FIXED reference plane, so this is a
-  # property of the pitch rather than of where it ended up. It still moves with
-  # location through the trajectory, which is the known confound: the same
-  # fastball crosses flatter at the top of the zone than at the knees.
-  #
-  # What ships is LOCATION-ADJUSTED, changed 2026-09-22. The raw angle moves
-  # with where the pitch finished, so a pitcher's average was partly a statement
-  # about his location mix: the same fastball crosses flatter at the top of the
-  # zone than at the knees. Measured over the 2026 store, raw VAA's median
-  # within-pitcher SD is 1.52 times the spread BETWEEN pitchers, the worst ratio
-  # of any trait the app shows, so a percentile needed 148 pitches to settle
-  # within five points and a reliever's whole season never got there.
-  #
-  # Adjusting drops that ratio to 0.53 and the count to 19, while the
-  # pitcher-level correlation with raw is 0.989 over 1,829 pitcher-by-pitch
-  # cells: the same trait, with the location noise taken out. It is not free.
-  # The median pitcher moves 8 percentile points against the raw ranking and the
-  # 90th moves 24, so a number memorised before this date may read differently.
-  # The page does not say so: the column stays titled VAA with no footnote, by
-  # request, and this comment is where the method is documented.
-  #
-  # Method, matching sc_fit_vaa_adj() in 02_StuffPlus/scripts/stuffv4.R: per
-  # pitch type, regress VAA on a quadratic in plate_z and take the residual.
-  # Then ADD BACK the fit at that pitch type's mean plate height, so the number
-  # stays an angle in degrees (four-seams -5.8 to -3.6) rather than a residual
-  # centred on zero. A residual is a grade; this page wants a trait.
-  #
-  # Fit on whatever frame is featurised, which in the chain is the whole season
-  # store, so app_data and the league_ref built from it share one fit by
-  # construction. A pitch type under VAA_ADJ_MIN_N is left RAW rather than
-  # fitted on a handful of rows, so fixtures and one-day frames pass through
-  # unchanged.
+  # VAA at the front of the plate (17/12 ft), then location-adjusted.
+  # Needs the trajectory columns, which only the season store has.
   if (all(c("vy0", "vz0", "ay", "az") %in% names(df))) {
     yf  <- 17 / 12
     tf  <- (-df$vy0 - sqrt(df$vy0^2 - 2 * df$ay * (50 - yf))) / df$ay
@@ -113,17 +39,7 @@ add_pitch_features <- function(df) {
     df$vaa <- adjust_vaa_for_location(df)
   }
 
-  # The pitching team, derived rather than looked up. Top of the inning means
-  # the away team is batting, so the HOME team is on the mound. Resolves every
-  # row of the 2026 store, 572,181 of them, across 30 teams.
-  #
-  # Conditional, and that is not laziness. The three source columns live in the
-  # season store and NOT in app_data: shipping home_team, away_team and
-  # inning_topbot to keep one derived column would be three columns to save one.
-  # So this computes where the sources exist and leaves an already-derived
-  # column alone everywhere else, which keeps add_pitch_features() idempotent on
-  # app_data the way it already is for in_zone. in_zone gets away with
-  # recomputing because ITS sources are in app_data; this one cannot.
+  # Top of the inning means the home team is pitching (season store only)
   if (all(c("inning_topbot", "home_team", "away_team") %in% names(df))) {
     df$pitch_team <- ifelse(df$inning_topbot == "Top", df$home_team, df$away_team)
   }
@@ -131,40 +47,15 @@ add_pitch_features <- function(df) {
 }
 
 
-# Savant arm angles that cannot be real. Found 2026-10-10 on Bryan Hudson's
-# Trends chart: in game 822873 (2026-07-22) six of his twelve pitches read about
-# -50 degrees against his usual 12, and Jacob Latz in the same game read -51
-# against his 52. Release point on those pitches was within 0.2 ft of normal,
-# and arm angle is a description of where the ball leaves the hand, so a 60
-# degree swing with no release change is a recording error.
-#
-# Measured on the 2026 store, release within 0.3 ft of the pitcher's median:
-#
-#   off his median by   pitches   pitchers
-#   > 15 deg                 31         17   single pitches, the normal tail
-#   > 20 deg                 14          5
-#   > 30 deg                 14          5   the same 14: nothing in 20 to 30
-#
-# The empty 20 to 30 band is why 30 is safe. The 0.5 ft release bound separates
-# the errors (all 0.19 ft or less) from position players pitching, whose angle
-# genuinely swings 30+ degrees with the release point moving 1.1 ft or more.
+# Arm angles 30+ degrees off a pitcher's median with an unchanged release point
+# are recording errors (a real slot change moves the release point too)
 ARM_ANGLE_MAX_DEV     <- 30    # degrees from the pitcher's median
 ARM_ANGLE_SAME_RELEASE <- 0.5  # ft from his median release point
 
-#' Blank arm angles that disagree with an unchanged release point
-#'
-#' NOT row-wise, unlike add_pitch_features(): the reference is each pitcher's
-#' median over the WHOLE frame passed in. build_app_data() passes the full season
-#' store, so the median is the season's and does not move with the date window
-#' the user picks later. On a short window a pitcher with a few bad pitches could
-#' have them pull his median; on a season they cannot.
-#'
-#' Blanks to NA rather than dropping the pitch: velocity, movement and results
-#' on these pitches are fine, and every arm angle reader already handles NA (see
-#' release_context.R and plot_movement()).
+#' Blank impossible arm angles, against each pitcher's median over the frame
+#' passed in (the full season, in the chain). The pitch is kept.
 clean_arm_angle <- function(df) {
-  # Base R rather than group_by(), so a data.frame comes back a data.frame. A
-  # tibble would change what df[, "col"] returns for every reader downstream.
+  # Base R keeps a data.frame a data.frame
   med <- function(x) ave(x, df$pitcher, FUN = function(v) median(v, na.rm = TRUE))
   dev   <- abs(df$arm_angle - med(df$arm_angle))
   shift <- sqrt((df$release_pos_x - med(df$release_pos_x))^2 +
@@ -175,32 +66,18 @@ clean_arm_angle <- function(df) {
 }
 
 
+# Pitch types with fewer pitches keep raw VAA
 VAA_ADJ_MIN_N <- 2000
 
 
-#' Strip the location component out of VAA, per pitch type
-#'
-#' Returns a vector the length of `df`: the fit at that pitch type's mean plate
-#' height plus this pitch's residual from the quadratic. Rows whose pitch type
-#' is under VAA_ADJ_MIN_N, and rows with no plate_z, keep the raw angle, so a
-#' thin frame degrades to the old behaviour rather than to a fit nobody should
-#' trust.
-#'
-#' Quadratic rather than linear because the relationship bends: the angle
-#' flattens faster toward the top of the zone than it steepens toward the knees.
+#' Location-adjusted VAA: per pitch type, the residual from a quadratic in
+#' plate_z plus the fit at that type's mean plate height (still in degrees).
 adjust_vaa_for_location <- function(df) {
   out <- df$vaa
   if (!"plate_z" %in% names(df)) return(out)
   ok <- is.finite(df$vaa) & is.finite(df$plate_z)
   pt <- as.character(df$pitch_type)
-  # Fit on the codes the app RANKS by, not Savant's raw codes. Until 2026-09-23
-  # KC was fit on its own and folded into CU afterwards, so a knuckle curve was
-  # re-centred at KC's mean plate height (1.65 ft) and then ranked among curves
-  # centred at CU's (1.76 ft). That read knuckle curves about 0.1 degrees
-  # steeper, which is better for a curve: 40 of 230 curveball pitchers moved a
-  # median 3 percentile points, at most 7.6. CS and FO were worse in kind,
-  # under VAA_ADJ_MIN_N on their own, so they shipped raw inside an adjusted
-  # CU and FS. Same map as reconcile_pitch_codes(), read from the same table.
+  # Fit on reconciled codes (KC, CS -> CU; FO -> FS)
   maps <- PITCH_CODE_RULES[PITCH_CODE_RULES$action == "map", ]
   hit  <- match(pt, maps$code)
   pt[!is.na(hit)] <- maps$target[hit[!is.na(hit)]]
@@ -216,22 +93,8 @@ adjust_vaa_for_location <- function(df) {
 }
 
 
-#' Remap or drop pitch codes this app cannot chart
-#'
-#' The single choke point. Every code that reaches a plotting or table function
-#' has passed through here, so pitch_colors[[pt]] cannot fail.
-#'
-#' Runs BEFORE add_count() in shape_arsenal(), so a remapped code counts toward
-#' its target for both pt_n and the usage ordering. Freddy Peralta's 39 CS join
-#' his 292 CU as one 331-pitch curve rather than two rows.
-#'
-#' Anything neither in PITCH_CODE_RULES nor in pitch_colors is dropped, not
-#' passed through. A code Savant introduces next season therefore degrades to a
-#' visible note instead of crashing three tabs.
-#'
-#' The report rides as an attribute rather than a column, because it is a fact
-#' about the frame and not about any row, and as an attribute rather than a
-#' message() because this runs on every reactive invalidation.
+#' Remap or drop pitch codes the app can't chart. The changes ride along as an
+#' attribute for the note above the tabs.
 reconcile_pitch_codes <- function(df) {
   known <- names(pitch_colors)
   pt    <- as.character(df$pitch_type)
@@ -260,8 +123,6 @@ reconcile_pitch_codes <- function(df) {
   df$pitch_type <- pt
   df <- df[!bad, , drop = FALSE]
 
-  # The guarantee, asserted rather than assumed. If this ever fires, a code got
-  # past the rules and the fix belongs here, not in a downstream colour lookup.
   stopifnot("reconcile_pitch_codes let an unknown code through" =
               all(df$pitch_type %in% known))
 
@@ -272,9 +133,7 @@ reconcile_pitch_codes <- function(df) {
 }
 
 
-#' One-line summary of what reconcile_pitch_codes() did, or NULL
-#'
-#' NULL when nothing was touched, so callers can skip rendering entirely.
+#' One-line summary of the pitch code changes, or NULL
 pitch_code_note <- function(x) {
   rep <- attr(x, "pitch_codes")
   if (is.null(rep) || !nrow(rep)) return(NULL)
@@ -285,69 +144,25 @@ pitch_code_note <- function(x) {
 }
 
 
-#' Per-pitcher, per-window shaping
-#'
-#' Everything here depends on which rows are present, so none of it can be
-#' precomputed and stored.
-#'
-#' pt_n is the reason. It counts a pitch type within the frame it is given, so
-#' it is a function of the selected date window, not a property of the pitch. A
-#' stored season-wide pt_n would let a two-week view keep a pitch type that has
-#' 200 pitches on the season and one in the window. The usage ordering has the
-#' same dependence, which is why the existing pre-break and post-break reports
-#' legitimately show different pitch orders.
-#'
-#' Rare types are dropped before any rate is computed, since a 3-pitch sample
-#' produces rate columns that read as real. The returned factor ordering fixes
-#' panel and legend order in every downstream plot, so it is load bearing rather
-#' than cosmetic.
-#'
-#' Expects a frame already narrowed to one pitcher and one window.
+#' One pitcher's window: reconcile codes, count each pitch type (pt_n) and order
+#' by usage. pt_n depends on the window and is never stored.
 shape_arsenal <- function(df) {
   df  <- df |> filter(!is.na(pitch_type), pitch_type != "")
   df  <- reconcile_pitch_codes(df)
   rep <- attr(df, "pitch_codes")
 
-  # EVERY pitch type this app can chart is kept, however few pitches it has.
-  #
-  # There used to be a filter(pt_n >= MIN_PITCH_COUNT) here, dropping the ROWS
-  # of any type under five pitches in the window. On a season it is invisible.
-  # On one start it is a lie: Didier Fuentes on 2026-08-05 threw 13 four-seams,
-  # 3 splitters and 3 sliders, and the app reported 100% four-seam, because the
-  # six secondary pitches were gone before usage was computed. It also read
-  # 0 batters faced, since all four of his PA-ending pitches happened to be
-  # those splitters and sliders.
-  #
-  # Dropping rows was always the wrong instrument. theme.R says it outright:
-  # MIN_PITCH_COUNT decided whether a pitch was SHOWN, while METRIC_SPEC's
-  # per-metric floors decide whether a RATE is trustworthy, "and the two are
-  # deliberately separate constants". Only the second concern is real. A
-  # three-pitch slider has an honest count, an honest velocity and an honest
-  # location; what it does not have is a meaningful whiff rate, and the
-  # below_floor state already marks exactly those cells by printing their
-  # denominator beside the shading.
-  #
-  # So the count is always true and the rates police themselves.
+  # Every pitch type is kept; rate floors handle small samples
   pl <- df |> add_count(pitch_type, name = "pt_n")
   ord <- pl |> count(pitch_type, sort = TRUE) |> pull(pitch_type)
   out <- pl |> mutate(pitch_type = factor(pitch_type, levels = ord))
 
-  # dplyr drops attributes, so the report has to be re-attached after the
-  # pipeline rather than surviving it.
+  # dplyr drops attributes
   attr(out, "pitch_codes") <- rep
   out
 }
 
 
-#' Build the pitch-level frame for one pitcher
-#'
-#' The console and report entry point, unchanged in signature and output. It is
-#' now the composition of the two halves above, so the app and the console run
-#' the same code rather than two implementations that can drift.
-#'
-#' Composition order is deliberate. shape_arsenal() first, then features,
-#' reproduces the original column order [..., pt_n, hb, ivb, in_zone]. The
-#' reverse is numerically identical and silently reorders columns.
+#' Pitch-level frame for one pitcher, for console and report use
 build_pitch_level <- function(df, mlb_id) {
   one <- df |> filter(pitcher == mlb_id)
   if (nrow(one) == 0) stop("No pitches found for id ", mlb_id)
@@ -355,21 +170,7 @@ build_pitch_level <- function(df, mlb_id) {
 }
 
 
-#' The pl_trim column contract
-#'
-#' The source script carried two different versions of this select, one with
-#' release position and trajectory and one without. Downstream code was written
-#' against whichever happened to be in the session, which is the re-paste bug
-#' class the split exists to close. This vector is the single definition.
-#'
-#' This is the ANALYSIS contract and is deliberately wider than the deploy
-#' artifact. Trajectory (vx0 through az, plus release_pos_y for the 50 ft
-#' reference) is kept because VAA is a standing formula convention, and release
-#' point because reports use it ad hoc. Both stay available from the console.
-#'
-#' They no longer ship. Phase 7 measured the cost: the ten columns below are
-#' 27.0 MB of the 49.2 MB file and 42.4 MB of the 144.3 MB resident footprint,
-#' and nothing in R/, scripts/ or app.R reads any of them. See APP_DATA_COLS.
+# Analysis column set (wider than what ships; see APP_DATA_COLS)
 PL_TRIM_COLS <- c(
   "pitcher", "player_name", "game_date", "pitch_type", "pt_n", "pitch_team",
   "stand", "p_throws", "balls", "strikes", "n_thruorder_pitcher",
@@ -382,56 +183,11 @@ PL_TRIM_COLS <- c(
 )
 
 
-#' The app_data.rds column set
-#'
-#' PL_TRIM_COLS minus pt_n and minus the ten columns nothing reads.
-#'
-#' pt_n cannot be stored at all: it is a function of the selected window rather
-#' than of the pitch. See shape_arsenal(), which recomputes it per query.
-#'
-#' The other ten are readable, just unread. Measured 2026-08-20 by scanning every
-#' .R in R/, scripts/ and app.R with this contract and PL_TRIM_COLS excluded:
-#' zero references outside the contract itself. Dropping them takes app_data.rds
-#' from 37 columns to 27, 49.2 MB to 22.2 MB on disk, 144.3 MB to 101.9 MB
-#' resident.
-#'
-#' They are dropped from the DEPLOY artifact only. PL_TRIM_COLS still carries
-#' them, so a console session keeps trajectory. Putting one back is a one-line
-#' edit here plus a chain rerun.
-#'
-#' Two that look droppable and are not: arm_angle is read by plot_movement(),
-#' and launch_speed backs HH% in the results panel.
-#'
-#' AMENDED 2026-08-31, when the traits table gave release point a reader. The
-#' original note said these ten were "readable, just unread", and that was the
-#' whole justification for dropping them, so the moment two of them are read the
-#' justification expires for those two rather than being argued around.
-#'
-#' release_pos_x and release_pos_z came back. The seven trajectory columns did
-#' NOT: add_pitch_features() now derives vaa from them and vaa is what ships, so
-#' the artifact pays for one column instead of seven. That is the whole reason
-#' the derivation lives in features.R rather than in tables.R.
-#' AMENDED AGAIN 2026-09-08. bb_type came back when GB% landed, so the only
-#' entries left are the seven trajectory columns vaa is derived from.
-#'
-#' 2026-09-23: n_thruorder_pitcher joined PL_TRIM_COLS, and so ships, for the
-#' Usage tab's times-through toggle. An integer column, about 2.5 MB resident.
-#' No missing values in the 2026 store. The first chain run after it merges
-#' changes the content digest and redeploys, which is expected.
+# Trajectory columns; only the derived vaa ships
 APP_DATA_UNREAD <- c(
-  # Trajectory. vaa is derived from these in add_pitch_features() and ships in
-  # their place; nothing else reads them. Putting them back costs ~19 MB.
   "vx0", "vy0", "vz0", "ax", "ay", "az", "release_pos_y"
 )
 
+# Columns stored in app_data.rds
 APP_DATA_COLS <- setdiff(PL_TRIM_COLS, c("pt_n", APP_DATA_UNREAD))
 
-
-#' Trim a pitch-level frame to the contract
-#'
-#' all_of() rather than any_of() on purpose. A column missing from the upstream
-#' pull should error here, while the pull is still the obvious suspect, rather
-#' than surfacing as an empty chart panel several functions later.
-trim_pitch_level <- function(pl) {
-  pl |> select(all_of(PL_TRIM_COLS))
-}

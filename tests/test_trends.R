@@ -1,10 +1,5 @@
-# step16_trends.R
-#
-#   Rscript tests/step16_trends.R
-#
-# The Trends tab. Checks the numbers trend_series() hands the plot, and the
-# titles built from them, against values computed by hand from the fixture.
-
+# Trends tab: trend_series() values and titles, tooltips, change flags, pooled usage
+# and the pitch-mix-by-outing chart, against values computed by hand from the fixture.
 suppressMessages({library(dplyr); library(tidyr); library(purrr); library(forcats)
                   library(ggplot2); library(gt); library(readr)})
 invisible(lapply(sort(list.files("R", full.names = TRUE)), source))
@@ -37,8 +32,7 @@ expect("last-5 velo is the mean over pitches in the last 5 plotted games",
        s$summ$last[s$summ$metric == "velo"],
        mean(ff$release_speed[ff$game_date %in% last_days], na.rm = TRUE))
 
-# Thin games: under TREND_MIN_N of the pitch, no point. Discriminates only if
-# the fixture has some, so the count is printed.
+# Games under TREND_MIN_N get no point
 thin <- d |> count(pitch_type, game_date) |> filter(n < TREND_MIN_N)
 cat("       (", nrow(thin), " thin pitch-type games in the fixture)\n", sep = "")
 for (pt in unique(thin$pitch_type)) {
@@ -47,12 +41,11 @@ for (pt in unique(thin$pitch_type)) {
          any(pts$game_date %in% thin$game_date[thin$pitch_type == pt]), FALSE)
 }
 
-# HB keeps the raw sign. The fixture is a left-hander, so his FF is negative.
+# HB keeps the raw sign (the fixture is a left-hander)
 expect("LHP four-seam HB stays negative",
        all(s$points$v[s$points$metric == "hb"] < 0), TRUE)
 
-# Usage follows the batter side, and every outing with a pitch to that side
-# gets a point, short ones included.
+# Usage follows the batter side; every outing gets a point
 u <- s$points |> filter(metric == "usage") |> arrange(game_date)
 g1 <- d[d$game_date == u$game_date[1] & d$stand == "R", ]
 expect("first-game usage vs RHH", u$v[1], mean(g1$pitch_type == "FF") * 100)
@@ -60,11 +53,11 @@ expect("first pooled share equals the first game's", u$line[1], u$v[1])
 expect("every outing vs RHH has a usage point",
        sort(as.character(u$game_date)), sort(unique(as.character(d$game_date[d$stand == "R"]))))
 
-# Arm angle ignores the pitch selection.
+# Arm angle ignores the pitch selection
 expect("arm angle is the same whatever pitch is selected",
        trend_series(d, "SL", "R")$summ$season[6], s$summ$season[6])
 
-# Short outings now get a usage panel; one outing alone still does not.
+# One outing alone gets no usage panel
 gn <- d |> count(game_date)
 short <- d[d$game_date %in% gn$game_date[gn$n < TREND_USAGE_POOL], ]
 cat("       (", length(unique(short$game_date)), " outings under ", TREND_USAGE_POOL,
@@ -82,7 +75,7 @@ expect("velo title reads avg then last 5 games", grepl("avg .* mph .*last 5 game
 expect("shading starts at the first of the last 5 velo games",
        s$summ$from[s$summ$metric == "velo"], min(last_days))
 
-# Hover tooltip: the game date, the sample, and the value against the average.
+# Hover tooltip
 tp  <- trend_panels(d, "FF", "R")
 row <- tp$pts |> filter(metric == "hb") |> slice(1)
 tip <- trend_tip_text(row, tp)
@@ -94,12 +87,10 @@ expect("usage tip names the side and its denominator",
        trend_tip_text(urow, tp)[2], paste0(urow$n, " of ", urow$tot, " pitches vs RHH"))
 expect("plot builds from the panels", inherits(plot_trends(tp), "ggplot"), TRUE)
 
-# Band: his game-to-game SD, over the plotted game values.
+# Band is the SD of the game values
 expect("band sd is the SD of the game values", s$summ$sd[s$summ$metric == "velo"], sd(pv$v))
 
-# What changed. Discriminates both ways: a synthetic +3 mph on the last 5 FF
-# games must be flagged; the same pitch with its game order intact must not
-# carry a flag it did not earn from the data.
+# A planted +3 mph over the last 5 FF games is flagged; the real data is not
 ffg  <- sort(unique(d$game_date[d$pitch_type == "FF"]))
 bump <- d; hit <- bump$pitch_type == "FF" & bump$game_date %in% tail(ffg, TREND_LAST_N)
 bump$release_speed[hit] <- bump$release_speed[hit] + 3
@@ -119,14 +110,12 @@ hbtxt <- trend_change_text(data.frame(pitch = "FF", metric = "hb", season = -12,
                                       diff = -2, sd = 1, z = -4), "All")
 expect("HB away from zero reads as more break", hbtxt, "HB more break: FF -2.0\"")
 
-# The pool goes back 3 outings, further until it holds 50 pitches. Starters'
-# pools are the last 3; a run of 10-pitch innings reaches back 5.
+# Pool covers 3+ outings and 50+ pitches
 expect("starter pool is the last 3", pool_start(c(90, 95, 88, 92)), c(1, 1, 1, 2))
 expect("reliever pool reaches 50 pitches", pool_start(rep(10, 7)), c(1, 1, 1, 1, 1, 2, 3))
 expect("pooled share weights by pitches", pool_share(c(1, 9), c(10, 90), k = 2), c(10, 10))
 
-# Pitch mix by outing: one bar segment per outing and type, shares summing to
-# 100 per outing, widths equal to the outing's pitches.
+# Pitch mix by outing: segments, shares summing to 100, widths = pitches
 pm <- plot_mix_outings(d, "All")
 md <- pm$data
 expect("mix shares sum to 100 per outing", all(abs(tapply(md$share, md$game_date, sum) - 100) < 1e-9), TRUE)
@@ -139,8 +128,7 @@ ph <- plot_mix_outings(d, "All", hide = hid)$data
 expect("hidden type drops after shares are computed",
        ph$share[ph$pitch_type != hid][1], md$share[md$pitch_type != hid][1])
 
-# Mix tooltip: the hovered segment's own pitches, and velocity off that
-# outing's pitches of that type only.
+# Mix tooltip uses that outing's pitches of that type
 r1 <- md[1, ]
 own <- d[d$game_date == r1$game_date & d$pitch_type == r1$pitch_type, ]
 expect("mix segment velo is that outing's pitch", r1$velo, mean(own$release_speed, na.rm = TRUE))
@@ -149,9 +137,7 @@ expect("mix tip names the count", grepl(paste0("^", r1$n, " of ", r1$tot, " pitc
 expect("mix tip has velo and break", grepl("Velo .* mph .*IVB .*HB", tip[3]), TRUE)
 expect("mix tip names the times-through view", grepl("2nd time through", mix_tip_text(r1, "All", "2")[4]), TRUE)
 
-# Pooled share in the tooltip: the bottom type's pooled share is the same
-# pool_share() the Trends usage line uses, with a type missing from an outing
-# counted as zero, and the tooltip names how many outings the pool spans.
+# Pooled share in the tooltip matches pool_share(), with absent types as zero
 lv <- levels(md$pitch_type)
 g1 <- md |> distinct(game_date, tot) |> arrange(game_date)
 n1 <- sapply(g1$game_date, \(dt) sum(d$game_date == dt & d$pitch_type == lv[1]))

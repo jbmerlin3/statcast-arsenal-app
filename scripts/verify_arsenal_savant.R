@@ -1,21 +1,8 @@
 # verify_arsenal_savant.R
-#
+# Compare pitches, whiff%, run value and RV/100 per pitcher and pitch type with
+# Savant's pitch-arsenal leaderboard, and check the sign of run value against wOBA.
 #   Rscript scripts/verify_arsenal_savant.R
-#
-# The strongest external check this repo has. Savant's pitch-arsenal leaderboard
-# publishes run value, whiff% and pitch counts PER PITCHER PER PITCH TYPE, which
-# is exactly the grain the characteristics tables render at. Every other check
-# here either compares the app to itself or compares a pitcher-level aggregate.
-#
-# WINDOW MISMATCH IS EXPECTED AND IS NOT A FINDING. The leaderboard is
-# season-to-date and the local store ends whenever it last refreshed, so counts
-# differ by roughly the games in between. Read correlation, and read the mean
-# gap against that lag. Exact equality would actually be suspicious.
-#
-# The one thing this settles that nothing else can: the SIGN of run value.
-# delta_pitcher_run_exp positive means good for the pitcher, which is asserted
-# below against Savant's own wOBA rather than assumed from the column name.
-# Getting it backwards paints the league's best pitches deep blue.
+# The leaderboard is season-to-date: read correlations, not exact matches.
 
 suppressPackageStartupMessages({library(dplyr); library(readr)})
 invisible(lapply(sort(list.files("R", full.names = TRUE)), source))
@@ -61,11 +48,8 @@ chk("whiff%",   j$our_whiff,   j$sv_whiff,   0.98)
 chk("run value",j$our_rv,      j$sv_rv,      0.90)
 chk("RV/100",   j$our_rv100,   j$sv_rv100,   0.90)
 
-# The sign, asserted rather than assumed. A better pitch allows less wOBA, so a
-# correct run value must run NEGATIVE against wOBA. If delta_pitcher_run_exp
-# were batter-perspective this flips positive and everything above still passes,
-# because correlation is sign-blind about a shared convention.
 cat("\nSIGN OF RUN VALUE\n")
+# Correlation can't see a flipped sign; RV must run against wOBA allowed
 r_woba  <- cor(j$our_rv100, j$sv_woba,  use = "complete.obs")
 r_whiff <- cor(j$our_rv100, j$sv_whiff, use = "complete.obs")
 cat(sprintf("  RV/100 vs wOBA allowed : %+.3f   (must be negative)  %s\n",

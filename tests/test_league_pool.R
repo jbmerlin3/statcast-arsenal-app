@@ -1,21 +1,5 @@
-# step13_league_pool.R
-#
-#   Rscript tests/step13_league_pool.R
-#
-# R/league_pool.R: the Search and Context tables the chain precomputes so the
-# 1 GB instance never aggregates the whole league on a click.
-#
-# What this file is guarding, in order of how quietly each would fail:
-#
-#  1. A pool hit is the SAME table the tab computed live before the pool
-#     existed. Checked against the pre-pool code path (dplyr filter of the whole
-#     window, then the function), not against the pool builder's own path, so a
-#     key built for the wrong side or window fails here instead of rendering a
-#     plausible, wrong table.
-#  2. A pool built for other data or other code is refused, so the page never
-#     mixes league numbers from one day with pitcher numbers from another.
-#  3. A window no button sets misses the pool, so it computes live rather than
-#     borrowing the nearest preset.
+# Precomputed league pool: a pool hit equals the live computation, a pool built for
+# other data or code is refused, and a non-preset window misses the pool.
 suppressMessages({library(dplyr);library(tidyr);library(purrr);library(forcats)
                   library(ggplot2);library(gt);library(readr);library(tibble)})
 invisible(lapply(sort(list.files("R", full.names = TRUE)), source))
@@ -46,8 +30,7 @@ expect("one release table per window", length(pool$release), length(wins))
 
 for (w in names(wins)) {
   from <- as.character(wins[[w]][1]); to <- as.character(wins[[w]][2])
-  # The pre-pool path: a full-width dplyr copy of the window, exactly what
-  # search_pool() and ctx_window() did before PR #12.
+  # The live path, a filtered copy of the window
   win <- filter(app_data, game_date >= from, game_date <= to)
   for (side in POOL_BATTER_SIDES) {
     hit <- pool_search(pool, from, to, side)
@@ -61,7 +44,7 @@ for (w in names(wins)) {
          same_frame(prof[prof$n >= 100, , drop = FALSE],
                     pitcher_release_profile(win, heights, min_pitches = 100)), TRUE)
 }
-# Discrimination: the three sides really differ, so a swapped key cannot pass.
+# The three sides differ: a swapped key can't pass
 full <- as.character(wins$full)
 expect("L and R tables differ (a swapped key would be caught)",
        same_frame(pool_search(pool, full[1], full[2], "L"),
@@ -87,5 +70,5 @@ expect("NULL pool misses", is.null(pool_search(NULL, full[1], full[2], "All")), 
 
 cat("\n", strrep("-", 64), "\n", sep = "")
 if (length(fails)) { cat("FAILURES:\n"); for (f in fails) cat("  ", f, "\n") }
-cat("STEP 13 LEAGUE POOL: ", if (!length(fails)) "PASS" else "FAIL", "\n", sep = "")
+cat("LEAGUE POOL: ", if (!length(fails)) "PASS" else "FAIL", "\n", sep = "")
 quit(status = if (!length(fails)) 0 else 1)
