@@ -20,7 +20,7 @@ build <- function(id, hand, dates = NULL) {
     ctx <- resolve_table(sub, dn, ref, pth, hand, "All Counts")
     list(tbl = sub, ctx = ctx, g = render(sub, ctx), glyphs = glyphs)
   }
-  # `glyphs`: whether the renderer draws dagger markers (traits_gt() doesn't)
+  # `glyphs`: whether the renderer draws the double dagger (traits_gt() doesn't)
   list(tb      = tb,
        traits  = panel(traits_tbl,  function(s, c) traits_gt(s, hand, ref = c),
                        glyphs = FALSE),
@@ -29,7 +29,7 @@ build <- function(id, hand, dates = NULL) {
 }
 
 # Find a cell in a given state in either table. `glyphs = TRUE` limits to renderers
-# that draw daggers; `cols` narrows to specific columns.
+# that draw the double dagger; `cols` narrows to specific columns.
 pick <- function(b, state, glyphs = FALSE, cols = NULL) {
   nms <- c("traits", "results")
   if (glyphs) nms <- Filter(function(nm) isTRUE(b[[nm]]$glyphs), nms)
@@ -52,15 +52,14 @@ txt <- function(td) gsub("<[^>]*>", "", td)
 baz <- build(669358, "R")
 cam <- build(702070, "R", c("2026-08-04", "2026-08-17"))
 
-cat("=== fallback renders its marker ===\n")
+cat("=== fallback renders like an exact cell ===\n")
 f    <- pick(baz, "fallback", glyphs = TRUE); fb <- f$cell
 cell <- tds(f$panel$g, fb$column)[fb$row]
 cat("  [", f$which, "] ", fb$column, " row ", fb$row, ": ", txt(cell), "\n", sep = "")
-expect("fallback cell text ends with the dagger", grepl("†$", txt(cell)), TRUE)
+expect("fallback cell has no marker", grepl("\u2020", txt(cell)), FALSE)
 expect("fallback cell is filled, not white", grepl("#FFFFFF", cell, ignore.case = TRUE), FALSE)
 # Fallback is not bold in the rendered HTML
 expect("fallback cell is not bold", grepl("font-weight: bold", cell), FALSE)
-expect("but it still carries the dagger", grepl("\u2020", txt(cell)), TRUE)
 
 cat("\n=== below floor renders unfilled, grey, italic, with its n ===\n")
 # whiff_pct's denominator is swings: it carries an (n)
@@ -104,15 +103,14 @@ expect("traits table hits TABLE_WIDTH_PX",  tw, as.numeric(TABLE_WIDTH_PX))
 expect("results table hits TABLE_WIDTH_PX", rw, as.numeric(TABLE_WIDTH_PX))
 expect("the two tables are exactly equal",  tw == rw, TRUE)
 
-cat("\n=== note order is dagger, double dagger, grey ===\n")
+cat("\n=== note order is scope, double dagger, small sample ===\n")
 # The results table has the most notes to order
 np  <- baz$results
 nts <- np$ctx$notes
 for (n in nts) cat("  ", substr(n, 1, 72), "\n", sep = "")
-# Note order: scope, dagger, double dagger, small sample
+# Note order: scope, double dagger, small sample
 rank_of <- function(n) {
   if (startsWith(n, "Percentiles rank")) 0L
-  else if (startsWith(n, "†")) 1L
   else if (startsWith(n, "‡")) 2L
   else 3L
 }
@@ -122,15 +120,6 @@ expect("notes are in marker-grammar order", !is.unsorted(vapply(nts, rank_of, in
 h <- as.character(as_raw_html(np$g))
 pos <- vapply(nts, function(n) regexpr(substr(n, nchar(n) - 30, nchar(n)), h, fixed = TRUE), integer(1))
 expect("rendered source notes follow the same order", !is.unsorted(pos), TRUE)
-
-cat("\n=== one dagger line names one grain, and two grains stop ===\n")
-two <- baz$ctx$cells
-two$state[1] <- "fallback"; two$grain[1] <- "pitch_type x p_throws"
-got <- tryCatch({
-  fb2 <- two[two$state == "fallback", ]
-  if (length(unique(fb2$grain)) > 1) stop("guard") else "no guard"
-}, error = function(e) "stopped")
-expect("two distinct grains would be caught", got, "stopped")
 
 cat("\n=== NULL paths on the plot and usage renderers ===\n")
 # Build the movement plot for a short window

@@ -135,7 +135,7 @@ style_pitch_codes <- function(g, tbl) {
 
 
 #' Paint resolved league context onto a table. `notes = FALSE` keeps fills and
-#' (n) markers but drops footnotes and daggers.
+#' (n) markers but drops footnotes and the double dagger they explain.
 apply_league_ref <- function(g, ref, notes = TRUE) {
   if (is.null(ref)) return(g)
 
@@ -151,7 +151,7 @@ apply_league_ref <- function(g, ref, notes = TRUE) {
 
   # text_transform, not fmt: a second fmt would replace xwOBA's format
   mk <- ref$cells[nzchar(ref$cells$marker), , drop = FALSE]
-  if (!notes) mk <- mk[!mk$marker %in% c("\u2020", "\u2021"), , drop = FALSE]
+  if (!notes) mk <- mk[mk$marker != "\u2021", , drop = FALSE]
   g <- reduce(seq_len(nrow(mk)), function(gt_tbl, i) {
     col <- mk$column[i]; rw <- mk$row[i]; m <- mk$marker[i]
     gt_tbl |> text_transform(cells_body(columns = col, rows = rw),

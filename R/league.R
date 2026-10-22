@@ -234,30 +234,9 @@ resolve_table <- function(tbl, denoms, ref, p_throws, stand, count_bucket = "All
 }
 
 
-#' Source notes in a fixed order: scope, dagger, double dagger, small sample
+#' Source notes in a fixed order: scope, double dagger, small sample
 state_notes <- function(cells) {
-  fb <- cells[cells$state == "fallback", , drop = FALSE]
-
-  # One dagger line listing every grain used
-  ladder_grains <- vapply(LADDER, function(r) r$grain, character(1))
-  grains <- unique(fb$grain)
-  unknown <- setdiff(grains, ladder_grains)
-  if (length(unknown)) {
-    stop("fallback grain not on the ladder: ", paste(unknown, collapse = " | "),
-         call. = FALSE)
-  }
-  grains <- ladder_grains[ladder_grains %in% grains]
-
   notes <- character(0)
-  if (nrow(fb)) {
-    parts <- vapply(grains, function(gr) paste0(
-      gr, " (at least ", min(fb$n_pitchers[fb$grain == gr]), " pitchers)"),
-      character(1))
-    notes <- c(notes, paste0(
-      "† Percentile from a coarser league cut than the exact one, because that ",
-      "cell held fewer than ", MIN_REF_PITCHERS, " pitchers. Cut used: ",
-      paste(parts, collapse = "; "), "."))
-  }
   if (any(cells$state == "no_reference")) {
     notes <- c(notes, paste0(
       "‡ No league reference exists at any grain for this pitch type and ",
