@@ -80,8 +80,11 @@ expect("fixture: FF at 0-0 reads 75% with SV hidden, not 100%",
 # A pitch never thrown in a count is labeled 0%, not a blank panel
 hl <- cut$layers[[which(sapply(cut$layers, function(x) inherits(x$geom, "GeomText")))]]$data
 expect("every panel carries a usage label", nrow(hl), 10L)
-expect("Harris FC, 2K: labelled 0%",
-       hl$strip[hl$pitch_type == "FC" & hl$situation == "2K"], "Usage 0%")
+# The literal fixture has no two-strike pitches at all
+hxl <- plot_heatmap(hx, "All")
+hxl <- hxl$layers[[which(sapply(hxl$layers, function(x) inherits(x$geom, "GeomText")))]]$data
+expect("fixture FF, 2K: labelled 0%",
+       hxl$strip[hxl$pitch_type == "FF" & hxl$situation == "2K"], "Usage 0%")
 # Pre-2K and 2K partition the counts: every located pitch lands on exactly one panel
 pan <- ggplot2::ggplot_build(full)$data
 pts <- h[!is.na(h$plate_x) & !is.na(h$plate_z), ]

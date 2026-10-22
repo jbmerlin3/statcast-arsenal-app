@@ -5,6 +5,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 682928,CJ Abrams,"6' 0""",72,6
 650556,Bryan Abreu,"6' 1""",73,1
 677800,Wilyer Abreu,"5' 10""",70,9
+691185,Maximo Acosta,"5' 11""",71,6
 670183,Garrett Acton,"6' 2""",74,1
 682668,Luisangel Acuña,"5' 7""",67,6
 660670,Ronald Acuña Jr.,"6' 0""",72,9
@@ -15,6 +16,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 701519,Travis Adams,"6' 1""",73,1
 666176,Jo Adell,"6' 2""",74,9
 688642,Zach Agnos,"6' 0""",72,1
+687924,Julian Aguiar,"6' 3""",75,1
 695239,Robby Ahlstrom,"6' 3""",75,1
 669211,Keegan Akin,"6' 0""",72,1
 645277,Ozzie Albies,"5' 7""",67,4
@@ -34,6 +36,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 665660,Elvis Alvarado,"6' 6""",78,1
 621237,José Alvarado,"6' 2""",74,1
 682626,Francisco Alvarez,"5' 10""",70,2
+805373,Nacho Alvarez Jr.,"5' 10""",70,6
 674841,Andrew Alvarez,"6' 3""",75,1
 670541,Yordan Alvarez,"6' 4""",76,10
 691182,Adael Amador,"5' 11""",71,4
@@ -70,13 +73,16 @@ mlbam_id,full_name,height_str,height_in,pos_code
 664056,Harrison Bader,"5' 11""",71,8
 678225,Jihwan Bae,"5' 11""",71,8
 595879,Javier Báez,"5' 11""",71,6
+692013,Henry Baez,"6' 3""",75,1
 695491,Joshua Báez,"6' 3""",75,7
 672275,Patrick Bailey,"6' 0""",72,2
 641329,Bryan Baker,"6' 6""",78,1
 663609,Luken Baker,"6' 4""",76,3
+699114,Leo Balcazar,"5' 10""",70,6
 686948,Drake Baldwin,"6' 0""",72,2
 694208,Moisés Ballesteros,"5' 8""",68,10
 607455,Anthony Banda,"6' 2""",74,1
+814154,Scott Bandura,"6' 3""",75,7
 677943,Will Banfield,"6' 0""",72,2
 621383,Tanner Banks,"6' 1""",73,1
 682995,Hunter Barco,"6' 4""",76,1
@@ -84,6 +90,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 605130,Scott Barlow,"6' 3""",75,1
 656212,Charlie Barnes,"6' 2""",74,1
 686930,Mason Barnett,"6' 0""",72,1
+676480,José Barrero,"6' 4""",76,6
 678489,Jorge Barrosa,"5' 6""",66,8
 663698,Joey Bart,"6' 2""",74,2
 678545,Osleivis Basabe,"5' 11""",71,4
@@ -94,12 +101,13 @@ mlbam_id,full_name,height_str,height_in,pos_code
 683146,Brett Baty,"6' 3""",75,5
 641343,Jake Bauers,"6' 0""",72,3
 691945,Carter Baumler,"6' 2""",74,1
+642585,Félix Bautista,"6' 8""",80,1
 669358,Shane Baz,"6' 3""",75,1
 660825,Eduard Bazardo,"6' 0""",72,1
 683953,Travis Bazzana,"5' 11""",71,4
 687637,Dylan Beavers,"6' 5""",77,7
 694341,Brendan Beck,"6' 2""",74,1
-687597,Jordan Beck,"6' 2""",74,7
+687597,Jordan Beck,"6' 2""",74,9
 663941,Tristan Beck,"6' 4""",76,1
 670280,David Bednar,"6' 1""",73,1
 656222,Jalen Beeks,"5' 11""",71,1
@@ -113,6 +121,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 643217,Andrew Benintendi,"5' 9""",69,10
 687562,Jake Bennett,"6' 6""",78,1
 666181,Will Benson,"6' 4""",76,9
+686701,Ryan Bergert,"6' 1""",73,1
 682674,Victor Bericoto,"6' 1""",73,7
 699024,Leo Bernal,"6' 0""",72,2
 657514,Brennan Bernardino,"6' 4""",76,1
@@ -191,6 +200,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 703615,Jose Cabrera,"6' 3""",75,1
 665828,Oswaldo Cabrera,"6' 0""",72,5
 695506,Jac Caglianone,"6' 4""",76,9
+686551,Christian Cairo,"5' 8""",68,6
 683357,Owen Caissie,"6' 4""",76,9
 669743,Alex Call,"5' 11""",71,7
 814430,Brett Callahan,"6' 0""",72,7
@@ -199,6 +209,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 663662,Daz Cameron,"6' 0""",72,7
 702070,Noah Cameron,"6' 3""",75,1
 691406,Junior Caminero,"6' 1""",73,5
+692225,Kristian Campbell,"6' 3""",75,O
 672569,Gustavo Campero,"5' 6""",66,O
 669134,Luis Campusano,"5' 10""",70,2
 600869,Jeimer Candelario,"6' 1""",73,5
@@ -227,7 +238,9 @@ mlbam_id,full_name,height_str,height_in,pos_code
 701852,Drew Cavanaugh,"6' 0""",72,2
 656302,Dylan Cease,"6' 2""",74,1
 677944,Slade Cecconi,"6' 4""",76,1
+676454,Brendan Cellucci,"6' 4""",76,1
 672021,Eric Cerantola,"6' 5""",77,1
+691330,Moisés Chace,"6' 1""",73,1
 696149,Bubba Chandler,"6' 3""",75,1
 665953,Andrés Chaparro,"6' 0""",72,3
 547973,Aroldis Chapman,"6' 4""",76,1
@@ -258,8 +271,10 @@ mlbam_id,full_name,height_str,height_in,pos_code
 571578,Patrick Corbin,"6' 4""",76,1
 683000,Riley Cornelio,"6' 3""",75,1
 692030,Jose Corniell,"6' 2""",74,1
+529017,Alexander Cornielle,"6' 2""",74,1
 621043,Carlos Correa,"6' 3""",75,6
 666126,Carlos Cortes,"5' 7""",67,9
+641482,Nestor Cortes,"5' 10""",70,1
 676680,Tom Cosgrove,"6' 2""",74,1
 543056,Danny Coulombe,"5' 10""",70,1
 681297,Colton Cowser,"6' 3""",75,8
@@ -286,6 +301,9 @@ mlbam_id,full_name,height_str,height_in,pos_code
 681168,Luis Curvelo,"6' 1""",73,1
 518595,Travis d'Arnaud,"6' 0""",72,2
 689149,Chad Dallas,"5' 11""",71,1
+702674,Caden Dana,"6' 4""",76,1
+699314,David Davalillo,"6' 1""",73,1
+815589,Bo Davidson,"6' 1""",73,9
 689546,Nick Davila,"6' 3""",75,1
 680779,Henry Davis,"5' 11""",71,2
 699823,Tyler Davis,"6' 2""",74,1
@@ -299,11 +317,11 @@ mlbam_id,full_name,height_str,height_in,pos_code
 680728,Adrian Del Castillo,"5' 9""",69,10
 801725,Luis De León,"6' 3""",75,1
 669384,Raynel Delgado,"6' 0""",72,4
-691277,Deyvison De Los Santos,"6' 1""",73,5
+691277,Deyvison De Los Santos,"6' 1""",73,3
 660853,Enyel De Los Santos,"6' 3""",75,1
 660787,Yerry De los Santos,"6' 3""",75,1
 676356,Jonny DeLuca,"5' 10""",70,9
-800543,Josue De Paula,"6' 3""",75,9
+800543,Josue De Paula,"6' 3""",75,10
 672282,Reid Detmers,"6' 2""",74,1
 606965,Chris Devenski,"6' 3""",75,1
 646240,Rafael Devers,"6' 0""",72,3
@@ -328,6 +346,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 686668,Brenton Doyle,"6' 3""",75,8
 684442,Kohl Drake,"6' 5""",77,1
 676263,Jack Dreyer,"6' 2""",74,1
+686482,Logan Driscoll,"5' 11""",71,2
 675660,Shane Drohan,"6' 2""",74,1
 650960,Daniel Duarte,"6' 0""",72,1
 643289,Mauricio Dubón,"5' 11""",71,7
@@ -389,6 +408,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 670036,Matt Festa,"6' 1""",73,1
 640448,Kyle Finnegan,"6' 2""",74,1
 680755,Braydon Fisher,"6' 4""",76,1
+690916,Richard Fitts,"6' 3""",75,1
 702153,Brian Fitzpatrick,"6' 7""",79,1
 656427,Jack Flaherty,"6' 4""",76,1
 676596,Josh Fleming,"6' 2""",74,1
@@ -416,7 +436,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 670770,TJ Friedl,"5' 8""",68,8
 681807,David Fry,"6' 1""",73,9
 800311,Didier Fuentes,"6' 0""",72,1
-690924,Braxton Fulford,"5' 10""",70,10
+690924,Braxton Fulford,"5' 10""",70,2
 605242,Michael Fulmer,"6' 2""",74,1
 690978,Dax Fulton,"6' 7""",79,1
 681892,Kody Funderburk,"6' 4""",76,1
@@ -455,16 +475,19 @@ mlbam_id,full_name,height_str,height_in,pos_code
 656464,Kevin Ginkel,"6' 4""",76,1
 669372,J.T. Ginn,"6' 2""",74,1
 608337,Lucas Giolito,"6' 6""",78,1
+687830,Sawyer Gipson-Long,"6' 4""",76,1
 607192,Tyler Glasnow,"6' 8""",80,1
 808970,Woo-Suk Go,"5' 11""",71,1
 502671,Paul Goldschmidt,"6' 2""",74,3
 672782,Yoendrys Gómez,"6' 3""",75,1
+664062,Tony Gonsolin,"6' 3""",75,1
 594835,Marco Gonzales,"6' 1""",73,1
 693304,Nick Gonzales,"5' 8""",68,5
 682445,Domingo Gonzalez,"6' 0""",72,1
 694224,Gabriel Gonzalez,"5' 10""",70,9
 694378,Jacob Gonzalez,"6' 2""",74,6
 663853,Romy Gonzalez,"6' 0""",72,10
+682790,Wikelman González,"6' 0""",72,1
 696100,Hunter Goodman,"5' 11""",71,2
 676467,Colton Gordon,"6' 4""",76,1
 685299,Tanner Gordon,"6' 5""",77,1
@@ -473,6 +496,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 543238,Anthony Gose,"6' 0""",72,1
 700669,Gordon Graceffo,"6' 4""",76,1
 701552,Andre Granillo,"6' 4""",76,1
+680686,Josiah Gray,"6' 1""",73,1
 682608,Peyton Gray,"6' 4""",76,1
 543243,Sonny Gray,"5' 10""",70,1
 656484,Tristan Gray,"6' 1""",73,6
@@ -482,7 +506,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 656492,Foster Griffin,"6' 3""",75,1
 804606,Konnor Griffin,"6' 3""",75,6
 663757,Trent Grisham,"5' 10""",70,8
-687093,Vaughn Grissom,"6' 2""",74,4
+687093,Vaughn Grissom,"6' 2""",74,3
 694410,LuJames Groover,"6' 2""",74,3
 675627,Michael Grove,"6' 3""",75,1
 594027,Tyron Guerrero,"6' 8""",80,1
@@ -499,14 +523,17 @@ mlbam_id,full_name,height_str,height_in,pos_code
 678020,Seth Halvorsen,"6' 2""",74,1
 666152,David Hamilton,"5' 10""",70,5
 641656,Ian Hamilton,"6' 1""",73,1
+694633,Chase Hampton,"6' 2""",74,1
 676106,Emerson Hancock,"6' 4""",76,1
 668974,Maverick Handley,"5' 9""",69,2
 669724,Brenan Hanifee,"6' 5""",77,1
 690440,Bradley Hanner,"6' 4""",76,1
 664023,Ian Happ,"5' 10""",70,7
 547180,Bryce Harper,"6' 1""",73,3
+802419,Thomas Harrington,"6' 2""",74,1
 695391,Brett Harris,"6' 2""",74,5
 687957,Dustin Harris,"6' 2""",74,7
+802686,Hayden Harris,"6' 0""",72,1
 663687,Hogan Harris,"6' 3""",75,1
 671739,Michael Harris II,"5' 11""",71,8
 805345,Trent Harris,"6' 1""",73,1
@@ -514,8 +541,9 @@ mlbam_id,full_name,height_str,height_in,pos_code
 606996,Kyle Hart,"6' 5""",77,1
 664129,Geoff Hartlieb,"6' 5""",77,1
 640451,Hunter Harvey,"6' 3""",75,1
+678184,Garrett Hawkins,"6' 5""",77,1
 663647,Ke'Bryan Hayes,"5' 11""",71,5
-669720,Austin Hays,"5' 10""",70,7
+669720,Austin Hays,"5' 10""",70,10
 687396,Brent Headrick,"6' 6""",78,1
 669169,Jonathan Heasley,"6' 3""",75,1
 595978,Austin Hedges,"6' 0""",72,2
@@ -525,6 +553,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 664854,Ryan Helsley,"6' 2""",74,1
 683002,Gunnar Henderson,"6' 3""",75,6
 701656,Logan Henderson,"6' 0""",72,1
+681973,Josh Hendrickson,"6' 4""",76,1
 683618,Edgardo Henriquez,"6' 4""",76,1
 669371,Cole Henry,"6' 4""",76,1
 656529,Sam Hentges,"6' 8""",80,1
@@ -540,6 +569,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 671056,Iván Herrera,"5' 11""",71,10
 700327,Welinton Herrera,"6' 0""",72,1
 682120,Tim Herrin,"6' 6""",78,1
+687792,DJ Herz,"6' 2""",74,1
 676051,Codi Heuer,"6' 5""",77,1
 676551,Brewer Hicklen,"6' 2""",74,9
 663855,Jordan Hicks,"6' 2""",74,1
@@ -569,6 +599,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 690990,Cade Horton,"6' 1""",73,1
 687462,Spencer Horwitz,"5' 10""",70,3
 656555,Rhys Hoskins,"6' 3""",75,3
+656557,Tanner Houck,"6' 5""",77,1
 691781,Brady House,"6' 4""",76,5
 605288,Adrian Houser,"6' 4""",76,1
 663542,Bryan Hudson,"6' 8""",80,1
@@ -613,7 +644,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 675659,Greg Jones,"6' 0""",72,7
 663330,Jahmai Jones,"5' 10""",70,10
 683003,Jared Jones,"6' 0""",72,1
-682987,Spencer Jones,"6' 7""",79,9
+682987,Spencer Jones,"6' 7""",79,8
 691458,Blaze Jordan,"6' 1""",73,5
 699115,Carlos Jorge,"5' 9""",69,8
 690829,Ben Joyce,"6' 5""",77,1
@@ -630,7 +661,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 675916,James Karinchak,"6' 3""",75,1
 691720,Kyle Karros,"6' 5""",77,5
 641743,Anthony Kay,"6' 0""",72,1
-692216,CJ Kayfus,"5' 11""",71,7
+692216,CJ Kayfus,"5' 11""",71,3
 807712,Luke Keaschall,"6' 0""",72,4
 680577,DaShawn Keirsey Jr.,"6' 0""",72,8
 690993,Colt Keith,"6' 2""",74,5
@@ -685,6 +716,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 665152,Dean Kremer,"6' 2""",74,1
 621139,Brooks Kriske,"6' 3""",75,1
 640454,Matt Krook,"6' 4""",76,1
+695667,Ben Kudrna,"6' 3""",75,1
 669270,Joel Kuhnel,"6' 5""",77,1
 811965,Joshua Kuroda-Grauer,"5' 10""",70,5
 701762,Nick Kurtz,"6' 5""",77,3
@@ -722,6 +754,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 669461,Matthew Liberatore,"6' 4""",76,1
 695734,Daylen Lile,"5' 11""",71,7
 596019,Francisco Lindor,"5' 10""",70,6
+699073,Thayron Liranzo,"6' 1""",73,2
 641793,Zack Littell,"6' 4""",76,1
 663893,Brendon Little,"6' 2""",74,1
 681432,Luke Little,"6' 8""",80,1
@@ -734,6 +767,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 675920,Seth Lonsway,"6' 0""",72,1
 694388,Joey Loperfido,"6' 3""",75,7
 682052,Jacob Lopez,"6' 4""",76,1
+699214,Leandro Lopez,"6' 1""",73,1
 670032,Nicky Lopez,"5' 10""",70,4
 672640,Otto Lopez,"5' 10""",70,6
 625643,Reynaldo López,"6' 1""",73,1
@@ -752,6 +786,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 663738,Daniel Lynch IV,"6' 6""",78,1
 592518,Manny Machado,"6' 2""",74,5
 605353,Vimael Machín,"5' 10""",70,6
+680862,Willie MacIver,"6' 2""",74,2
 691788,Joe Mack,"6' 0""",72,2
 671936,Adam Macko,"6' 0""",72,1
 680744,Ty Madden,"6' 3""",75,1
@@ -807,6 +842,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 691723,Coby Mayo,"6' 5""",77,5
 641835,Tim Mayza,"6' 3""",75,1
 807727,Charles McAdoo,"6' 0""",72,4
+663704,James McArthur,"6' 7""",79,1
 685112,Zach McCambley,"6' 2""",74,1
 543510,James McCann,"6' 2""",74,2
 664983,Jake McCarthy,"6' 0""",72,7
@@ -839,6 +875,8 @@ mlbam_id,full_name,height_str,height_in,pos_code
 675848,Juan Mejia,"6' 3""",75,1
 669004,MJ Melendez,"6' 0""",72,10
 675512,Troy Melton,"6' 4""",76,1
+694230,Hendry Mendez,"6' 3""",75,O
+700280,Miguel Mendez,"6' 2""",74,1
 608841,Joey Meneses,"6' 4""",76,3
 701538,Jackson Merrill,"6' 2""",74,8
 683748,Victor Mesa Jr.,"5' 11""",71,9
@@ -851,6 +889,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 686452,Drew Millas,"6' 0""",72,2
 682243,Bryce Miller,"6' 2""",74,1
 669062,Erik Miller,"6' 5""",77,1
+805725,Jake Miller,"6' 2""",74,1
 695243,Mason Miller,"6' 5""",77,1
 680911,Owen Miller,"5' 11""",71,4
 676272,Bobby Miller,"6' 5""",77,1
@@ -885,6 +924,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 672515,Gabriel Moreno,"5' 9""",69,2
 688158,David Morgan,"6' 0""",72,1
 669212,Eli Morgan,"5' 10""",70,1
+681439,Zach Morgan,"5' 11""",71,2
 666661,Juan Morillo,"6' 1""",73,1
 702193,Andrew Morris,"6' 0""",72,1
 695034,Kade Morris,"6' 3""",75,1
@@ -904,6 +944,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 681230,BJ Murray Jr.,"5' 11""",71,5
 681151,Jayden Murray,"6' 1""",73,1
 695020,Tanner Murray,"6' 1""",73,7
+605397,Joe Musgrove,"6' 5""",77,1
 656786,Parker Mushinski,"6' 0""",72,1
 667472,Dane Myers,"6' 0""",72,8
 668964,Tobias Myers,"6' 1""",73,1
@@ -916,13 +957,14 @@ mlbam_id,full_name,height_str,height_in,pos_code
 666310,Bo Naylor,"5' 9""",69,2
 669194,Ryne Nelson,"6' 3""",75,1
 687263,Zach Neto,"5' 11""",71,6
+804556,Braden Nett,"6' 3""",75,1
 656794,Sean Newcomb,"6' 5""",77,1
 693312,Kyle Nicolas,"6' 3""",75,1
 680951,Doug Nikhazy,"6' 0""",72,1
 607043,Brandon Nimmo,"6' 1""",73,9
 807747,Rikuu Nishida,"5' 6""",66,9
 605400,Aaron Nola,"6' 2""",74,1
-663457,Lars Nootbaar,"6' 1""",73,10
+663457,Lars Nootbaar,"6' 1""",73,7
 681393,Connor Norby,"5' 10""",70,4
 689296,Anthony Nunez,"6' 2""",74,1
 673380,Dedniel Núñez,"6' 2""",74,1
@@ -941,8 +983,10 @@ mlbam_id,full_name,height_str,height_in,pos_code
 680716,Jonathan Ornelas,"6' 1""",73,6
 694673,Abimelec Ortiz,"5' 10""",70,3
 687401,Joey Ortiz,"5' 10""",70,6
+673662,Robinson Ortiz,"6' 0""",72,1
 679358,Eric Orze,"6' 4""",76,1
 696030,Alejandro Osuna,"5' 9""",69,7
+671305,Michel Otañez,"6' 4""",76,1
 681546,James Outman,"6' 2""",74,8
 670912,Johan Oviedo,"6' 6""",78,1
 542303,Marcell Ozuna,"6' 1""",73,10
@@ -997,7 +1041,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 656849,David Peterson,"6' 6""",78,1
 695534,Chase Petty,"6' 1""",73,1
 694297,Brandon Pfaadt,"6' 4""",76,1
-502054,Tommy Pham,"6' 1""",73,7
+502054,Tommy Pham,"6' 1""",73,10
 683175,Connor Phillips,"6' 2""",74,1
 623465,Evan Phillips,"6' 2""",74,1
 663969,Tyler Phillips,"6' 5""",77,1
@@ -1042,6 +1086,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 688497,Taylor Rashi,"6' 4""",76,1
 656876,Drew Rasmussen,"6' 1""",73,1
 670231,John Rave,"5' 10""",70,9
+691009,Dylan Ray,"6' 3""",75,1
 592662,Robbie Ray,"6' 2""",74,1
 694397,Marco Raya,"6' 1""",73,1
 607067,Colin Rea,"6' 5""",77,1
@@ -1068,6 +1113,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 681799,Ethan Roberts,"5' 10""",70,1
 642020,Chuckie Robinson,"6' 0""",72,2
 645302,Victor Robles,"6' 0""",72,9
+694358,Tekoah Roby,"6' 1""",73,1
 677587,Brayan Rocchio,"5' 9""",69,6
 697812,Joe Rock,"6' 6""",78,1
 677958,Kumar Rocker,"6' 5""",77,1
@@ -1084,6 +1130,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 699302,Héctor Rodríguez,"5' 10""",70,9
 683679,Jesus Rodriguez,"5' 10""",70,2
 671286,Johnathan Rodríguez,"6' 2""",74,9
+692064,José Rodríguez,"6' 6""",78,1
 677594,Julio Rodríguez,"6' 4""",76,8
 655889,Manuel Rodríguez,"5' 11""",71,1
 684320,Yariel Rodríguez,"6' 0""",72,1
@@ -1117,8 +1164,10 @@ mlbam_id,full_name,height_str,height_in,pos_code
 671131,Jackson Rutledge,"6' 8""",80,1
 668939,Adley Rutschman,"6' 1""",73,2
 657746,Joe Ryan,"6' 2""",74,1
+689981,River Ryan,"6' 2""",74,1
+693306,Aaron Sabato,"6' 0""",72,3
 681870,Erik Sabrowski,"6' 4""",76,1
-695336,Thomas Saggese,"5' 10""",70,7
+695336,Thomas Saggese,"5' 10""",70,6
 806956,Ethan Salas,"6' 1""",73,2
 663967,César Salazar,"5' 8""",68,2
 519242,Chris Sale,"6' 6""",78,1
@@ -1126,7 +1175,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 645305,Ali Sánchez,"6' 0""",72,2
 650911,Cristopher Sánchez,"6' 6""",78,1
 596142,Gary Sánchez,"6' 2""",74,2
-660821,Jesús Sánchez,"6' 3""",75,9
+660821,Jesús Sánchez,"6' 3""",75,10
 676742,Cam Sanders,"6' 2""",74,1
 689818,David Sandlin,"6' 4""",76,1
 680704,Nick Sandlin,"5' 11""",71,1
@@ -1145,6 +1194,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 694384,Nolan Schanuel,"6' 2""",74,3
 453286,Max Scherzer,"6' 3""",75,1
 693645,Cam Schlittler,"6' 6""",78,1
+657376,Clarke Schmidt,"6' 1""",73,1
 669477,Casey Schmitt,"6' 0""",72,7
 682177,Daniel Schneemann,"6' 0""",72,8
 676914,Davis Schneider,"5' 8""",68,7
@@ -1168,7 +1218,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 673540,Kodai Senga,"6' 1""",73,1
 663584,Hayden Senger,"6' 1""",73,2
 622608,Antonio Senzatela,"6' 1""",73,1
-691858,Jared Serna,"5' 7""",67,6
+691858,Jared Serna,"5' 7""",67,4
 661531,Brian Serven,"6' 0""",72,2
 622663,Luis Severino,"6' 2""",74,1
 623149,Paul Sewald,"6' 3""",75,1
@@ -1184,14 +1234,14 @@ mlbam_id,full_name,height_str,height_in,pos_code
 694363,Jared Shuster,"6' 3""",75,1
 672279,Michael Siani,"5' 11""",71,8
 681217,Chase Silseth,"6' 0""",72,1
-682927,Ronny Simon,"5' 8""",68,4
+682927,Ronny Simon,"5' 8""",68,9
 802415,Chandler Simpson,"5' 11""",71,7
 688692,Jared Simpson,"6' 4""",76,1
 681006,Josh Simpson,"6' 2""",74,1
 608371,Lucas Sims,"6' 2""",74,1
 695378,Jack Sinclair,"6' 4""",76,1
 663903,Brady Singer,"6' 5""",77,1
-642350,Jose Siri,"6' 2""",74,8
+642350,Jose Siri,"6' 2""",74,7
 681895,Evan Sisk,"6' 2""",74,1
 694973,Paul Skenes,"6' 6""",78,1
 669373,Tarik Skubal,"6' 3""",75,1
@@ -1228,6 +1278,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 642100,Gabe Speier,"5' 11""",71,1
 828599,Lucas Spence,"6' 0""",72,8
 687765,Mitch Spence,"6' 1""",73,1
+686730,Carson Spiers,"6' 3""",75,1
 543807,George Springer,"6' 1""",73,10
 605488,Jeffrey Springs,"6' 3""",75,1
 687075,Brandon Sproat,"6' 3""",75,1
@@ -1272,6 +1323,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 694374,Tim Tawa,"5' 11""",71,3
 691799,Grant Taylor,"6' 3""",75,1
 669392,Samad Taylor,"5' 8""",68,7
+700187,Troy Taylor,"6' 0""",72,1
 621438,Tyrone Taylor,"6' 0""",72,7
 691019,Kyle Teel,"5' 11""",71,2
 642133,Rowdy Tellez,"6' 3""",75,3
@@ -1306,6 +1358,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 595014,Blake Treinen,"6' 5""",77,1
 624431,Jose Trevino,"5' 9""",69,2
 701649,James Triantos,"5' 11""",71,4
+701655,Reed Trimble,"5' 11""",71,7
 669707,Jared Triolo,"6' 3""",75,6
 642152,Lou Trivino III,"6' 5""",77,1
 644433,Chadwick Tromp,"5' 8""",68,2
@@ -1379,6 +1432,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 701542,Will Warren,"6' 2""",74,1
 696135,Kahlil Watson,"5' 9""",69,9
 670245,Ryan Watson,"6' 5""",77,1
+681890,Troy Watson,"6' 2""",74,1
 694360,Beck Way,"6' 4""",76,1
 677960,Ryan Weathers,"6' 1""",73,1
 596133,Luke Weaver,"6' 2""",74,1
@@ -1399,7 +1453,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 694376,Shay Whitcomb,"6' 0""",72,5
 642201,Eli White,"6' 2""",74,8
 687985,Josh White,"6' 1""",73,1
-695720,Tommy White,"6' 0""",72,5
+695720,Tommy White,"6' 0""",72,3
 676477,Garrett Whitlock,"6' 5""",77,1
 696136,Jordan Wicks,"6' 3""",75,1
 686894,Joey Wiemer,"6' 4""",76,9
@@ -1422,6 +1476,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 691026,Masyn Winn,"5' 9""",69,6
 685464,Cade Winquest,"6' 1""",73,1
 621550,Patrick Wisdom,"6' 2""",74,5
+689172,Brett Wisely,"5' 9""",69,4
 677951,Bobby Witt Jr.,"6' 1""",73,6
 664991,Grant Wolfram,"6' 7""",79,1
 657136,Connor Wong,"5' 10""",70,2
@@ -1452,5 +1507,7 @@ mlbam_id,full_name,height_str,height_in,pos_code
 666171,Ryan Zeferjahn,"6' 5""",77,1
 672582,Angel Zerpa,"6' 0""",72,1
 669145,Bruce Zimmermann,"6' 3""",75,1
+686632,Steven Zobac,"6' 3""",75,1
 676604,Tyler Zuber,"5' 11""",71,1
+691172,Yosver Zulueta,"6' 1""",73,1
 670871,Guillo Zuñiga,"6' 5""",77,1
