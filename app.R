@@ -700,8 +700,7 @@ server <- function(input, output, session) {
       fl   <- shape_floor(m)
       thin <- is.finite(fl) && n_pitches < fl
       div(class = "ctx-prow",
-          div(class = "ctx-pl", lp$label[i],
-              if (!lp$exact[i]) tags$span(style = "color:#aaa;", title = "coarser league cut", " \u2020")),
+          div(class = "ctx-pl", lp$label[i]),
           div(class = "ctx-pv", style = if (thin) "color:#999;font-style:italic;" else "", val),
           div(style = "flex:1;",
               pctile_bubble(raw, faded = thin),

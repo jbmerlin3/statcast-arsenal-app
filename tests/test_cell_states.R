@@ -78,8 +78,8 @@ if (!is.null(hit)) {
   expect("fallback names a coarser grain", is.character(fb$grain) && nzchar(fb$grain), TRUE)
   expect("fallback grain is not the finest cut",
          grepl("stand", fb$grain, fixed = TRUE), FALSE)
-  expect("fallback marker",      fb$marker,      "\u2020")
-  # Fallback is marked by the dagger, not bold
+  # Fallback renders like an exact cell: no marker, not bold
+  expect("fallback has no marker", fb$marker,     "")
   expect("fallback is not bold",  fb$font_weight, "normal")
   expect("fallback is filled",   fb$fill != PCTILE_UNFILLED, TRUE)
   expect("fallback has_ref",     fb$has_ref,     TRUE)
@@ -297,12 +297,13 @@ expect("no neutral fill collides with the below-floor text grey",
 expect("hb carries its note", is.character(hb$metric_note), TRUE)
 expect("velo carries no note", ex$metric_note, NA_character_)
 
-cat("\n=== the four states are separable without hue ===\n")
+cat("\n=== states are separable without hue (exact and fallback look the same) ===\n")
 four <- list(exact = ex, fallback = fb, below_floor = bf, no_reference = nr)
 key  <- vapply(four, function(c) paste(c$fill != PCTILE_UNFILLED, c$font_weight,
                                        c$font_style, gsub("[0-9]+", "N", c$marker)), character(1))
 for (nm in names(key)) cat(sprintf("  %-13s %s\n", nm, key[[nm]]))
-expect("all four differ on non-hue channels", length(unique(key)), 4L)
+expect("exact and fallback render alike", key[["exact"]] == key[["fallback"]], TRUE)
+expect("the other states differ on non-hue channels", length(unique(key)), 3L)
 
 cat("\n=== DIRECTION: xwOBA inverts, whiff% does not ===\n")
 cat("  high  p=90 ->", pctile_fill(90, "high"), " p=10 ->", pctile_fill(10, "high"), "\n")

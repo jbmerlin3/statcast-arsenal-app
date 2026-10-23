@@ -9,7 +9,7 @@ Every shaded cell compares one pitcher's pitch with the league's pitchers throwi
 - **Pitcher first, then across pitchers.** Each pitcher contributes one value per cell, and the reference is the distribution of those values. Pooling pitches would let one 3,000-pitch starter outweigh thirty relievers. (`scripts/build_league_ref.R`)
 - **Precomputed.** `league_ref.rds` stores the mean and 101 quantiles for each pitch type × pitcher hand × batter side × count bucket × metric. A percentile at runtime is one `findInterval()`.
 - **Pitcher hand is never pooled for shape metrics.** Raw horizontal break has opposite signs for righties and lefties, so a pooled reference centers where nobody throws, and no sample floor would catch that.
-- **Fallback ladder.** A cell needs at least 20 contributing pitchers. Below that the lookup drops batter side, then count bucket, and the cell is marked with a dagger. Rate metrics (whiff%, Z-Whiff%, chase% and the like) have one more step: the same pitch type from both hands, since a whiff means the same thing from either side. Thin cells like left-handed curveballs still get a comparison that way. (`LADDER` in `R/league.R`)
+- **Fallback ladder.** A cell needs at least 20 contributing pitchers. Below that the lookup drops batter side, then count bucket. Rate metrics (whiff%, Z-Whiff%, chase% and the like) have one more step: the same pitch type from both hands, since a whiff means the same thing from either side. Thin cells like left-handed curveballs still get a comparison that way. (`LADDER` in `R/league.R`)
 - **One season-long reference.** The league distribution barely moves within a season (splitting at mid-June moves whiff% and CSW% medians by about 1% of their interquartile range), so the full-season reference is valid for any window the user picks.
 
 ## Sample floors and cell states
@@ -34,13 +34,13 @@ Every cell resolves to one of four states, decided in one place (`resolve_cell()
 | State | Meaning | Rendering |
 |---|---|---|
 | exact | League cell at the full grain | shaded |
-| fallback | A coarser league cell answered | shaded, dagger |
+| fallback | A coarser league cell answered | shaded, like exact |
 | below floor | The pitcher's own sample is under the floor | shaded, with its denominator in parentheses |
 | no reference | No league cell at any grain | unshaded, grey italic, double dagger |
 
 Short windows are shaded, not withheld. A scout asking about one start wants to know what happened that day against what the league does over a season, and a small sample answers that exactly. The `(n)` beside a below-floor value is the only thing qualifying it, so it is never dropped. A value that can't be computed at all (a pitch nobody swung at) stays white.
 
-States differ by fill and printed marker, never by hue alone, so they survive a greyscale screenshot.
+Exact and fallback cells look the same: a fallback still compares against at least 20 pitchers. The other two states are marked by fill, text or a printed marker, never by hue alone, so they survive a greyscale screenshot.
 
 ## Metric definitions
 

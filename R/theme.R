@@ -236,9 +236,10 @@ STUFF_PLUS_SPAN <- 25
 
 PCTILE_UNFILLED <- "#FFFFFF"
 
-# How each cell state renders. States differ by fill and marker, never hue alone.
+# How each cell state renders. Exact and fallback look the same; the other two are
+# marked without relying on hue.
 #   exact         league cell at the full grain
-#   fallback      coarser league cell (dagger)
+#   fallback      coarser league cell
 #   below_floor   shaded, with its own sample size in parentheses
 #   no_reference  no league cell at all (double dagger, grey italic)
 CELL_STATE_STYLE <- data.frame(
@@ -248,7 +249,7 @@ CELL_STATE_STYLE <- data.frame(
   font_style  = c("normal", "normal",   "normal",      "italic"),
   font_weight = c("normal", "normal",   "normal",      "normal"),
   # below_floor's marker is its own n, added at runtime
-  marker      = c("",       "†",   "",            "‡"),
+  marker      = c("",       "",         "",            "‡"),
   stringsAsFactors = FALSE
 )
 
