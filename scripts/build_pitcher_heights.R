@@ -38,6 +38,6 @@ if (ok < 0.95) {
 }
 
 dir.create("lookups", showWarnings = FALSE)
-write.csv(out, OUT, row.names = FALSE)
+readr::write_csv(out, OUT, na = "")
 message(sprintf("Wrote %s: %d players, %.1f%% with a parsed height, %d distinct heights",
                 OUT, nrow(out), 100 * ok, length(unique(na.omit(out$height_in)))))

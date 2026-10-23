@@ -26,11 +26,11 @@ The sidebar results panel shows K-BB%, hard-hit rate and xwOBA from Statcast, an
 
 ## How it works
 
-**League context is built pitcher first.** Every percentile ranks a pitcher's pitch against other pitchers' averages for the same pitch type and pitcher hand, never against a pool of pitches, so a 3,000-pitch starter doesn't outweigh thirty relievers. The reference is precomputed as 101 quantiles per cell, so a lookup costs nothing at runtime.
+**League context is built pitcher first.** Every percentile ranks a pitcher's pitch against other pitchers' averages for the same pitch type and pitcher hand (both hands for a rate stat when one hand has too few pitchers), never against a pool of pitches, so a 3,000-pitch starter doesn't outweigh thirty relievers. The reference is precomputed as 101 quantiles per cell, so a lookup costs nothing at runtime.
 
 **Small samples are labeled, not hidden.** Each metric has a floor on its own denominator (50 swings for whiff%, 50 plate appearances for xwOBA), set by an offline resampling study of how fast each stabilizes. A value under its floor is still shaded and carries its sample size in parentheses.
 
-**Definitions match Savant.** On the final 2026 data, whiff%, chase%, zone% and hard-hit% per pitcher are within 0.1 points of Savant's leaderboard on average, and whiff% per pitcher and pitch type is within 0.05 points of Savant's pitch-arsenal leaderboard across 1,256 pitch types (`scripts/verify_savant.R`, `scripts/verify_arsenal_savant.R`).
+**Definitions match Savant.** On the final 2026 data, whiff%, chase%, zone% and hard-hit% per pitcher are within 0.1 points of Savant's leaderboard on average, and whiff% per pitcher and pitch type is within 0.05 points of Savant's pitch-arsenal leaderboard across 1,256 pitcher and pitch type combinations (`scripts/verify_savant.R`, `scripts/verify_arsenal_savant.R`).
 
 **The data pipeline runs itself.** During the season a GitHub Actions workflow pulled new Savant data each morning, rebuilt the league reference and game logs, and redeployed the app only when the data or code changed.
 
