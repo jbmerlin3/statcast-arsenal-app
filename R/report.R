@@ -344,8 +344,8 @@ report_pdf <- function(path, d, hand, hide, tbl, ref, meta) {
     wts <- rep(1, nc); wts[1] <- 0.9; wts[names(ch$cells) %in% c("rel_ht", "rel_side")] <- 1.15
     grid_table(ch$cells, ch$header, widths = wts, fill = ch$fill, col = ch$col,
                bold = ch$bold, fontsize = 7,
-               group_header = list("What it is" = c(2, ch$n_traits),
-                                   "What it did" = c(ch$n_traits + 1, nc)))
+               group_header = list("Pitch traits" = c(2, ch$n_traits),
+                                   "Pitch results" = c(ch$n_traits + 1, nc)))
   })
 
   # ---- Bottom: heat maps ----
