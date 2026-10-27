@@ -178,6 +178,7 @@ report_chars <- function(tbl, ref) {
     stuff_plus = if (has_stuff) fmt(tbl$stuff_plus, 0) else NULL,
     strike_pct = fmt(tbl$strike_pct, 1),
     whiff_pct  = fmt(tbl$whiff_pct, 1),
+    z_whiff_pct = if ("z_whiff_pct" %in% names(tbl)) fmt(tbl$z_whiff_pct, 1) else NULL,
     csw_pct    = fmt(tbl$csw_pct, 1),
     zone_pct   = fmt(tbl$zone_pct, 1),
     chase_pct  = fmt(tbl$chase_pct, 1),
@@ -190,7 +191,7 @@ report_chars <- function(tbl, ref) {
   labels <- c(pitch_type = "PITCH", count = "#", pitch_pct = "USE%", velocity = "VELO",
               ivb = "IVB", hb = "HB", vaa = "VAA", spin = "SPIN", ext = "EXT",
               rel_ht = "REL HT", rel_side = "REL SIDE", stuff_plus = "STUFF+",
-              strike_pct = "STR%", whiff_pct = "WHIFF%", csw_pct = "CSW%",
+              strike_pct = "STR%", whiff_pct = "WHIFF%", z_whiff_pct = "Z-WHIFF%", csw_pct = "CSW%",
               zone_pct = "ZONE%", chase_pct = "CHASE%", gb_pct = "GB%",
               xwoba = "xwOBA", rv = "RV")
 
@@ -225,7 +226,7 @@ report_chars <- function(tbl, ref) {
 #' hand     "All", "L" or "R", the app's batter side selector
 #' hide     chart_hidden_types(d), so the sheet leaves off what the tabs leave off
 #' tbl, ref arsenal_table() and resolve_table() for the same d and hand
-#' meta     list(name, dates, data_through, fg_label)
+#' meta     list(name, dates, data_through)
 report_pdf <- function(path, d, hand, hide, tbl, ref, meta) {
   # Plain pdf(), not cairo_pdf(): capabilities("cairo") reports TRUE on a Mac
   # without XQuartz and the device then fails to load. The cost is Latin-1
@@ -284,7 +285,9 @@ report_pdf <- function(path, d, hand, hide, tbl, ref, meta) {
   top_y <- 8.5 - 0.78
   section(0.4, top_y, 2.75, 2.85, "Movement", "catcher's view, both sides", function() {
     p <- plot_movement(d, hide = hide) |> shrink_layers(0.45)
-    p <- p + theme(text = element_text(size = 7.5), axis.text = element_text(size = 6.5),
+    # No legend at this size: the pitch codes in both tables carry the colours.
+    p <- p + theme(legend.position = "none",
+                   text = element_text(size = 7.5), axis.text = element_text(size = 6.5),
                    plot.margin = ggplot2::margin(10, 2, 2, 2))
     draw_plot(p)
   })
@@ -341,7 +344,7 @@ report_pdf <- function(path, d, hand, hide, tbl, ref, meta) {
           paste(hand_txt, "· shaded by percentile vs league, same pitch type and hand"),
           function() {
     nc <- ncol(ch$cells)
-    wts <- rep(1, nc); wts[1] <- 0.9; wts[names(ch$cells) %in% c("rel_ht", "rel_side")] <- 1.15
+    wts <- rep(1, nc); wts[1] <- 0.9; wts[names(ch$cells) %in% c("rel_ht", "rel_side", "z_whiff_pct")] <- 1.2
     grid_table(ch$cells, ch$header, widths = wts, fill = ch$fill, col = ch$col,
                bold = ch$bold, fontsize = 7,
                group_header = list("Pitch traits" = c(2, ch$n_traits),
@@ -370,7 +373,6 @@ report_pdf <- function(path, d, hand, hide, tbl, ref, meta) {
 
   # ---- Footer ----
   foot <- c(
-    if (!is.null(meta$fg_label)) paste("Stuff+ from FanGraphs,", meta$fg_label) else NULL,
     chart_hidden_note(d, hide),
     paste("# is the sample behind each row; a number in parentheses is that rate's own",
           "sample (swings, out-of-zone pitches, PA or balls in play) where it is thin."))

@@ -1,22 +1,7 @@
-# step11_tto.R
-#
-#   Rscript tests/step11_tto.R
-#
-# The Usage tab's times-through toggle, added 2026-09-23. Three parts, and the
-# third is the first check in this suite that runs the SERVER, not a function
-# the server calls. Nothing did before, and three bugs shipped through that gap
-# in September.
-#
-#  A. The rules, on literal fixtures. When the toggle shows, which views are
-#     disabled, and what a pick the window cannot honour falls back to. Every
-#     count here is a literal, never read from the code under test (CLAUDE.md,
-#     checks that did not discriminate, entry 5).
-#  B. The table, on real data. The three views add back up to Overall, every
-#     view prints the same pitch rows, and Overall is identical to the function
-#     as it was before this change, including on one-day windows where a count
-#     bucket is empty and the new code takes a different path.
-#  C. The server, through shiny::testServer, on four real outings: a pure
-#     reliever, a starter chased early, a long relief day, and a full starter.
+# Times-through toggle on the Usage tab:
+#   A. visibility, disabled views and fallback rules on literal fixtures
+#   B. the count table on real data: views add up to Overall, same rows, Overall unchanged
+#   C. the server via shiny::testServer on four real outings
 suppressMessages({library(dplyr); library(purrr); library(tidyr)})
 invisible(lapply(sort(list.files("R", full.names = TRUE)), source))
 
@@ -28,8 +13,7 @@ expect <- function(what, got, want) {
            " wanted ", paste(format(want), collapse = ","))))
   if (!ok) fails <<- c(fails, what)
 }
-# Owns a crash rather than dying on it, so one dead call fails its own line
-# and every check after it still runs. See CLAUDE.md, entry 7.
+# Catch errors so one failure doesn't stop the rest
 try_or <- function(expr, marker = "<error>") tryCatch(expr, error = function(e) {
   cat("    error: ", conditionMessage(e), "\n", sep = ""); marker })
 
@@ -39,9 +23,7 @@ fx <- function(tto, stand = rep("R", length(tto))) {
 }
 html <- function(tag) if (is.null(tag)) "" else as.character(tag)
 n_match <- function(pattern, x) lengths(regmatches(x, gregexpr(pattern, x)))
-# The one <input> tag for a value, so a check reads its attributes whatever
-# order they are written in. Matching 'value="3" disabled' as one string broke
-# the day an aria-label went between them.
+# Find the <input> for a value regardless of attribute order
 pill_tag <- function(h, v) {
   tags <- regmatches(h, gregexpr("<input[^>]*>", h))[[1]]
   hit <- tags[grepl(sprintf('value="%s"', v), tags, fixed = TRUE)]
@@ -53,8 +35,7 @@ cat("=== A. rules, literal fixtures ===\n")
 expect("4th and later fold into 3rd+", tto_bucket(c(1, 2, 3, 4, 5)),
        c("1", "2", "3", "3", "3"))
 
-# A reliever who never saw a hitter twice, and a starter chased in the 1st, look
-# the same to the rules, and that is the point: nothing asks about role.
+# Role doesn't matter to the rules
 for (case in list(list("reliever, 15 pitches, all 1st", fx(rep(1, 15))),
                   list("starter chased in the 1st, 28 pitches", fx(rep(1, 28))))) {
   k <- tto_counts(case[[2]], "All")
@@ -85,8 +66,7 @@ expect("full start: 4th time folds into the 3rd+ count", k[["3"]], 22L)
 expect("full start: the views add up to Overall", sum(k[c("1", "2", "3")]), k[["All"]])
 expect("full start: nothing disabled", n_match("disabled", html(tto_toggle_ui(k))), 0L)
 
-# He saw a righty twice and no lefty twice. The count table follows the batter
-# side, so the toggle does too.
+# The toggle follows the batter side
 side <- fx(c(1, 1, 1, 2, 2, 1, 1), c("R", "R", "L", "R", "R", "L", "L"))
 expect("2nd time only vs RHH: hidden for vs LHH",
        tto_visible(tto_counts(side, "L")), FALSE)
@@ -99,10 +79,7 @@ expect("an NA pick is Overall", tto_effective(NA_character_, k), "All")
 expect("an unknown pick is Overall", tto_effective("7", k), "All")
 
 
-# A pitch he throws only the first time through. The real starters below throw
-# everything every time through, so on them alone the "same rows" check could
-# not fail: cutting before droplevels() or dropping .drop = FALSE both passed it
-# when mutated on 2026-09-23. This fixture is what makes those two mutations die.
+# A pitch thrown only the first time through must still be a row (0%) in other views
 drop_sl <- data.frame(
   pitch_type = factor(c("FF", "FF", "SL", "FF", "FF", "CH"), levels = c("FF", "SL", "CH")),
   stand = "R", balls = c(0L, 1L, 0L, 0L, 0L, 1L), strikes = c(0L, 1L, 2L, 0L, 2L, 1L),
@@ -116,19 +93,16 @@ expect("2nd view, All Counts: FF 2 of 3, CH 1 of 3",
        v2[["All Counts"]], c(66.7, 0, 33.3))
 
 
-# One pitch to one side reads 100%, and its label sits outside the bar end. The
-# old fixed axis stopped at 105 and clipped it to "100'". Found on the page
-# 2026-09-23, Barnett's 3rd+ view: every pitch to righties was a sweeper.
+# A 100% bar's label must not be clipped
 one_side <- data.frame(pitch_type = factor(c("ST", "ST", "FF"), levels = c("FF", "ST")),
                        stand = c("R", "R", "L"))
-# ggplot pads 5% of the span past each limit, so the old 105 axis draws to
-# 115.5 and a widened one to 137.5; the thresholds sit between the two.
+# Axis = longest bar + 15, rounded up to a gridline; ggplot pads 5% beyond
 xr <- ggplot2::ggplot_build(plot_usage(one_side))$layout$panel_params[[1]]$x.range
 expect("a 100% bar leaves room for its label", xr[2] >= 130, TRUE)
 xr <- ggplot2::ggplot_build(plot_usage(data.frame(
   pitch_type = factor(c("FF", "SL", "FF", "SL"), levels = c("FF", "SL")),
   stand = c("R", "R", "L", "L"))))$layout$panel_params[[1]]$x.range
-expect("a 50/50 chart keeps the old 105 axis", xr[2] < 120, TRUE)
+expect("a 50/50 chart fits its axis to the bars", xr[2] < 90, TRUE)
 
 
 cat("\n=== B. the table, real outings ===\n")
@@ -138,10 +112,7 @@ win <- function(id, from = "2026-01-01", to = "2026-12-31") {
 }
 alc <- win(645261)   # Sandy Alcantara, season
 
-# The weighted sum of the three views must reproduce Overall, cell by cell.
-# Each view's share is rounded to 0.1 and so is Overall's, so the most the two
-# can honestly disagree by is 0.1. A dropped 4th time through, or a view cut
-# before the batter side, lands well outside that.
+# Weighted views reproduce Overall to within rounding (0.1)
 cnt <- function(d) paste(d$balls, d$strikes, sep = "-")
 for (hd in c("All", "R", "L")) {
   side_d <- if (hd == "All") alc else filter(alc, stand == hd)
@@ -161,9 +132,8 @@ for (hd in c("All", "R", "L")) {
          all(sapply(views, function(v) identical(v$pitch_type, over$pitch_type))), TRUE)
 }
 
-# count_usage_tbl() as it stood before this change, verbatim, so Overall is
-# compared against the real previous behaviour rather than against itself.
-old_count_usage_tbl <- function(df, hand) {
+# Reference implementation without the toggle, for an identity check
+reference_count_usage_tbl <- function(df, hand) {
   if (hand != "All") df <- filter(df, stand == hand)
   df <- df |> mutate(pitch_type = droplevels(pitch_type))
   buckets <- list("All Counts"=NULL, "Early Count"=c("0-0","0-1","1-0"),
@@ -194,11 +164,10 @@ for (nm in names(outings)) for (hd in c("All", "R", "L")) {
   if (hd != "All" && !any(d$stand == hd)) next
   new <- count_usage_tbl(d, hd)
   empties <- empties + sum(colSums(as.matrix(new[, -1])) == 0)
-  expect(sprintf("%s %s: Overall identical to the old table", nm, hd),
-         identical(new, old_count_usage_tbl(d, hd)), TRUE)
+  expect(sprintf("%s %s: Overall matches the reference", nm, hd),
+         identical(new, reference_count_usage_tbl(d, hd)), TRUE)
 }
-# The .drop = FALSE path only differs from the old one when a bucket is empty,
-# so the identity check above proves nothing unless at least one case had one.
+# The identity check only means something if a case had an empty bucket
 expect("identity cases include an empty count bucket", empties > 0, TRUE)
 
 
@@ -229,8 +198,7 @@ res <- try_or(shiny::testServer(shiny::shinyAppDir("."), {
   session$setInputs(tto = "3")
   expect("Barnett 08-17: a 3rd+ pick he has none of falls back", tto(), "All")
 
-  # The trap the tto() reactive exists for: the input keeps "2" after the
-  # toggle disappears, and must not follow the reader to a reliever.
+  # The input keeps "2" after the toggle hides; the view must fall back
   session$setInputs(tto = "2")
   session$setInputs(pitcher = ids[["harris"]], dates = season)
   expect("stale 2nd does not follow the reader to Harris", tto(), "All")
@@ -247,4 +215,5 @@ expect("testServer ran to the end", !identical(res, "<error>"), TRUE)
 
 cat("\n", strrep("-", 60), "\n", sep = "")
 if (length(fails)) { cat("FAILURES:\n"); for (f in fails) cat("  ", f, "\n") }
-cat("STEP 11 TTO: ", if (!length(fails)) "PASS" else "FAIL", "\n", sep = "")
+cat("TIMES THROUGH: ", if (!length(fails)) "PASS" else "FAIL", "\n", sep = "")
+quit(status = if (length(fails)) 1 else 0)

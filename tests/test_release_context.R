@@ -1,20 +1,7 @@
-# step9_context.R
-#
-#   Rscript tests/step9_context.R
-#
-# The Context tab's engine: R/release_context.R and R/pitch_shape.R.
-#
-# What this file is guarding, in order of how quietly each would fail:
-#
-#  1. The residual is orthogonal to its own predictors. If it ever correlates
-#     with arm angle or height, the fit is broken and every number on the tab is
-#     measuring the model instead of the pitcher. Silent: the page renders.
-#  2. Low-support arms are FLAGGED, never dropped and never capped. The tab
-#     exists to surface strange release points, so deleting the strangest ones
-#     would defeat it while looking tidier.
-#  3. A lefty's HB is mirrored before it is ranked. league_ref stores hb
-#     arm-side positive, so an unmirrored lookup ranks him at an extreme.
-#  4. Every percentile agrees with an independent recompute of the league.
+# Context tab engine (release_context.R, pitch_shape.R): the release residual is
+# orthogonal to its predictors, low-support arms are flagged not dropped, a lefty's HB
+# is mirrored before ranking, shape floors match the data, and percentiles agree with
+# an independent recompute of the league.
 suppressMessages({library(dplyr);library(tidyr);library(purrr);library(forcats)
                   library(ggplot2);library(gt);library(readr);library(tibble)})
 invisible(lapply(sort(list.files("R", full.names = TRUE)), source))
@@ -35,8 +22,7 @@ cat("=== the height lookup ===\n")
 expect("height lookup loads", is.data.frame(ht), TRUE)
 expect("keyed by pitcher, joinable to app_data", all(c("pitcher","height_in") %in% names(ht)), TRUE)
 expect("no duplicate ids", anyDuplicated(ht$pitcher), 0L)
-# A lookup that joins to nobody is the failure mode that renders as a blank
-# column rather than an error, so the coverage is pinned, not assumed.
+# The height lookup must join to nearly everyone
 prof <- pitcher_release_profile(ad, ht) |> expected_release_height() |> release_rarity()
 cat(sprintf("  profiles %d, matched to a height %d\n", nrow(prof), sum(!is.na(prof$height_in))))
 expect("every qualified pitcher matched a listed height", sum(is.na(prof$height_in)), 0L)
@@ -46,11 +32,7 @@ f <- prof[is.finite(prof$rel_z_resid), ]
 expect("residual is uncorrelated with arm angle", abs(cor(f$rel_z_resid, f$arm)) < 0.05, TRUE)
 expect("residual is uncorrelated with listed height", abs(cor(f$rel_z_resid, f$height_in)) < 0.05, TRUE)
 expect("residual is centred on zero", abs(mean(f$rel_z_resid)) < 0.01, TRUE)
-# Extension is NOT controlled for, deliberately: height and arm slot are who a
-# pitcher is, extension is what he does, and subtracting stride would remove
-# part of what makes a release point interesting. Measured -0.44 on 2026-09-12.
-# Pinned so the decision is visible rather than assumed, and so a future edge
-# that quietly adds extension to the fit has to come here and change it.
+# Extension is not in the fit, by design
 ce <- cor(f$rel_z_resid, f$ext, use = "complete.obs")
 cat(sprintf("  residual vs extension r = %+.3f (deliberately uncontrolled)\n", ce))
 expect("extension is still in the residual, not fitted out", ce < -0.2, TRUE)
@@ -59,9 +41,7 @@ cat("\n=== low-support arms are flagged, not removed ===\n")
 expect("some arms are flagged", sum(prof$low_support, na.rm = TRUE) > 0, TRUE)
 expect("flagged arms are still in the frame", all(is.finite(
   prof$rel_z_resid[which(prof$low_support)[1]])), TRUE)
-# Both tails, which is the point of defining the flag on local support rather
-# than on submarine arm angles. A rule that only caught low slots would pass a
-# test written around Tyler Rogers and miss Alex Vesia at 69.9 degrees.
+# Both tails get flagged
 fl <- prof$arm[which(prof$low_support)]
 expect("the flag catches the LOW tail", any(fl < 10, na.rm = TRUE), TRUE)
 expect("and the HIGH tail", any(fl > 60, na.rm = TRUE), TRUE)
@@ -76,20 +56,17 @@ expect("rarity labels are total", sum(is.na(rarity_label(prof$rarity_n[!is.na(pr
 cat("\n=== one row per pitcher, not per pitcher per team ===\n")
 shp <- pitch_shape(ad)
 dupes <- shp |> count(pitcher, pitch_type) |> filter(n > 1)
-# pitch_team was a grouping key until 2026-09-12, so a traded pitcher appeared
-# once per club and took two slots in any cohort he joined. 148 duplicated
-# combinations across 63 pitchers, and Headrick's 25-peer cohort held 21 men.
+# Traded pitchers appear once per pitch type
 expect("no pitcher appears twice for one pitch type", nrow(dupes), 0L)
-expect("the team column survives the fix", all(!is.na(shp$pitch_team)), TRUE)
+expect("every row has a team", all(!is.na(shp$pitch_team)), TRUE)
 mar <- shp |> filter(grepl("Marinaccio", player_name), pitch_type == "FF")
 expect("a traded pitcher is one row", nrow(mar), 1L)
-# His pitch total must be the SUM of both stints, not one of them, or the fix
-# has quietly dropped half a season instead of merging it.
+# ...with both stints' pitches summed
 mar_raw <- ad |> filter(grepl("Marinaccio", player_name), pitch_type == "FF") |> nrow()
 expect("and carries every pitch from both clubs", mar$pitches[1], mar_raw)
 
-cat("\n=== the shape table IS the Search tab's ===\n")
-# Reuse, not reimplementation: the shape table's rates must BE the Search tab's.
+cat("\n=== the shape table matches the Search tab ===\n")
+# Shape rates are the Search tab's own
 sa <- search_aggregate(ad, hand = "All")
 sh <- pitch_shape(ad, hand = "All")
 j  <- merge(sa[, c("pitcher","pitch_type","whiff_pct","xwoba")],
@@ -102,11 +79,7 @@ cat("\n=== direction lives in METRIC_SPEC, not in the plot ===\n")
 expect("velo is high-is-better",  context_better("velo"),      "high")
 expect("xwOBA is low-is-better",  context_better("xwoba"),     "low")
 expect("whiff% is high-is-better",context_better("whiff_pct"), "high")
-# IVB has no better end. More ride is the point of a four-seam and the death of
-# a sinker, so a tab that tinted it green would assert something it cannot
-# support. This is also why context_better is its OWN column: METRIC_SPEC's
-# `direction` says ivb is "high", and reading that field for ivb is documented
-# as a bug.
+# Shape traits have no better end
 expect("IVB has no better end",   context_better("ivb"),       "none")
 expect("and it is not the same field as the colour ramp's direction",
        METRIC_SPEC$direction[METRIC_SPEC$metric == "ivb"], "high")
@@ -117,8 +90,7 @@ expect("and only from the allowed set",
 cat("\n=== league percentiles, said as a sentence ===\n")
 ref_lg <- readRDS("data/league_ref.rds")
 tid <- prof$pitcher[which(prof$p_throws == "L" & prof$n > 800)[1]]
-# The same reference the Characteristics tab shades from. If these ever stop
-# agreeing, one of the two surfaces is lying about the same pitcher.
+# Same league_ref the Characteristics tab uses
 expect("league_ref carries every metric the phrases name",
        setdiff(names(LEAGUE_PHRASE), unique(ref_lg$metric)), character(0))
 
@@ -126,33 +98,27 @@ lhp <- shp[shp$pitcher == tid & as.character(shp$pitch_type) == "FF", , drop = F
 lp  <- league_percentiles(lhp, ref_lg)
 expect("a percentile frame comes back", is.data.frame(lp) && nrow(lp) > 0, TRUE)
 expect("percentiles are in range", all(lp$pctile >= 0 & lp$pctile <= 100), TRUE)
-# The comparative must always name the side he is ON, so the share is what he
-# beats in that direction and never needs a mental flip.
+# The phrase names the side he's on: the share is at least 50
 expect("share is never below half", all(lp$share >= 50), TRUE)
 expect("share agrees with the percentile",
        all(round(ifelse(lp$pctile >= 50, lp$pctile, 100 - lp$pctile)) == round(lp$share)), TRUE)
 
-# THE BUG THIS PINS. league_ref stores hb arm-side positive for both hands,
-# pitch_shape() reports the raw sign the movement chart draws, and a lefty's
-# raw negative HB ranked inside a positive distribution lands under all of it.
-# Observed 2026-09-18 before the fix: Noah Cameron's four-seam, -6.0 in of raw
-# HB, reported as "less run than 100% of LHP four-seams". It rendered, it
-# parsed, and it was nonsense.
+# A lefty's raw negative HB must be mirrored before ranking
 hb_row <- lp[lp$metric == "hb", , drop = FALSE]
 cat(sprintf("  lefty FF hb %.1f in -> %s %.0f%%\n",
             hb_row$value[1], hb_row$phrase[1], hb_row$share[1]))
 expect("a lefty's HB is not pinned to an extreme by the sign convention",
        hb_row$share[1] < 99, TRUE)
-# And prove the mirror is what saves it: the raw value would rank differently.
+# Without the mirror it would rank differently
 raw_p <- lg_pctile(ref_lg, hb_row$value[1], "hb", "FF", "L", "All", "All Counts")$pctile
 mir_p <- lg_pctile(ref_lg, hb_row$value[1] * arm_side_sign("L"), "hb", "FF", "L",
                    "All", "All Counts")$pctile
 cat(sprintf("  raw lookup %.0f  vs mirrored lookup %.0f\n", raw_p, mir_p))
-expect("the reported percentile came from the MIRRORED lookup", hb_row$pctile[1], mir_p)
+expect("the reported percentile came from the mirrored lookup", hb_row$pctile[1], mir_p)
 expect("and the raw lookup would have differed",
        identical(as.numeric(raw_p), as.numeric(mir_p)), FALSE)
 
-# A righty is unaffected, which is what made this survive: arm_side_sign is 1.
+# Righties are unaffected
 rhp <- shp[shp$p_throws == "R" & as.character(shp$pitch_type) == "FF" &
            shp$pitches > 500, , drop = FALSE][1, , drop = FALSE]
 lpr <- league_percentiles(rhp, ref_lg)
@@ -171,9 +137,7 @@ expect("zone_pct is a percentage",
 
 cat("\n=== release side reaches the chart with the app's sign convention ===\n")
 expect("rel_side is in the shape table", "rel_side" %in% names(shp), TRUE)
-# Negated from Savant's catcher-view x exactly as tables.R and
-# build_league_ref.R do it, so a righty reads positive and a lefty negative. If
-# this ever flips, every release-side percentile ranks inside the wrong tail.
+# Release side: righty positive, lefty negative
 rs <- shp |> group_by(p_throws) |> summarise(m = median(rel_side, na.rm = TRUE), .groups = "drop")
 cat(sprintf("  median rel_side: RHP %+.2f ft, LHP %+.2f ft\n",
             rs$m[rs$p_throws == "R"], rs$m[rs$p_throws == "L"]))
@@ -182,12 +146,8 @@ expect("a lefty toward first", rs$m[rs$p_throws == "L"] < 0, TRUE)
 expect("and it ranks", "rel_side" %in% league_percentiles(lhp, ref_lg)$metric, TRUE)
 
 cat("\n=== shape floors are derived from the data, not asserted ===\n")
-# METRIC_SPEC$shape_floor decides which traits the percentile chart fades. Each
-# is n = (8r)^2, where r is the median within-pitcher SD over the SD of pitcher
-# means: the count at which one standard error is worth about five percentile
-# points. Re-derived here so a change to either side of that ratio (a new
-# aggregator, a sign flip, a different population) fails loudly instead of
-# leaving a stale constant fading the wrong traits.
+# shape_floor values re-derived from the data: n = (8r)^2, where r is the median
+# within-pitcher SD over the SD of pitcher means
 fl_src <- c(velo = "release_speed", ivb = "ivb", hb = "hb", vaa = "vaa",
             spin = "release_spin_rate", ext = "release_extension",
             rel_ht = "release_pos_z", rel_side = "release_pos_x")
@@ -204,17 +164,10 @@ for (mm in names(fl_src)) {
   have <- shape_floor(mm)
   ratio <- have / hat
   cat(sprintf("  %-9s stored %3d, data says %3d\n", mm, have, hat))
-  # A factor of 1.6 either way. Tight enough to catch a definition change, loose
-  # enough to survive a season's worth of new pitches moving the ratio.
+  # Within a factor of 1.6
   expect(sprintf("%s floor matches the data", mm), ratio > 0.62 && ratio < 1.6, TRUE)
 }
-# The ORDER is the claim the chart makes: where he releases the ball is the
-# steadiest thing about him, and the break traits are the noisiest. That must
-# hold even if every floor drifts together.
-#
-# Approach angle WAS the loosest at 148 and is now 19, because VAA ships
-# location-adjusted as of 2026-09-22 and most of that 148 was his location mix
-# rather than his pitch. Run is the loosest trait now. See tests/step10_vaa_adj.R.
+# Release traits settle fastest, break traits slowest
 fo <- vapply(c("rel_ht","rel_side","ext","velo","spin","ivb","hb","vaa"), shape_floor, numeric(1))
 expect("release traits settle before velocity", max(fo[c("rel_ht","rel_side")]) < fo[["velo"]], TRUE)
 expect("run settles last", fo[["hb"]], max(fo))
@@ -224,19 +177,9 @@ expect("every shape metric declares a floor",
 expect("and no rate does",
        sum(!is.na(METRIC_SPEC$shape_floor[METRIC_SPEC$kind == "rate"])), 0L)
 
-cat("\n=== percentiles agree with an INDEPENDENT recomputation ===\n")
-# The one check that can catch search_aggregate() and build_league_ref.R
-# drifting apart. Both compute a pitcher-by-pitch-type value; the app displays
-# one and ranks it inside a distribution built from the other. If a definition
-# changes on one side only, every percentile on the Context tab shifts and
-# nothing else in this suite notices: the numbers still render, still sit in
-# 0-100, and still look plausible.
-#
-# So this rebuilds the reference population from app_data the way
-# build_league_ref.R does, and compares the empirical rank to what lg_pctile()
-# answers. Agreement is expected to be close but not exact: league_ref stores
-# percentiles on a 1-point grid, so roughly half a point of quantisation is the
-# floor, not an error.
+cat("\n=== percentiles agree with an independent recomputation ===\n")
+# Rebuild the league population as build_league_ref.R does and compare ranks with
+# lg_pctile(). Quantiles are stored on a 1-point grid (about half a point of error).
 ref_lg2 <- readRDS("data/league_ref.rds")
 au_cells <- ad |>
   dplyr::group_by(pitcher, pitch_type, p_throws) |>
@@ -267,16 +210,14 @@ for (m in c("velo","ivb","hb","vaa","rel_ht")) {
 cat(sprintf("  %d comparisons, median |dev| %.2f, p95 %.2f, max %.2f pctile points\n",
             length(devs), median(abs(devs)), quantile(abs(devs), .95), max(abs(devs))))
 expect("enough comparisons to mean something", length(devs) > 300, TRUE)
-# 2 points is comfortably above the 1-point storage grid and far below any
-# definition mismatch, which shifts a whole distribution.
+# 2 points: above the storage grid, far below a definition mismatch
 expect("median deviation is quantisation, not drift", median(abs(devs)) < 2, TRUE)
 expect("and no systematic bias in either direction", abs(median(devs)) < 1.5, TRUE)
-# unname(): quantile() returns a NAMED value, and all.equal() compares the name
-# attribute, so this reported "got TRUE wanted TRUE" and failed.
+# unname(): quantile() returns a named value
 expect("95% of lookups land within 5 points",
        unname(quantile(abs(devs), .95) < 5), TRUE)
 
 cat("\n", strrep("-", 60), "\n", sep = "")
 if (length(fails)) { cat("FAILURES:\n"); for (f in fails) cat("  ", f, "\n") }
-cat("STEP 9: ", if (!length(fails)) "PASS" else "FAIL", "\n", sep = "")
+cat("RELEASE CONTEXT: ", if (!length(fails)) "PASS" else "FAIL", "\n", sep = "")
 quit(status = if (!length(fails)) 0 else 1)

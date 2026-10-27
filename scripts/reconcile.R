@@ -1,25 +1,10 @@
 # reconcile.R
-#
+# Check local data against upstream sources on a sample of dates:
+#   A. pitch mix per pitcher-game vs a fresh Savant pull
+#   B. TBF / SO / BB per pitcher-game vs the MLB game log
+#   C. internal invariants (All = L + R, usage sums to 100, no NaN, no lost pitch)
 #   Rscript scripts/reconcile.R [n_dates]
-#
-# Hunts the class of bug a human found by hand on 2026-08-27: numbers that are
-# internally consistent and externally wrong. Both cases that morning were
-# invisible to every test in this repo, because every test compared the app to
-# itself.
-#
-#   Fuentes 2026-08-05: app said 100% four-seam, Savant said 68/16/16. A display
-#   floor was deleting the rows of any pitch type under five in the window.
-#   Elder  2026-08-05: totals matched exactly, the MIX did not, because Savant
-#   had reclassified six pitches after ingest and the dedup kept the older row.
-#
-# So this compares against UPSTREAM, at the grain a scout actually selects:
-#
-#   A. per pitcher-game pitch mix, against a fresh Savant pull for that date
-#   B. per pitcher-game TBF/SO/BB/H/HR, against the MLB StatsAPI game log
-#   C. internal invariants that must hold whatever the sources say
-#
-# Sampling is by DATE, not by pitcher-game, because Savant is one request per
-# date and hundreds of pitcher-games ride along with it.
+
 suppressPackageStartupMessages({
   library(dplyr); library(purrr); library(tidyr); library(forcats)
   library(ggplot2); library(gt); library(readr)
@@ -30,18 +15,7 @@ invisible(lapply(sort(list.files("R", full.names = TRUE)), source))
 args    <- commandArgs(trailingOnly = TRUE)
 N_DATES <- if (length(args)) as.integer(args[1]) else 6
 
-# WHICH data this checks, and why it matters.
-#
-# The first run of this harness reported 38 misclassified pitches on 2026-08-20
-# that were not actually wrong in the live app. It had read data/app_data.rds on
-# the laptop, while the deployed app is built in CI from the release asset. Two
-# stores, two writers, and they had diverged: CI applied 81 reclassifications at
-# 13:38 that the laptop copy never saw.
-#
-# That divergence has since been closed by retiring the laptop chain agent, so
-# CI is the only writer. This banner stays because a harness that checks the
-# wrong artifact is worse than no harness: it manufactures findings and buries
-# real ones.
+# Reads the local files; the deployed app is built in CI
 cat("checking LOCAL data/app_data.rds. The deployed app is built in CI from the\n",
     "release asset; run the chain locally first if these have drifted.\n\n", sep = "")
 
@@ -66,7 +40,6 @@ savant_day <- function(d) {
   tryCatch(read.csv(u, stringsAsFactors = FALSE), error = function(e) NULL)
 }
 
-# ---- A. pitch mix against Savant --------------------------------------------
 cat("== A. pitch mix vs Savant ==\n")
 for (d in dates) {
   fresh <- savant_day(d)
@@ -90,7 +63,6 @@ for (d in dates) {
               d, nrow(ours), nrow(fresh), nrow(j)))
 }
 
-# ---- B. counting stats against the MLB game log ------------------------------
 cat("\n== B. TBF / SO / BB vs MLB game log ==\n")
 if (is.null(gl)) {
   note("game_logs_missing", "data/game_logs.rds absent, section B skipped")
@@ -109,8 +81,7 @@ if (is.null(gl)) {
       mutate(d_tbf = l_tbf - tbf - coalesce(l_ibb, 0L),
              d_so  = l_so - so,
              d_bb  = l_bb - bb - coalesce(l_ibb, 0L))
-    # IBB is subtracted because an automatic intentional walk throws no pitch and
-    # so cannot appear in Statcast. That is known and documented, not a finding.
+    # Intentional walks throw no pitch and don't appear in Statcast
     bad <- j |> filter(d_tbf != 0 | d_so != 0 | d_bb != 0)
     if (nrow(bad)) {
       note("counting_stat_mismatch",
@@ -121,7 +92,6 @@ if (is.null(gl)) {
   }
 }
 
-# ---- C. internal invariants --------------------------------------------------
 cat("\n== C. invariants ==\n")
 set.seed(7)
 sample_pg <- ad |> distinct(pitcher, game_date) |> slice_sample(n = 300)
@@ -149,7 +119,6 @@ if (v_usage) note("usage_sum",      sprintf("%d windows where usage did not sum 
 if (v_nan)   note("nan_leak",       sprintf("%d windows leaking NaN into a displayed metric", v_nan))
 if (v_lost)  note("pitch_lost",     sprintf("%d windows losing a chartable pitch", v_lost))
 
-# ---- report ------------------------------------------------------------------
 cat("\n", strrep("-", 62), "\n", sep = "")
 if (!length(findings)) {
   cat("RECONCILE: CLEAN\n")

@@ -1,4 +1,4 @@
-# R session droppings
+# R session files
 .Rproj.user/
 .Rhistory
 .RData
@@ -8,25 +8,20 @@
 # macOS
 .DS_Store
 
-# Pitch data is rebuildable from the daily chain and runs to tens of MB.
-*.rds
+# Local assistant config
+CLAUDE.md
+.claude/
 
-# data/ holds the two artifacts the app reads at startup, both rebuilt by
-# scripts/update_data.R. The two-line form is required: a bare `data/` ignores
-# the directory itself, so git never descends into it and the negation below
-# could never re-include anything.
+# Data is rebuilt by scripts/update_data.R
+*.rds
 data/*
 !data/.gitkeep
 
-# The regression fixtures are TRACKED, both of them, 217 KB together.
-# tests/fixtures/pl_trim_702070.rds is the frozen input phase1_check.R compares
-# both sides against, and chars_gt_null_baseline.rds is a byte snapshot of the
-# two tables that fixture renders. Gitignored, they regenerated on every clone off a
-# season store that grows nightly: the fixture went 2,261 to 2,346 pitches
-# between 2026-08-19 and 2026-08-23, at which point the byte-identity baseline
-# compares two different tables and means nothing. Frozen files are only frozen
-# if they are committed.
+# Test fixtures are frozen inputs and baselines, so they are tracked
 !tests/fixtures/*.rds
 
-# Chain run log, machine-local
+# Local logs
 logs/
+
+# RStudio project file
+*.Rproj

@@ -1,76 +1,27 @@
 # theme.R
-#
-# Constants shared across the other R/ files, plus one pure label helper. No
-# library() calls, nothing here executes against data.
-#
-# Source this first. pitch_text_colors is derived from pitch_colors at top level,
-# so it is the one ordering dependency in the file.
+# Constants and small lookup helpers shared across R/
 
 
 # ---- Pitch colors ------------------------------------------------------------
 
-# Single source of truth for pitch color, per CLAUDE.md. Copied from
-# "Learning to pull stats.R", which generated the existing PDF reports, so the
-# app and the reports stay visually consistent.
-#
-# Eleven codes: the ten CLAUDE.md lists plus KN, see below. A pitch type outside
-# this vector can no longer reach a plot at all, because reconcile_pitch_codes()
-# in features.R remaps or drops it first. It used to arrive here and throw
-# "subscript out of bounds", which is what PITCH_CODE_RULES exists to prevent.
+# Same palette as the PDF advance reports
 pitch_colors <- c(
   FF = "#FF0000", SI = "#FFA500", CU = "#8B008B", CH = "#228B22",
   SL = "#FFFF00", FS = "#00CED1", FC = "#8B4513", ST = "#DDB100",
-  # KC is remapped to CU by PITCH_CODE_RULES before anything looks a colour up,
-  # so this entry is unreachable in normal operation. Kept because
-  # reconcile_pitch_codes() asserts every surviving code is in this vector, and
-  # a code with no colour is the failure that assertion exists to prevent.
+  # KC is remapped to CU before lookup
   KC = "#6A0DAD", SV = "#7CFC00",
-  # Eleventh code, beyond the ten CLAUDE.md lists. A knuckleball cannot be
-  # mapped to anything else, and one genuine knuckleballer throws 182 of them,
-  # about 30% of his arsenal. Dropping it would make his report wrong rather
-  # than incomplete.
   KN = "#808080")
 
-# Slider and sweeper yellow is legible as a fill but not as text on white, so
-# table text uses a darkened gold for those two codes only. Every other code
-# reuses its fill color.
+# Darker gold for slider and sweeper text on white
 pitch_text_colors <- pitch_colors
 pitch_text_colors[c("SL", "ST")] <- c("#B59410", "#B59410")
 
 
-# ---- Pitch code reconciliation ------------------------------------------------
+# ---- Pitch code reconciliation -----------------------------------------------
 
-# Savant emits codes beyond the ones this app charts. pitch_colors[[pt]] throws
-# "subscript out of bounds" on any of them, which crashed the characteristics
-# and usage tables for anyone throwing a slow curve.
-#
-# What separates a map from a drop is the median season workload of the code's
-# throwers, measured over 2026:
-#
-#   EP  773 pitches, throwers average    31 pitches on the season -> position players
-#   FA  642 pitches, throwers average    43                       -> position players
-#   FO  389 pitches, throwers average   910  (Senga, Sasaki)      -> a real pitch
-#   CS  135 pitches, throwers average 1,668  (Lugo, Peralta)      -> a real pitch
-#
-# A code absent from this table AND from pitch_colors is dropped and reported,
-# so a code Savant adds next season degrades visibly instead of crashing.
-#
-# KC is here for a different reason than the rest, and it is worth stating.
-# Nothing crashes on a knuckle curve, it has its own colour below. It is mapped
-# because Savant's classifier will hand ONE pitcher both labels for ONE pitch,
-# and then the app draws it twice: two clusters on the movement chart with their
-# crosses on top of each other, and a usage table that splits a 27% curveball
-# into a 20% pitch and a 7% pitch.
-#
-# Measured over the whole 2026 store: 366 pitchers throw CU, 43 throw KC, and
-# exactly ONE throws both above the 5-pitch display floor. His two curves sit
-# 3.5 mph and 4.1 inches apart, which is inside one pitch's own spread. If KC
-# and CU were different pitches, pitchers would throw both; none of the other
-# 408 do.
-#
-# Savant's player page groups them as one "Curve" bucket, and FG_TO_SAVANT in
-# stuff.R has cross-filled a Stuff+ grade from either label to the other since
-# it was written. The display was the last place still treating them as two.
+# Savant codes the app doesn't chart: real pitches are mapped, the rest dropped.
+# Unknown codes are dropped too. The app reports every change above the tabs.
+# KC folds into CU: Savant sometimes gives one pitcher's curveball both labels.
 PITCH_CODE_RULES <- data.frame(
   code   = c("CS",   "KC",   "FO",   "EP",   "FA",   "PO",   "UN"),
   action = c("map",  "map",  "map",  "drop", "drop", "drop", "drop"),
@@ -78,7 +29,7 @@ PITCH_CODE_RULES <- data.frame(
   reason = c(
     "slow curve; Savant's own player page folds it into the curve",
     "knuckle curve; one curveball, see the note above this table",
-    "forkball, a splitter variant; FG_TO_SAVANT already folds FanGraphs FO into FS",
+    "forkball, a splitter variant; Stuff+ grades fold FO into FS the same way",
     "eephus; 32 of its 35 throwers are position players mopping up",
     "unclassified fastball; 30 of its 33 throwers are position players",
     "pitchout, a play rather than a pitch type",
@@ -90,14 +41,7 @@ PITCH_CODE_RULES <- data.frame(
 
 # ---- Batter side labels ------------------------------------------------------
 
-#' Display label for a handedness filter
-#'
-#' switch() with no fallthrough, so an unrecognised value stops here. The two gt
-#' functions previously wrote `if (hand == "R") "vs RHH" else "vs LHH"`, and that
-#' else meant a third value would have been titled "vs LHH" over pooled data:
-#' wrong label, right numbers, no error.
-#'
-#' "All" means no stand filter at all, not a third batter side.
+#' Display label for a batter side filter ("All" = no filter)
 hand_label <- function(hand) {
   switch(hand,
     R   = "vs RHH",
@@ -109,258 +53,73 @@ hand_label <- function(hand) {
 
 # ---- Sample floors and smoothing ---------------------------------------------
 
-# RETIRED as a row filter, 2026-08-27, and deliberately left here as a number
-# the UI can still quote.
-#
-# It used to drop the rows of any pitch type under five pitches in the window,
-# which silently rewrote a pitcher's arsenal on short windows: a start with 13
-# four-seams and three each of two secondaries reported 100% four-seam. See the
-# note in shape_arsenal(). Sample adequacy is now handled where it belongs, per
-# metric, by METRIC_SPEC's floors and the below_floor state.
-MIN_PITCH_COUNT <- 5
-
-# A pitch type is left off the Movement, usage and heat map CHARTS when it is
-# under both of these in the window: under 1% of his pitches AND under 10 of them. Added
-# 2026-09-23 for the stray labels Savant's classifier files separately, Hogan
-# Harris's 4 slurves among 1,203 pitches being the example. Tables keep every
-# type, and the note above the tabs names what the charts left out. Heat maps
-# joined 2026-09-23: 4 slurves were a whole column of three panels of dots.
-#
-# Deliberately NOT a higher cut for heat maps alone. Where a show-me pitch goes
-# (a 15-pitch cutter only 0-0 to lefties) is real advance information, and the
-# white-dot fallback under KDE_MIN_N already says the sample is thin. One
-# threshold on every chart beats a tuned threshold per chart.
-#
-# BOTH, not either. Share alone would hide a real pitch on a long season (a
-# 15-pitch cutter at 1.2% stays); a count alone would hide a real pitch on one
-# start (Fuentes's 3 sliders of 19 are 16%, which is exactly the lie the old
-# MIN_PITCH_COUNT row filter told).
-#
-# Measured before adding, over the 536 pitchers with 300+ pitches: 160 carry a
-# type under 2%, and only 14% of those pitches sit inside the cluster of one of
-# his main pitches, so these are mostly real outliers (a firm curve, a cut
-# fastball) rather than mislabels. That is why the rule hides them from the
-# picture and does NOT relabel them.
+# Pitch types under both thresholds are left off the charts, not the tables
 CHART_MIN_SHARE <- 0.01
 CHART_MIN_N     <- 10
 
-# Bandwidth for the heatmap KDE, in feet, x then z.
+# Heat map KDE bandwidth in feet (x, z)
 KDE_BW <- c(1.0, 1.2)
 
-# Heatmap panels below this fall back to a white-dot scatter instead of a KDE.
-# A density surface fitted to a handful of pitches invents structure that is not
-# in the data. See CLAUDE.md hard rule 5, report the n rather than smoothing it.
+# Heat map panels under this many pitches show raw locations, not a density
 KDE_MIN_N <- 15
 
 
 # ---- League reference metrics and their floors -------------------------------
 
-# MIN_PITCH_COUNT above decides whether a pitch type is SHOWN. This table
-# decides whether a PERCENTILE is shown for it, which is a much higher bar, and
-# the two are deliberately separate constants.
-#
-# Measured on 2026 data by resampling windows for the same pitcher and pitch and
-# comparing the window percentile against his own full-season percentile:
-#
-#   whiff%, 5-10 swings  : median error 27 points, 53% off by more than 25
-#   whiff%, 51-75 swings : median error 12 points, 21% off by more than 25
-#   velocity, 5-10 pitches: median error 4.9 points, 2.8% off by more than 25
-#
-# A mean of a physical quantity stabilises an order of magnitude faster than a
-# rate, so one floor for every metric would be wrong either way it was set.
-#
-# `denom` is the column the metric actually divides by, not pitch count. The
-# conversions differ a lot: 50 swings is about 106 pitches, 50 out-of-zone about
-# 87, and 50 PA-ending rows for xwOBA about 198.
-#
-# `direction` decides which fill scale a percentile is drawn on, and it is the
-# one column here that changes a number's meaning rather than its precision.
-#
-#   high     a high percentile is a good pitch, drawn good-to-bad diverging
-#   low      a high VALUE is bad, so the percentile is inverted before filling.
-#            xwoba only. Without this a .420 xwOBA renders green
-#   neutral  the metric ranks but does not grade, drawn monochrome so the cell
-#            reads as rank rather than as quality
-#
-# ivb is neutral because it depends on the pitch: high IVB is good on a
-# four-seam and bad on a curveball, where drop is the point. zone_pct is a
-# choice rather than a virtue, a pitcher can live off the plate on purpose.
-#
-# hb is neutral for a second and worse reason, see METRIC_NOTES below.
-#
-# ext and usage_pct are not on the arsenal table, so nothing renders either one
-# today. They still carry a real value rather than a placeholder, because the
-# next person to add an extension column inherits whatever is written here
-# silently. ext is high: more extension is less reaction time. usage_pct is
-# neutral, it is genuinely directionless.
+# Metrics that take a league percentile.
+#   kind       mean of a physical quantity, or a rate
+#   denom      the count the metric divides by (swings, out-of-zone pitches, PA, ...)
+#   floor      minimum denominator for a full sample, from a resampling study
+#   direction  high / low (inverted) / neutral (grey ramp) / extreme (distance from median)
+# ivb, hb and vaa take direction per pitch type (PITCH_SHAPE_DIRECTION); their
+# entries here are placeholders. Always use metric_direction().
 METRIC_SPEC <- data.frame(
   metric = c("velo", "ivb", "hb", "vaa", "spin", "ext", "rel_ht", "rel_side",
              "strike_pct", "csw_pct", "zone_pct", "usage_pct",
-             "whiff_pct", "chase_pct", "xwoba", "gb_pct"),
-  kind   = c(rep("mean", 8), rep("rate", 8)),
-  # usage_pct's denominator is the CUT's total pitches, not the pitch type's.
-  # It is a share: its precision comes from how many pitches the share was
-  # measured over, not from how many were of this type. Flooring it on the pitch
-  # type's own count greys a well-measured 30% share because the pitch is
-  # uncommon, which is backwards.
+             "whiff_pct", "chase_pct", "xwoba", "gb_pct", "z_whiff_pct"),
+  kind   = c(rep("mean", 8), rep("rate", 9)),
+  # usage floors on the pitcher's total pitches in the cut
   denom  = c(rep("pitches", 8),
              "pitches", "pitches", "pitches", "cut_pitches",
-             "swings", "oz", "pa", "bbe"),
+             "swings", "oz", "pa", "bbe", "z_swings"),
   floor  = c(rep(25, 8),
              rep(50, 4),
-             50, 50, 50, 25),
-  # How many pitches before a trait's PERCENTILE is stable, for the Context
-  # tab's percentile chart only. NA for the rates, which keep `floor`.
-  #
-  # One floor for every shape trait was wrong in both directions. Measured over
-  # 2026 on the 16 hand-by-pitch-type cells with 20+ qualified pitchers: take
-  # the median within-pitcher SD of a trait, divide by the SD of pitcher means
-  # in that cell, and ask how many pitches make one standard error worth about
-  # five percentile points (40 points per SD near the middle, so n = (8r)^2).
-  # Release height settles in 4 pitches and approach angle needs 148, because
-  # approach angle is as much about where he threw it as how he threw it. A flat
-  # 25 called a one-start velocity unreliable and a season of VAA reliable.
-  #
-  # These are re-derived from app_data and checked in tests/step9_context.R, so
-  # a definition change on either side shows up as a failure rather than as a
-  # number nobody rechecks.
+             50, 50, 50, 25, 60),
+  # Pitches before a trait's percentile is stable (Context tab only)
   shape_floor = c(13, 31, 50, 19, 14, 10, 4, 4,
                   rep(NA, 4),
-                  rep(NA, 4)),
-  # Which end is BETTER FOR THE PITCHER, for the Context tab's panels only.
-  #
-  # A separate column from `direction` on purpose, and the difference is not
-  # cosmetic. `direction` says which end renders red on the percentile ramp,
-  # and for ivb and hb it is a documented placeholder that nothing reads,
-  # because ride is the point of a four-seam and the death of a sinker: that
-  # lives in PITCH_SHAPE_DIRECTION, per pitch type. Overloading `direction`
-  # here would mean reading a field the comment two blocks down says is a bug
-  # to read.
-  #
-  # "none" is a real answer and the common one. Only the outcome metrics and
-  # velocity have an unambiguous good end across every pitch type. More break
-  # is not better, it is different, and a tab that tinted it green would be
-  # asserting something about a sinker it cannot support.
+                  rep(NA, 5)),
+  # Better end for the pitcher on the Context tab ("none" for shape traits)
   context_better = c("high", "none", "none", "none", "none", "high", "none", "none",
                      "high", "high", "none", "none",
-                     "high", "high", "low",  "high"),
-  # NOTE: the direction here is NOT used for ivb or hb. Those two are looked up
-  # per pitch type in PITCH_SHAPE_DIRECTION, because more ride is the point of a
-  # four-seam and the death of a sinker. The entries below are kept so the frame
-  # stays rectangular and so METRIC_SPEC remains the one list of metrics, and
-  # metric_direction() is the only thing that should ever be asked for a
-  # direction. Reading spec$direction for ivb or hb is a bug.
-  #
-  # zone_pct is treated as high-is-good outright, which is a simplification: a
-  # pitcher can live in the zone and get hit.
-  #
-  # usage_pct stays neutral. A pitch type's share of an arsenal has no good end
-  # at all.
-  #
-  # rel_ht and rel_side are "extreme", added 2026-08-31 and the only two that
-  # use it. The premise is a scouting one rather than a statistical one: a
-  # release trait is not better for being high or low, it is better for being
-  # UNLIKE the release the hitter has been timing all week. Very over the top and
-  # very low both play; league-average does not. So the fill runs off distance
-  # from the median in either direction, not off rank. See pctile_fill().
-  #
-  # Extension is deliberately NOT extreme and stays "high". Short extension is
-  # not a weapon, it is just less perceived velocity, and it is the one release
-  # measurement with an unambiguous good end.
-  #
-  # vaa's entry here is NEVER read, exactly like ivb's and hb's. Flat is the
-  # point on a four-seam and steep is the point on a curveball, so its direction
-  # is a property of the pitch shape and lives in PITCH_SHAPE_DIRECTION. The
-  # value below is a placeholder that keeps the frame rectangular.
-  # gb_pct is "high" globally rather than per pitch type, and that is a
-  # simplification worth naming. A ground ball prevents runs better than a fly
-  # ball on average, so more is better for most of an arsenal. It is least true
-  # of a four-seam thrown up, whose job is the whiff and whose grounders are
-  # incidental. Left global because RV/100 sits two columns away and IS the
-  # per-pitch verdict, so GB% does not have to carry that judgement alone.
-  #
-  # rv100 is "high" because a POSITIVE delta_pitcher_run_exp is good for the
-  # pitcher. Verified against Savant rather than assumed: our RV/100 correlates
-  # -0.75 with their wOBA and +0.22 with their whiff% over 1,141 cells, and our
-  # RV/100 matches theirs at r = 0.969. Getting this backwards would paint the
-  # league's best pitches deep blue, which is the least visible bug this table
-  # can have.
+                     "high", "high", "low",  "high", "high"),
   direction = c("high", "high", "high", "high", "high", "high",
                 "extreme", "extreme",
                 "high", "high", "high", "neutral",
-                "high", "high", "low", "high"),
+                "high", "high", "low", "high", "high"),
   stringsAsFactors = FALSE
 )
 
-# Metrics whose percentile is correct but whose reading is not self-evident.
-# Rendered as a footnote on that column, keyed by metric so tables.R asks
-# "does this metric have a note" rather than testing for hb by name.
-#
-# hb is the only entry, and the note changed on 2026-08-24 because the thing it
-# warned about was fixed rather than documented.
-#
-# It used to read "HB is not arm-side normalized, so a high value is arm-side run
-# for a RHP and glove-side for a LHP", which was true and unhelpful: it told the
-# reader the column meant two different things and left them to do the flip. Once
-# the cell carried a COLOUR as well as a number that stopped being tenable, since
-# a righty and a lefty with identical arm-side run were rendering red and blue.
-#
-# The table and league_ref now both store HB arm-side positive, so the note says
-# what the number is rather than apologising for what it is not. The raw signed
-# value still lives in app_data and still drives the movement chart.
+# Column footnotes
 METRIC_NOTES <- c(
-  # No note for vaa, by request 2026-09-22. It ships location-adjusted and the
-  # column is still titled VAA; the method is documented where it is computed,
-  # in adjust_vaa_for_location() in features.R.
-  hb = paste("HB is arm-side normalized: positive is arm-side run for both",
-             "hands, so a lefty and a righty with the same shape read the same.",
-             "The movement chart keeps the true direction instead."),
-  # NOT arm-side normalized, unlike hb, and this note says what the sign means
-  # rather than explaining a normalisation away. The earlier version mirrored it
-  # and then had to footnote that positive meant arm side, which is the only
-  # thing release side can mean: the sign was pure handedness and normalising it
-  # threw that away. See the note in tables.R.
+  hb = paste("HB is the true direction, as on the movement chart: positive is",
+             "arm side for a righty and glove side for a lefty. Percentiles mirror",
+             "lefties, so each is ranked by arm-side run."),
   rel_side = paste("Rel Side is measured from the middle of the rubber,",
                    "positive toward third base, so a righty reads positive and",
                    "a lefty negative. Percentiles are within hand, so each is",
                    "ranked against arms on his own side."),
-  # One note, on rel_side rather than on both, because two identical footnotes
-  # under adjacent columns reads as a rendering bug. rel_ht is the same scale.
   rel_ht = paste("Rel Ht and Rel Side are shaded by how FAR from league average",
                  "they sit, not by which way. Both tails fill the same, because",
                  "an unusual slot is the thing that plays; league-average is the",
                  "pale end. The value beside the shading says which way.")
 )
 
-# Arsenal table column name to METRIC_SPEC metric name. Only `velocity` actually
-# differs, which is the whole reason this map has to exist rather than being
-# assumed: one silent mismatch drops a column's context with no error.
-#
-# The ten keys here are exactly the columns that take percentile fill. PITCH,
-# COUNT and PITCH% keep the pitch-colour row fill so the left of the table stays
-# the identity block, and Stuff+ has no league reference to sit against.
-# Shape direction, BY PITCH TYPE. The one place baseball knowledge enters the
-# colour system.
-#
-# IVB and HB have no direction as metrics, only as pitch shapes. More ride is the
-# point of a four-seam and the death of a sinker; more arm-side run is what a
-# changeup wants and the opposite of what a sweeper wants. Grading them globally
-# gets it backwards for half the arsenal: Logan Webb's changeup sits 5 inches
-# under the league on IVB, which Savant paints red and calls "9.0 MORE DROP",
-# and a global high-is-good rule painted it blue.
-#
-# So direction is looked up per (metric, pitch type) and every one of the eleven
-# codes is written out. No default: a code that reaches here unlisted should stop
-# the render rather than quietly inherit somebody's guess about what a good
-# knuckleball looks like.
-#
-#   ivb  high  the pitch wants to RIDE       FF FC
-#        low   the pitch wants to DROP       SI CH FS SL ST CU KC SV
-#   hb   high  the pitch wants ARM SIDE      FF SI CH FS
-#        low   the pitch wants GLOVE SIDE    FC SL ST CU KC SV
-#
-# KN is neutral on both. A knuckleball has no intended shape, which is the whole
-# idea, so it keeps the symmetric grey.
+# Shape direction by pitch type: ride helps a four-seam and hurts a sinker.
+# No default: an unlisted code stops the render.
+#   ivb / vaa  high = wants ride (flatter)   FF FC;  low = wants drop   the rest
+#   hb         high = wants arm side  FF SI CH FS;   low = glove side   the rest
+#   KN is neutral on all three.
 PITCH_SHAPE_DIRECTION <- list(
   ivb = c(FF = "high", FC = "high",
           SI = "low",  CH = "low", FS = "low", SL = "low",
@@ -370,18 +129,6 @@ PITCH_SHAPE_DIRECTION <- list(
           FC = "low",  SL = "low",  ST = "low",  CU = "low",
           KC = "low",  SV = "low",
           KN = "neutral"),
-  # vaa added 2026-08-31, and it tracks ivb code for code, which is not a
-  # copy-paste. VAA is the angle the pitch arrives at and IVB is the ride that
-  # flattens it, so a pitch that wants ride wants a flat approach by the same
-  # argument. "high" here means LESS NEGATIVE: league VAA runs about -4.7 on a
-  # four-seam and -9.6 on a curve, so a flat four-seam is the high end of a
-  # negative scale.
-  #
-  # A blanket high-is-good rule would paint a flat sinker as a plus, which is
-  # the same error as painting Webb's changeup red for dropping. A blanket
-  # "extreme" rule would do it too, which is why vaa is not graded on uniqueness
-  # the way the release traits are: where the ball comes FROM has no right
-  # answer, and how it arrives very much does.
   vaa = c(FF = "high", FC = "high",
           SI = "low",  CH = "low", FS = "low", SL = "low",
           ST = "low",  CU = "low", KC = "low", SV = "low",
@@ -390,14 +137,6 @@ PITCH_SHAPE_DIRECTION <- list(
 
 
 #' The direction a metric runs for one pitch type
-#'
-#' Most metrics have one direction whatever the pitch: a whiff is a whiff. IVB
-#' and HB do not, so they carry a per-pitch-type table and everything else falls
-#' through to METRIC_SPEC.
-#'
-#' Stops on an unknown pitch type rather than defaulting, for the same reason
-#' pctile_fill() stops on an unknown direction: the failure it prevents is a cell
-#' that renders confidently in the wrong colour.
 metric_direction <- function(metric, pitch_type) {
   tbl <- PITCH_SHAPE_DIRECTION[[metric]]
   if (is.null(tbl)) {
@@ -414,21 +153,8 @@ metric_direction <- function(metric, pitch_type) {
 }
 
 
-#' Table column name to METRIC_SPEC metric name
-#'
-#' Spans BOTH tables since the Characteristics tab split on 2026-08-31, and is
-#' deliberately still one map rather than two. resolve_table() already narrows it
-#' with `names(ARSENAL_METRIC_COLS) %in% names(tbl)`, so each table resolves
-#' exactly the columns it actually has and a second map would only be a second
-#' place for a key to go stale.
-#'
-#' Only `velocity` differs from its metric name, which is the whole reason this
-#' has to exist rather than being assumed: one silent mismatch drops a column's
-#' context with no error.
-#'
-#' PITCH, COUNT and PITCH% are absent from both tables on purpose. They are the
-#' identity block, and Stuff+ is absent because league_ref carries no Stuff+
-#' metric; it shades itself off the 100 anchor in traits_gt().
+#' Characteristics columns that take a league fill -> METRIC_SPEC metric.
+#' RV is a counting stat and takes none.
 ARSENAL_METRIC_COLS <- c(
   # Traits
   velocity   = "velo",
@@ -442,41 +168,19 @@ ARSENAL_METRIC_COLS <- c(
   # Results
   strike_pct = "strike_pct",
   whiff_pct  = "whiff_pct",
+  z_whiff_pct = "z_whiff_pct",
   csw_pct    = "csw_pct",
   zone_pct   = "zone_pct",
   chase_pct  = "chase_pct",
   xwoba      = "xwoba",
   gb_pct     = "gb_pct"
-  # rv is deliberately ABSENT and has no entry in METRIC_SPEC either. It is a
-  # counting stat, so a pitcher with 30 sliders and one with 300 are not
-  # comparable on it and a percentile would be measuring workload. It renders
-  # unshaded, carrying its sign, and that is the whole of what it claims.
-  #
-  # rv100 was built alongside it on 2026-09-08 and removed the same day. It is
-  # the shadeable form, but its split-half reliability is 0.02 to 0.10 at every
-  # sample we have -- per-pitch run value is dominated by rare events, one home
-  # run being -2.7 runs -- so the colour would have been a lottery dressed as a
-  # grade. RV alone says the same thing without the false precision.
 )
 
 
 # ---- Results panel league context --------------------------------------------
 
-# The seven panel numbers that take a league fill, as data rather than as
-# conditionals inside results_panel(). TBF is deliberately absent: it is the
-# sample the other three are measured over, not a result, and colouring it would
-# say a busy reliever is better than a good one.
-#
-# `direction` is read by pctile_fill() and is never inferred from the metric
-# name. Getting one of these backwards renders a .420 xwOBA deep red and is the
-# single least visible bug this feature can have, which is why it is a column
-# here and an assertion in the tests.
-#
-# `denom` names the count that decides whether a value is worth ranking, and
-# `min_denom` is the absolute backstop under the scaled floor. `scales` is FALSE
-# for IP alone: its denominator is games pitched, which is very nearly the thing
-# IP measures, so scaling that floor with the window would grey out exactly the
-# pitchers whose low IP is the finding.
+# Results panel metrics. sc = Statcast, gl = game logs. The floor scales with
+# the window except for IP, whose denominator is games.
 RESULTS_METRIC_SPEC <- data.frame(
   metric    = c("k_bb",  "hh",    "xwoba", "ip",    "era",  "whip", "fip"),
   label     = c("K-BB%", "HH%",   "xwOBA", "IP",    "ERA",  "WHIP", "FIP"),
@@ -488,42 +192,13 @@ RESULTS_METRIC_SPEC <- data.frame(
   stringsAsFactors = FALSE
 )
 
-# The scaled floor is half the median denominator among pitchers who appeared in
-# the selected window. Measured across window lengths, that keeps two thirds to
-# five sixths of the league in the comparison at every length, where a fixed 50
-# TBF leaves 16% of it over two weeks:
-#
-#   window        TBF floor   clears
-#   full season      65        66%
-#   30 days          23        78%
-#   14 days          12        86%
-#
-# Half is a choice and not a derivation. It reads as "at least half the work a
-# typical pitcher did in this window", and it is one constant rather than a
-# table of window lengths nobody would maintain.
+# Results floor: this fraction of the median denominator in the window
 RESULTS_FLOOR_FRACTION <- 0.5
 
 
 # ---- Pitch trait search ------------------------------------------------------
 
-# The five traits the search tab puts a slider on, with the label, the rounding
-# the slider steps in, and the number of decimals the table shows.
-#
-# Traits, not outcomes. A slider on whiff% would let you ask for pitches that
-# already worked, which is a different and much less useful question than asking
-# for a shape and then seeing whether it worked. The outcome columns are shown
-# and coloured, never filtered on.
-# rel_ht added 2026-08-31. Release HEIGHT only, not release side: height needs
-# no handedness convention, where side is catcher's-view signed and would put a
-# lefty and a righty at opposite ends of the same slider. Adding side means
-# deciding what a slider spanning -3.4 to +3.0 means to a reader who has not
-# picked a hand yet, and that is a design question rather than a column.
-#
-# step 0.05 and digits 2, finer than extension's 0.1. The league spread is about
-# half a foot, so a 0.1 step gives roughly ten positions across the middle 80%
-# of arms and buckets a third of the league onto one number. It also matches the
-# two decimals the traits table prints, and fmt_bound() exists precisely so the
-# slider label and the table cannot disagree.
+# Search sliders (traits only, never outcomes)
 SEARCH_TRAITS <- data.frame(
   trait  = c("velo",  "ivb",  "hb",   "spin",  "ext",  "rel_ht"),
   label  = c("Velocity (mph)", "IVB (in)", "HB (in)", "Spin (rpm)",
@@ -533,249 +208,64 @@ SEARCH_TRAITS <- data.frame(
   stringsAsFactors = FALSE
 )
 
-# Search table column to METRIC_SPEC metric, the same map ARSENAL_METRIC_COLS is
-# for the arsenal table. Extension takes a fill here and does not there, because
-# the arsenal table has no extension column.
-#
-# There is no strike_pct, csw_pct or zone_pct here on purpose: the search table
-# is already wide, and those three answer a question about a pitcher rather than
-# about a pitch shape.
-# How many matches the table draws, whatever the query returns. Measured on 457
-# righty four-seams, which is what an unfiltered search returns: 5.5 s to render
-# and 2.7 MB of HTML, against 1.0 s and 309 KB at 50 rows. The count line above
-# the table always reports the true total, so the cap hides rows and never hides
-# the answer to "how many".
+# Rows drawn in the search table; the count line reports the full total
 SEARCH_MAX_ROWS <- 50L
 
-SEARCH_METRIC_COLS <- c(
-  velo      = "velo",
-  ivb       = "ivb",
-  hb        = "hb",
-  spin      = "spin",
-  ext       = "ext",
-  rel_ht    = "rel_ht",
-  whiff_pct = "whiff_pct",
-  chase_pct = "chase_pct",
-  xwoba     = "xwoba"
-)
 
 # ---- Percentile fill palettes ------------------------------------------------
 
-# Two scales, because a directional metric and a directionless one are answering
-# different questions and must not look alike.
-#
-# Diverging, for direction "high" and "low". Blue poor, near-white average, red
-# plus, which is the Savant convention a scout already reads without a legend.
-# Stops are deliberately light: the plan puts black text on these cells, so every
-# stop stays above roughly 7:1 against black. A saturated Savant pill needs white
-# text and would force a second text rule.
-#
-# Neutral, for direction "neutral": IVB, HB, zone% and usage%. These have no
-# good end. More IVB is a plus on a four-seam and a minus on a curveball, and HB
-# flips sign with the pitcher's hand, so painting them red and blue would assert
-# a quality the app cannot support.
-#
-# SYMMETRIC GREY, sharing the diverging scale's middle stop exactly. Average is
-# the same light grey in both scales, and a cell darkens as it moves away from
-# average in EITHER direction, so it reads as "unusual" rather than as "good".
-# One colour system on the page instead of two.
-#
-# This replaced a violet ramp on 2026-08-24. The violet was chosen to avoid grey,
-# on the reasoning that the below-floor state owns grey; that turned out to be
-# the wrong worry, because below floor is an UNFILLED cell with grey italic text
-# and these are filled cells with black text, which is a difference in two
-# channels. What the violet actually did was put a second hue on a table whose
-# whole point was one.
+# Diverging (blue poor, red plus) for graded metrics; symmetric grey for neutral.
+# Both share the middle stop and are light enough for black text.
 PCTILE_PAL_DIVERGING <- c("#7FA8D6", "#BFD3E8", "#F0F0F0", "#EFC0AE", "#DC8163")
 PCTILE_PAL_NEUTRAL   <- c("#C4C4C4", "#DEDEDE", "#F0F0F0", "#DEDEDE", "#C4C4C4")
 
-# Below floor and no reference both render unfilled with grey italic text. Grey
-# is reserved for them: half the cells in a two-week window land here, so it has
-# to read as calm and normal rather than as a warning.
+# Text color for cells with no league reference
 PCTILE_GREY <- "#767676"
 
-# Arm-side normalisation for HB, and the one place the sign is decided.
-#
-# HB is stored as -pfx_x * 12, which is arm side POSITIVE for a righty and arm
-# side NEGATIVE for a lefty. That is right for the movement chart, where the
-# actual direction of the break is the whole point, and wrong everywhere a value
-# is compared: measured on league_ref, RHP sinkers average +14.9 and LHP sinkers
-# -15.1, so two pitchers with identical arm-side run sat at opposite ends of the
-# scale and coloured red and blue.
-#
-# So the COMPARISON surfaces store and show HB arm-side normalised, positive
-# means arm side for both hands, and the movement chart converts back with the
-# same function before it draws. One helper, used in three places, rather than a
-# sign flip written out four times and eventually written out wrong.
+# HB is arm side positive for a RHP only. Multiply by this to compare across hands.
 arm_side_sign <- function(p_throws) ifelse(p_throws == "R", 1, -1)
 
 
-# The two shape metrics are coloured by MAGNITUDE, not by rank.
-#
-# Every other cell in the table is a percentile: where this pitcher sits in the
-# league for that pitch type. That is the right question for a rate, and the
-# wrong one for a shape, because it is not comparable across rows. A rank of 90
-# means something different in a cutter's tight IVB distribution than in a
-# curveball's wide one, so two cells with the same colour can be one inch and
-# four inches off the league.
-#
-# Magnitude fixes that: the fill is the distance from the league average for that
-# pitch type, in inches, on one scale for the whole table. Six inches off
-# saturates. Savant reads the same way, "9.0 MORE DROP" rather than "94th
-# percentile of drop".
-#
-# Six is measured, not chosen. Across 2,271 pitcher-and-pitch-type cells with 50+
-# pitches, |delta| runs:
-#
-#             median   p90   p95   within 6 in
-#   IVB          2.1   5.4   6.6      92.6%
-#   HB           1.8   4.8   6.0      94.9%
-#
-# Close enough between the two metrics to share one constant, and far enough out
-# that the ramp is spent on real differences rather than on noise. Beyond it the
-# fill clamps.
-#
-# The RANK is still computed and still reported in `pctile`. Only the colour
-# changed. A cell can now read 90th percentile and look pale, which is correct:
-# it means this pitch leads its group by very little.
+# IVB and HB shade by inches from the league average, saturating at this many
+# inches (about the 95th percentile of differences)
 MAGNITUDE_METRICS <- c("ivb", "hb")
 SHAPE_DELTA_SPAN  <- 6
 
-
-# How far from 100 Stuff+ has to sit to reach the end of the ramp.
-#
-# Stuff+ needs no league reference: it is centred on 100 by construction, so the
-# anchor is already in the scale. What it does need is a span, and 25 is where
-# the real distribution ends. Measured on the 2026 export, 2,202 pitch grades at
-# 20+ IP: the 2nd and 98th percentiles are 75.3 and 131.1, and 94.2% of grades
-# sit within 100 +/- 25. Beyond it the fill clamps rather than running off.
+# Stuff+ fill saturates at 100 +/- this
 STUFF_PLUS_SPAN <- 25
 
-# The unfilled states paint white explicitly rather than painting nothing.
-#
-# That was originally because a pitch-colour row fill ran under every body cell,
-# so "no fill" would have shown the pitch colour through and read as a fill. The
-# row fill is gone as of 2026-08-24 and the rows are white anyway, so this is now
-# belt and braces rather than load-bearing. It stays explicit because
-# resolve_cell() promises every cell a concrete fill, and a state that returned
-# NULL would put a conditional back into tables.R that this table exists to keep
-# out of it.
 PCTILE_UNFILLED <- "#FFFFFF"
 
-# How each of the four cell states renders, as data rather than as conditionals
-# spread through league.R and tables.R. resolve_cell() joins against this and
-# tables.R passes the columns straight to gt, so neither one re-derives a state.
-#
-# The four must survive greyscale: these tables get screenshotted into a
-# portfolio, and four states separated only by hue collapse into one. They are
-# separated on three channels that all survive it.
-#
-#   filled      splits {exact, fallback} from {below_floor, no_reference}
-#   marker/n    splits exact from fallback, and below_floor from no_reference
-#
-# Below floor is about half the cells in a two-week window, so it stays
-# unbolded and unmarked: a half-grey table that shouts trains you to ignore it.
-#
-# Fallback used to carry font_weight = "bold" as WELL as its dagger, on the
-# argument that it is rare (126 cells across 802 pitchers) so a second channel
-# costs nothing. Dropped 2026-09-09. Two problems with that argument.
-#
-# Weight is not a neutral channel, it reads as emphasis. Bolding fallback made
-# the least certain shaded cell the most prominent thing in its column, which
-# states the opposite of what the dagger says. And the channel budget above
-# exists so a state never depends on HUE; a dagger is a printed character, so
-# it already satisfies that on its own and the bold was buying nothing the
-# marker was not already buying.
-#
-# Measured before removing, over 54,187 resolved cells for the 536 pitchers
-# with 300+ pitches: fallback is 0.59% of cells overall and 0.00% on the
-# default "vs All Batters" view, reaching 1.05% vs LHH. It is worth marking,
-# which is why the dagger stays, and far too rare to be worth shouting.
-#
-# The "all four differ on non-hue channels" assertion in tests/step2_states.R
-# is what proves the marker alone still separates exact from fallback.
-#
-# Markers are a family with a grammar. The dagger pair says something about the
-# LEAGUE reference, single for a coarser one and double for none at all. A
-# parenthetical instead says something about the PITCHER's own sample. A reader
-# who learns that once can read any cell without the footnote.
-# CHANGED 2026-09-08. below_floor is now FILLED, in normal black text, and keeps
-# only its parenthetical n.
-#
-# It used to render unfilled, grey and italic, on the reasoning that a rate off
-# nine swings should not be placed against the league at all. That reasoning is
-# sound about PREDICTION and wrong about what this tab is for. Asked for one
-# start, a scout is asking what happened that day measured against what the
-# league does over a season, which is a descriptive question that a small sample
-# answers exactly. Holmes on 2026-09-07 rendered 40 of 48 trait cells and every
-# single results cell in grey: a table that reported nothing about a start it
-# had complete information on.
-#
-# The floors did not move and are not gone. They still classify the cell, so the
-# parenthetical n still appears on exactly the cells that used to be greyed. What
-# changed is that the floor now ANNOTATES the sample instead of withholding the
-# comparison: the reader is told the number came off nine swings and is left to
-# weigh it, rather than being shown a blank.
-#
-# Keep this in view: a 60% whiff on five swings will now render as a deep red
-# cell. That is the intended behaviour and it is a real cost. The (n) beside it
-# is the only thing qualifying it, so the n must never be dropped from this row.
+# How each cell state renders. Exact and fallback look the same; the other two are
+# marked without relying on hue.
+#   exact         league cell at the full grain
+#   fallback      coarser league cell
+#   below_floor   shaded, with its own sample size in parentheses
+#   no_reference  no league cell at all (double dagger, grey italic)
 CELL_STATE_STYLE <- data.frame(
   state       = c("exact", "fallback",  "below_floor", "no_reference"),
   filled      = c(TRUE,    TRUE,        TRUE,          FALSE),
   text_color  = c("#000000", "#000000", "#000000",     PCTILE_GREY),
   font_style  = c("normal", "normal",   "normal",      "italic"),
   font_weight = c("normal", "normal",   "normal",      "normal"),
-  # below_floor's marker is built at runtime, since it carries its own n.
-  marker      = c("",       "\u2020",   "",            "\u2021"),
+  # below_floor's marker is its own n, added at runtime
+  marker      = c("",       "",         "",            "‡"),
   stringsAsFactors = FALSE
 )
 
-# Minimum contributing pitchers before a reference cell may be quoted. Below
-# this the lookup falls back to a coarser cell. At the full grain the Two
-# Strikes cells hold a median of 4 eligible pitchers for whiff%, and a
-# percentile off 4 pitchers is a fabrication.
-# Every denominator a metric can divide by. One list, so a frame of counts and
-# METRIC_SPEC$denom cannot drift apart silently: a denom naming a column nobody
-# supplies resolves to no sample at all and greys the metric everywhere.
-# bbe = batted balls, added 2026-09-08 for GB%. It is the THINNEST denominator
-# on the table by a distance: a median of 17 per pitcher-pitch-type over a full
-# season against 99 pitches, so its parenthetical n does real work.
-DENOM_COLS <- c("pitches", "swings", "oz", "pa", "cut_pitches", "bbe")
+# Every denominator METRIC_SPEC$denom can name
+DENOM_COLS <- c("pitches", "swings", "oz", "pa", "cut_pitches", "bbe", "z_swings")
 
-# The denominator that is already on screen as a column: COUNT in the TRAITS
-# table, N in the search table. A parenthetical repeating it says nothing the
-# page does not already say, and it says it once per column: a six-pitch traits
-# row carried eight identical "(19)" markers beside a COUNT cell reading 19.
-#
-# NOTE, 2026-09-08: the results table dropped its own COUNT and PITCH% as
-# duplicates of the traits table above it. So a pitches-denominated results cell
-# now shows no sample at all in its own table, and the reader takes it from the
-# traits table, which is directly above and in the same pitch order. That is the
-# intended reading and it is the one thing here that depends on the two tables
-# staying adjacent and identically ordered.
-#
-# So a below-floor marker is emitted only when the denominator DIFFERS from this
-# one, which leaves it on exactly the three that carry new information -- whiff
-# over swings, chase over out-of-zone, xwOBA over plate appearances -- and on
-# usage, whose denominator is the pitcher's own total rather than the pitch
-# type's.
-#
-# Named rather than written as a bare "pitches" at the comparison, because the
-# claim being made is about what the TABLE renders, not about the metric.
-# Total rendered width of the two characteristics tables, in px. They stack, so
-# a difference between them reads as a rendering fault rather than as a design,
-# and the difference is not a matter of taste: 12 columns and 9 columns cannot
-# both divide 960 evenly. gt_chassis() gives every column the floor and hands
-# the remainder to the first, so the totals are EQUAL rather than close.
+# Both characteristics tables render at this total width
 TABLE_WIDTH_PX <- 960L
 
+# Shown as COUNT already, so no (n) marker for this denominator
 DENOM_SHOWN_AS_COUNT <- "pitches"
 
+# Minimum pitchers in a league cell before it is used
 MIN_REF_PITCHERS <- 20
 
-# The six overlapping count buckets, matching count_usage_tbl() in tables.R.
-# They are situational views and not a partition, so they do not sum to 100.
+# Six overlapping count buckets (situational views, not a partition)
 COUNT_BUCKETS <- list(
   "All Counts"      = NULL,
   "Early Count"     = c("0-0","0-1","1-0"),
@@ -788,56 +278,17 @@ COUNT_BUCKETS <- list(
 
 # ---- Outcome description sets ------------------------------------------------
 
-# Savant `description` values. These are matched with %in% against live data, so
-# any edit here must be checked against unique(df$description) first. A
-# "called strike" typo (missing underscore) matched zero rows once already and
-# put a wrong CSW% into a finished report.
-
-# Denominator for whiff%, which is off swings and not off total pitches.
-#
-# Bunt attempts are swings. The batter offered, so an out-of-zone bunt attempt
-# is a chase and a missed bunt is a swing and a miss. Verified against Savant
-# rather than argued, over 105 pitchers with 100+ PA:
-#
-#   swing set                                  whiff MAE   chase MAE
-#   no bunts anywhere                              0.087       0.192
-#   bunts are swings, missed_bunt a whiff          0.036       0.060
-#   + bunt_foul_tip a whiff too                    0.032       0.060
-#
-# An earlier pass measured this with foul_tip missing from the whiff numerator
-# and read it as a wash, because the two errors ran in opposite directions. One
-# change at a time, against the source, or a confounded measurement talks you
-# out of a real fix.
-#
-# swinging_pitchout is left out: 1 row in the whole season, and the measurement
-# cannot tell either way.
+# Savant `description` values, matched exactly
+# Bunt attempts are swings; foul tips and missed bunts are whiffs (matches Savant).
 swing_only <- c("swinging_strike","swinging_strike_blocked","foul","foul_tip","hit_into_play",
                 "foul_bunt","missed_bunt","bunt_foul_tip")
 
-# foul_tip belongs here, verified against Savant rather than argued. A foul tip
-# is a swing the bat barely reached that the catcher caught, and Savant counts it
-# as a whiff. Over 105 pitchers with 100+ PA, misses / swings sat 2.10 points
-# below Savant's whiff% on average and 3.4 at worst; adding foul_tip to the
-# numerator lands at 0.09 MAE, exact to a tenth for 68 of them. Foul tips are
-# 2.1% of swings.
-#
-# It is in swing_only as well, and has to be: a foul tip is a swing whichever way
-# the numerator goes. This set is also the whiff half of csw_pct, so CSW% moves
-# with it by design rather than by accident.
+# Also the whiff half of CSW%
 whiff_desc <- c("swinging_strike","swinging_strike_blocked","foul_tip",
                 "missed_bunt","bunt_foul_tip")
 
 
-#' Which end of a metric is better for the pitcher, on the Context tab
-#'
-#' Reads METRIC_SPEC$context_better and nothing else, so the answer lives in one
-#' table rather than in whichever renderer asked. Returns "none" for a metric
-#' with no good end, which the callers must treat as a real answer and not as a
-#' missing one.
-#' Pitches needed before a shape trait's percentile is stable
-#'
-#' Reads METRIC_SPEC$shape_floor. NA for a metric that has none, which the
-#' caller must treat as "this floor does not apply", not as zero.
+#' Pitches before a shape trait's percentile is stable (NA = no floor)
 shape_floor <- function(metric) {
   spec <- METRIC_SPEC[METRIC_SPEC$metric == metric, ]
   if (nrow(spec) != 1) stop("unknown metric: ", metric, call. = FALSE)
@@ -845,6 +296,7 @@ shape_floor <- function(metric) {
 }
 
 
+#' Better end of a metric for the pitcher on the Context tab
 context_better <- function(metric) {
   spec <- METRIC_SPEC[METRIC_SPEC$metric == metric, ]
   if (nrow(spec) != 1) stop("unknown metric: ", metric, call. = FALSE)

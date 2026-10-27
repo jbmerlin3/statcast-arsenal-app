@@ -1,114 +1,78 @@
 # Pitcher Arsenal
 
-A Shiny app that replaces a manual, pitcher-by-pitcher advance scouting
-workflow. Pick a pitcher, a date range and a batter side, and the app returns
-movement, usage, pitch characteristics, count usage and heat maps, each one
-placed against a league reference for the same pitch type and the same pitcher
-hand.
+**Live app: [jonathanmerlin.shinyapps.io/pitcher-arsenal](https://jonathanmerlin.shinyapps.io/pitcher-arsenal/)** (it sleeps when idle and can take up to a minute to wake)
 
-It reads two precomputed files at startup and renders. It never pulls from
-Baseball Savant while a user is on the page, and it needs no credentials.
+A Shiny app that shows any pitcher's movement, usage, pitch characteristics and heat maps within major league context, filtered by date range or batter handedness. Its search feature finds pitchers by specific criteria, such as fastballs above 90 mph.
 
 ![Pitch characteristics with league context](docs/screenshot-characteristics.png)
 
-The Movement tab, same selection:
+Built with R, Shiny, ggplot2 and gt, on the complete 2026 regular season: 714,111 Statcast pitches and MLB StatsAPI game logs. During the season the data refreshed every morning through GitHub Actions and redeployed to shinyapps.io.
 
-![Movement, with league marks](docs/screenshot.png)
+![Movement profile](docs/screenshot-movement.png)
 
-## Run it
+## What's in the app
+
+| Tab | Shows |
+|---|---|
+| Movement | Induced vertical and horizontal break for each pitch, with arm angle and extension. |
+| Usage | Usage by batter side and by count, pitch mix by outing, and a times-through-the-order toggle. |
+| Characteristics | Pitch traits (velocity, movement, VAA, spin, release, Stuff+) and pitch results (whiff%, chase%, xwOBA, run value), each shaded against the league for that pitch type and pitcher hand. |
+| Heat Maps | Location density by pitch type, before two strikes and with two strikes. |
+| Trends | One pitch game by game, flagging any metric whose last five games fall outside his normal game-to-game range. |
+| Context | League percentiles for one pitch, and how unusual the pitcher's release point is for his arm slot and height. |
+| Search | Every pitcher matching a pitch shape, e.g. right-handed four-seams at 95+ mph with 18+ inches of ride. |
+
+The sidebar results panel shows K-BB%, hard-hit rate and xwOBA from Statcast, and IP, ERA, WHIP and FIP from MLB game logs, for the selected window.
+
+## How it works
+
+**League context is built pitcher first.** Every percentile ranks a pitcher's pitch against other pitchers' averages for the same pitch type and pitcher hand (both hands for a rate stat when one hand has too few pitchers), never against a pool of pitches, so a 3,000-pitch starter doesn't outweigh thirty relievers. The reference is precomputed as 101 quantiles per cell, so a lookup costs nothing at runtime.
+
+**Small samples are labeled, not hidden.** Each metric has a floor on its own denominator (50 swings for whiff%, 50 plate appearances for xwOBA), set by an offline resampling study of how fast each stabilizes. A value under its floor is still shaded and carries its sample size in parentheses.
+
+**Definitions match Savant.** On the final 2026 data, whiff%, chase%, zone% and hard-hit% per pitcher are within 0.1 points of Savant's leaderboard on average, and whiff% per pitcher and pitch type is within 0.05 points of Savant's pitch-arsenal leaderboard across 1,256 pitcher and pitch type combinations (`scripts/verify_savant.R`, `scripts/verify_arsenal_savant.R`).
+
+**The data pipeline runs itself.** During the season a GitHub Actions workflow pulled new Savant data each morning, rebuilt the league reference and game logs, and redeployed the app only when the data or code changed.
+
+More detail:
+
+- [Methodology](docs/methodology.md): league context, sample floors, metric definitions, VAA, pitch codes, Stuff+.
+- [Data pipeline](docs/pipeline.md): the data chain, data files, deploy and scheduling.
+- [Validation](docs/validation.md): the test suite and the checks against Savant and MLB.
+- [Changelog](CHANGELOG.md)
+
+## Run it locally
 
 ```bash
-git clone <this repo> && cd statcast-arsenal-app
+git clone https://github.com/jbmerlin3/statcast-arsenal-app.git
+cd statcast-arsenal-app
 Rscript -e 'renv::restore()'
+```
+
+`renv.lock` pins the packages the app and tests use, against R 4.5.2 (rsconnect, needed only to deploy, is installed separately). The data files under `data/` are not in the repo (about 45 MB). Build them from the 2026 season store, which is published as a release asset:
+
+```bash
+gh release download season-store --pattern statcast_clean_2026.rds --dir store
+STATCAST_STORE=store/statcast_clean_2026.rds SKIP_DEPLOY=1 Rscript scripts/update_data.R
 Rscript -e 'shiny::runApp(".", launch.browser = TRUE)'
 ```
 
-`renv.lock` pins 83 packages against R 4.5.2, so the environment reproduces
-without hunting versions.
+The chain also calls the MLB StatsAPI for game logs; `SKIP_DEPLOY=1` stops it before deploying.
 
-The three files under `data/` are gitignored, since they are rebuildable and run
-to 25 MB. Build them with the daily chain:
+Run the tests from the repo root:
 
 ```bash
-Rscript scripts/update_data.R
+Rscript tests/run_all.R
 ```
 
-Step 1 of that chain updates a season store rather than creating one, so on a
-machine that has never held one, point `STATCAST_STORE` at an existing
-`statcast_clean_2026.rds` or build one first with a one-time full-season pull
-through `pull_season_statcast()`. Everything after step 1 is a pure transform of
-that store.
-
-## The daily chain
-
-`scripts/update_data.R` is the only thing that writes data. Four steps: update
-the season store from Savant, rebuild `league_ref.rds`, pull `game_logs.rds`
-from the MLB StatsAPI, and write the trimmed `app_data.rds` the app reads.
-
-It runs at 06:15 daily under launchd. `scripts/chain_status.sh` reports last
-night's outcome, and separates a failed run from a stale success left by a job
-that never fired.
-
-Current artifacts: 563,401 pitches across 814 pitchers, 2026-03-26 through
-2026-08-20, in 27 columns and 22.5 MB.
-
-## Methodology
-
-**League context is built pitcher-first.** Every reference value is the mean of
-a per-pitcher distribution, never a pool of pitches across the league. Pooling
-pitches lets one 3,000-pitch starter outvote thirty relievers, which is a
-different question from the one the table asks. `league_ref.rds` stores that
-distribution's quantiles at one-point increments for each pitch type crossed
-with pitcher hand, batter side and count bucket, 4,120 cells in all, so a
-percentile lookup at runtime is a `findInterval()` and costs nothing. Pitcher
-hand is never dropped from the grain: horizontal break is not arm-side
-normalized, so a righty's and a lefty's sliders sit on opposite sides of zero
-and their pooled mean lands where neither hand throws.
-
-**Sample floors are stated on the page, not smoothed over.** A metric below its
-floor renders grey and italic with its own denominator in parentheses, rather
-than being coloured against a league it cannot honestly be compared to. Pitch
-types under five pitches in the window are dropped, heat map panels under
-fifteen fall back to plotting raw locations as white dots instead of a density
-surface, and a reference cell built on fewer than twenty pitchers is not used at
-all: the lookup steps down a fallback ladder to a coarser grain, and the table
-marks every cell that took that step. The reconciler that maps Savant's pitch codes onto the eleven the app
-charts reports what it did above the tabs, so "39 CS remapped to CU" is visible
-rather than silent.
-
-**Rate stats and counting stats come from different sources on purpose.** The
-Statcast half of the results panel follows the batter side selector. The ERA,
-WHIP and FIP half does not, because it comes from MLB game logs and a game log
-has no platoon split: a vs-RHH ERA does not exist rather than being merely
-unavailable. Innings pitched cannot be derived from pitch-level data at all,
-since `events` carries one row per plate appearance and a double play reads as
-one out, so IP comes from the game logs and is stored as outs everywhere.
-StatsAPI writes it in thirds, where "5.2" means five innings and two outs, and
-one parser handles that for both the chain and the app. FIP's constant is
-derived from the same log file the panel's FIPs are computed against rather than
-quoted from memory: on 2026 it lands at 3.088, not the 3.10 that gets repeated.
-
-## What the table does not claim
-
-Percentiles rank a pitch against its own pitch type, which is narrower than the
-diverging colour scale suggests. A 35th-percentile sinker whiff rate and a
-35th-percentile slider whiff rate render identically and do not mean the same
-thing, because sinkers miss few bats by design. The source note says percentiles
-rank within pitch type and hand, which stops the table implying a cross-pitch
-ranking, but it does not solve the reading.
-
-Stuff+ comes from a dated FanGraphs export, and the export window is printed in
-the table's source note so a stale one is visible on the page. Where FanGraphs
-and Savant disagree on a pitch code, the mapping is footnoted rather than
-applied silently.
-
-## Layout
+## Repository layout
 
 ```
-app.R           ui and server, thin. Logic lives in R/.
-R/              theme, data, features, plots, tables, league, stuff, results
-scripts/        the daily chain, the league reference build, the regression check
-tests/          six suites, all of which must pass before anything ships
-fg_stuff/       dated FanGraphs Stuff+ exports
-data/           the three rds artifacts, gitignored and rebuildable
+app.R          UI and server; logic lives in R/
+R/             data loading, features, league context, tables, plots, search, results
+scripts/       the data chain, deploy, verification against Savant, local monitoring
+tests/         test files and fixtures; run_all.R runs them
+lookups/       small tracked tables: listed heights, position players, Stuff+ grades
+docs/          methodology, pipeline, validation, screenshots
+.github/       the refresh-and-deploy workflow
 ```

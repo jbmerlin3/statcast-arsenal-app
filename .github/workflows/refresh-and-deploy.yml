@@ -1,67 +1,20 @@
-# The daily chain, run on GitHub's machines instead of a laptop.
-#
-# WHY THIS EXISTS. The app bundles its own data, so the deployed link only moves
-# when something redeploys it. That something used to be a launchd job on one
-# MacBook, which meant the live page was fresh only if that laptop happened to
-# be awake at 06:15. Observed 2026-08-26: scheduled 06:15, ran 06:52, because
-# the lid was shut. A link somebody else is going to open on a Monday morning
-# cannot depend on that.
-#
-# The laptop job still exists and is harmless. Once a few runs here have proved
-# themselves, unload it:
-#   launchctl bootout gui/$(id -u)/com.jonathanmerlin.arsenal-chain
-# Until then both may deploy the same data on the same morning, which is
-# wasteful and not wrong.
+# Runs the data chain (scripts/update_data.R) and deploys the app.
+# During the season an external cron starts it each morning; see docs/pipeline.md.
 
 name: Refresh data and deploy
 
 on:
-  # GitHub's own scheduler has NEVER fired for this repo: six scheduled slots on
-  # 2026-08-27 produced zero runs, private and public, with clean YAML that
-  # GitHub demonstrably parses since workflow_dispatch works from this same file.
-  # These entries are kept because they cost nothing and may start working, but
-  # nothing depends on them. The trigger that actually runs this daily is an
-  # external scheduler POSTing to the workflow_dispatch API. See docs/TRIGGER.md.
-  schedule:
-    # UTC. 10:15 is 06:15 Eastern in summer, 05:15 in winter, both before anyone
-    # is looking. GitHub delays scheduled runs under load, sometimes by half an
-    # hour, so there is a second attempt at 14:15 UTC. The second one is cheap
-    # when the first worked: it re-pulls one day, finds nothing new, and still
-    # redeploys, which costs a bundle upload and nothing else.
-    #
-    # FOUR attempts, not one, and the reason is not paranoia about cron. This app
-    # is sent to potential employers, and part of what it demonstrates is that
-    # the pipeline runs. A visitor who opens it and sees yesterday's date does
-    # not think "Savant lags", they think "this does not actually work". The
-    # date is evidence, and stale evidence argues against the person who sent it.
-    #
-    # So the schedule is built backwards from when somebody might look: three
-    # attempts land before 09:00 Eastern, and a fourth catches the rest of the
-    # morning. GitHub delays cron under load and occasionally skips it, and any
-    # one attempt missing is survivable when the next is an hour away.
-    #
-    # This is nearly free because of the deploy stamp. The first run that finds
-    # new data deploys; the rest fetch the stamp, see those dates already live,
-    # and skip. Four runs a day cost four bundle builds and ONE instance
-    # wake-up, so the constrained budget, shinyapps active hours, is untouched.
-    # Runner minutes are the loose one: about 1,100 a month against the 2,000 a
-    # free private repo gets.
-    - cron: '15 10 * * *'   # 06:15 ET, the moment Savant reliably has last night
-    - cron: '15 11 * * *'   # 07:15 ET
-    - cron: '15 12 * * *'   # 08:15 ET, the last one before a 09:00 send
-    - cron: '15 14 * * *'   # 10:15 ET, catch-all
   workflow_dispatch:
     inputs:
       repull_days:
         description: >-
-          How many days back to re-pull. 21 is the daily value. Raise it for a
+          How many days back to re-pull. 21 is the in-season value. Raise it for a
           one-off sweep over games already past that window: 200 covers a whole
           season. Costs one Savant chunk request per 4 days.
         required: false
         default: '21'
 
-# One at a time. Two concurrent runs would both refresh the store and both push
-# it back, and the loser's rows would vanish.
+# One run at a time, since each run pushes the season store back
 concurrency:
   group: chain
   cancel-in-progress: false
@@ -69,46 +22,23 @@ concurrency:
 jobs:
   chain:
     runs-on: ubuntu-latest
-    # Up to 7 chain attempts 20 minutes apart (see "Run the chain"), each
-    # about 10 minutes: 2 hours of waiting plus 70 of work, with margin.
+    # Up to 7 attempts 20 minutes apart while waiting for Savant
     timeout-minutes: 240
 
-    # The default GITHUB_TOKEN is read-only on contents, and pushing the
-    # refreshed store back is a release-asset write. Without this the whole
-    # chain runs, deploys, and then fails on the last step with
-    # "Resource not accessible by integration", leaving the store one day
-    # behind on the next run. Nothing here needs any other scope.
+    # Write access to upload the refreshed store to the release
     permissions:
       contents: write
 
     env:
-      # update_data.R already reads this, so nothing in the chain needed changing
-      # to run somewhere the store does not live beside the repo.
+      # The season store lives in a release asset, not in git
       STATCAST_STORE: ${{ github.workspace }}/season-store/statcast_clean_2026.rds
       STORE_RELEASE: season-store
-      # Falls back to 21 for scheduled and API-triggered runs, which send no
-      # inputs. Only a hand-started run can widen it further.
-      #
-      # WAS 7, RAISED 2026-09-08. Seven days catches Savant's pitch-type
-      # revisions, which was all this window was sized for. It does NOT catch
-      # arm_angle, which comes from a pose pipeline whose backfill can land
-      # later than that -- and a date that falls out of the window is never
-      # re-fetched, so it is frozen at NA for the life of the store. August 2026
-      # ended up 46.8% NA on arm_angle against under 1% every other month, with
-      # Savant holding the values the whole time. Nothing errored; a chart just
-      # printed "Arm Angle: NaN" three weeks later.
-      #
-      # 21 costs about four extra Savant chunk requests a run, against a bug
-      # class that is invisible until someone opens the right window.
-      # scripts/verify_traits.R tier D now fails if it recurs.
+      # 21 days so late arm angle backfills are picked up
       REPULL_DAYS: ${{ github.event.inputs.repull_days || '21' }}
 
     steps:
       - uses: actions/checkout@v4
 
-      # RSPM serves Linux binaries, so the 83 packages install without a
-      # compiler. These are the shared libraries those binaries link against at
-      # runtime, which binaries do not carry with them.
       - name: System libraries for the graphics stack
         run: |
           sudo apt-get update -qq
@@ -124,32 +54,16 @@ jobs:
 
       - uses: r-lib/actions/setup-renv@v2
 
-      # rsconnect is in renv's ignored.packages on purpose, so the deploy tool is
-      # not installed on the thing it deploys to. That also means renv::restore()
-      # does not bring it here, where it IS needed.
+      # rsconnect is excluded from renv.lock, so install it here
       - name: Install rsconnect
         run: Rscript -e 'renv::install("rsconnect")'
 
-      # The store is 95 MB of accumulated Statcast and does not belong in git.
-      # It rides as a release asset so a normal run pulls one day from Savant
-      # rather than re-scraping the season from a datacenter IP.
+      # Download the store and the last deploy stamp (the stamp lets a no-change run skip the deploy)
       - name: Fetch the season store
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p season-store logs
-          # The deploy stamp rides with the store. Without it every run here
-          # deploys, because a fresh runner has no memory of the last one, and on
-          # shinyapps.io's free tier a deploy is not free: it starts an instance,
-          # which then idles for 15 minutes before shutting down. Measured on
-          # this account, one wake-up costs about 0.25 active hours out of 25 a
-          # month. Two unconditional deploys a day would spend 15 of them before
-          # a single visitor arrived.
-          #
-          # With the stamp restored, the 14:15 run finds the same data dates the
-          # 10:15 run already shipped and skips the deploy, so the redundancy
-          # costs a bundle build and no instance time. Missing is fine and means
-          # "deploy anyway".
           gh release download "$STORE_RELEASE" --pattern 'deployed_through.txt' \
             --dir logs --clobber || echo "no stamp yet, this run will deploy"
           if gh release download "$STORE_RELEASE" \
@@ -169,23 +83,11 @@ jobs:
           SHINYAPPS_SECRET: ${{ secrets.SHINYAPPS_SECRET }}
         run: Rscript scripts/ci_auth.R
 
-      # Steps 1 to 5, the same run_chain() the laptop runs. There is no stamp on
-      # a fresh runner, so step 5 always deploys rather than gating on a date
-      # change. That is the behaviour we want here: the whole point is that the
-      # live bundle matches the data every morning.
-      # Savant usually has last night's games by 06:15 ET, but not always. On
-      # 2026-09-25 it had not posted 09-24 yet, step 1's guard failed the run as
-      # designed, and the scheduled backups arrived hours late (GitHub delays
-      # cron by 4 to 8 hours on this repo), so the app sat a day stale until
-      # 11:00. The run now waits for Savant itself: ONLY the "did not advance"
-      # failure is retried, every 20 minutes for up to 2 hours. Any other error
-      # fails immediately, as before. Step 1 stops before saving, so a retry
-      # starts from the same store.
+      # Retry only when Savant hasn't posted last night's games yet; fail on anything else
       - name: Run the chain
         shell: bash
         run: |
           set -o pipefail
-          mkdir -p logs
           for attempt in 1 2 3 4 5 6 7; do
             if Rscript scripts/update_data.R 2>&1 | tee logs/chain-attempt-$attempt.log; then
               exit 0
@@ -209,15 +111,13 @@ jobs:
           gh release upload "$STORE_RELEASE" \
             season-store/statcast_clean_2026.rds --clobber
           echo "store returned, $(du -h season-store/statcast_clean_2026.rds | cut -f1)"
-          # Only written when a deploy actually happened, so a skipped run leaves
-          # the previous stamp alone rather than resetting the gate.
+          # Upload the deploy stamp (unchanged when this run skipped the deploy)
           if [ -f logs/deployed_through.txt ]; then
             gh release upload "$STORE_RELEASE" logs/deployed_through.txt --clobber
             echo "stamp returned: $(tr '\n' ' ' < logs/deployed_through.txt)"
           fi
 
-      # Kept whether or not the run passed, because a failed chain is exactly
-      # when the log is worth reading.
+      # Keep logs even when the run fails
       - name: Keep the run log
         if: always()
         uses: actions/upload-artifact@v4
