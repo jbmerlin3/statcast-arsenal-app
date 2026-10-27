@@ -182,6 +182,11 @@ ui <- fluidPage(
       radioButtons("hand", "Batter side",
                    choices  = c("All" = "All", "vs LHH" = "L", "vs RHH" = "R"),
                    selected = "All", inline = TRUE),
+      # The coach sheet. A download rather than a new tab, because it is
+      # something to print and hand over, and it follows the three controls
+      # above exactly as the tabs do. Built in R/report.R.
+      downloadButton("report", "Generate report", class = "btn-sm btn-primary",
+                     style = "margin-bottom:12px;"),
       # Was "Pitch types under 5 pitches in the selected window are dropped",
       # which described behaviour that is gone. Every pitch type is charted now;
       # what varies is whether a RATE off it is trustworthy, which the table
@@ -770,6 +775,27 @@ server <- function(input, output, session) {
     results_gt(tbl, input$hand,
                ref = resolve_table(tbl, p$denoms, league_ref, p$p_throws, input$hand))
   })
+
+  # ---- Coach sheet ---------------------------------------------------------
+  #
+  # Reads the same reactives the tabs read, chars_parts() included, so the
+  # sheet cannot show a number the Characteristics tab does not. Nothing is
+  # computed until the button is pressed.
+  output$report <- downloadHandler(
+    filename = function() {
+      nm <- player_index$display[player_index$pitcher == as.integer(input$pitcher)][1]
+      paste0(gsub("[^A-Za-z]+", "_", nm), "_", input$dates[1], "_", input$dates[2],
+             "_", if (input$hand == "All") "all" else paste0("vs", input$hand, "HH"), ".pdf")
+    },
+    content = function(file) {
+      d <- pitcher_data(); p <- chars_parts()
+      report_pdf(file, d, input$hand, chart_hide(), p$tbl,
+                 resolve_table(p$tbl, p$denoms, league_ref, p$p_throws, input$hand),
+                 list(name = player_index$display[player_index$pitcher == as.integer(input$pitcher)][1],
+                      dates = as.character(input$dates), data_through = DATE_MAX,
+                      fg_label = if (is.null(FG_EXPORT)) NULL else FG_EXPORT$label))
+    },
+    contentType = "application/pdf")
 
   # ---- Context tab ---------------------------------------------------------
   #
