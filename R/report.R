@@ -39,47 +39,41 @@ shrink_layers <- function(p, k) {
 }
 
 
-#' Release point, catcher's view, one dot per sampled pitch and a ringed mean
+#' Release point, pitcher's view, one small dot per pitch
 #'
-#' Catcher's view to match the movement chart and the heat maps on the same
-#' sheet. The axis reads unsigned feet with the base named at each end rather
-#' than Savant's signed release_pos_x, because the characteristics table on
-#' this page prints release side with the OPPOSITE sign (positive toward third,
-#' see arsenal_table()). Two signed conventions for one number on one sheet is
-#' the Tolle HB mismatch again; naming the sides sidesteps it.
+#' Pitcher's view, standing behind the mound: first base on the left, third on
+#' the right, the way TruMedia draws it. That puts a righty's release on the
+#' same side as his arm-side run on the movement chart beside it. It is also
+#' the characteristics table's convention: x is -release_pos_x, exactly the
+#' REL SIDE column (positive toward third, see arsenal_table()), so the axis
+#' and the table agree in sign. Changed 2026-10-27; it was catcher's view.
 #'
-#' Sampled the way plot_movement() samples, about 100 dots split by usage, so a
-#' 1,500-pitch starter is not a solid blob.
 plot_release <- function(df, hide = character()) {
   pitch_order <- setdiff(levels(df$pitch_type), hide)
-  df <- filter(df, pitch_type %in% pitch_order, !is.na(release_pos_x), !is.na(release_pos_z))
-  usage <- df |> count(pitch_type) |> mutate(k = pmax(1, round(n / sum(n) * 100)))
-  set.seed(3)
-  pts <- map_dfr(pitch_order, function(pt) {
-    d <- filter(df, pitch_type == pt)
-    slice_sample(d, n = min(nrow(d), usage$k[usage$pitch_type == pt]))
-  })
-  means <- df |> group_by(pitch_type) |>
-    summarise(x = mean(release_pos_x), z = mean(release_pos_z), .groups = "drop")
+  # Every pitch, drawn small, rather than a usage-weighted sample with a ringed
+  # mean per type: the TruMedia release chart. The spread IS the read here,
+  # whether the types come out of one slot or drift apart, and a mean bubble
+  # covered exactly that. Most-used type drawn first so a rare pitch's dots
+  # land on top instead of under the fastball.
+  df <- filter(df, pitch_type %in% pitch_order, !is.na(release_pos_x), !is.na(release_pos_z)) |>
+    mutate(rel_side = -release_pos_x,
+           pitch_type = factor(as.character(pitch_type), levels = pitch_order)) |>
+    arrange(pitch_type)
   lim <- 4
-  ggplot(pts, aes(release_pos_x, release_pos_z, fill = pitch_type)) +
-    # The rubber, at the pitcher's feet. Release height is measured from the
-    # field, so the mound's ten inches sit under the rubber, not under zero.
-    annotate("rect", xmin = -1, xmax = 1, ymin = 0.78, ymax = 0.88, fill = "gray70") +
-    geom_vline(xintercept = 0, color = "gray85", linewidth = 0.4) +
-    geom_point(shape = 21, color = "white", stroke = 0.3, size = 2, alpha = 0.85) +
-    geom_point(data = means, aes(x, z), shape = 21, color = "black", stroke = 0.7, size = 3.2) +
-    scale_fill_manual(values = pitch_colors) +
-    scale_x_continuous(limits = c(-lim, lim), breaks = seq(-lim, lim, 2),
-                       labels = function(x) abs(x)) +
-    scale_y_continuous(limits = c(0.5, 7.5), breaks = 1:7) +
+  ggplot(df, aes(rel_side, release_pos_z, color = pitch_type)) +
+    geom_vline(xintercept = 0, color = "gray55", linewidth = 0.35, linetype = "dashed") +
+    geom_point(size = 0.45, alpha = 0.8) +
+    scale_color_manual(values = pitch_colors) +
+    scale_x_continuous(limits = c(-lim, lim), breaks = seq(-lim, lim, 2)) +
+    scale_y_continuous(limits = c(0, 8), breaks = seq(0, 8, 2)) +
     coord_fixed() +
-    annotate("text", x = -lim, y = 7.4, label = "3B side", hjust = 0, size = 2.3, color = "gray45") +
-    annotate("text", x = lim, y = 7.4, label = "1B side", hjust = 1, size = 2.3, color = "gray45") +
+    annotate("text", x = -lim, y = 7.85, label = "1B side", hjust = 0, size = 2.3, color = "gray45") +
+    annotate("text", x = lim, y = 7.85, label = "3B side", hjust = 1, size = 2.3, color = "gray45") +
     labs(x = "Release side (ft)", y = "Release height (ft)") +
     theme_minimal(base_size = 7.5) +
     theme(legend.position = "none", panel.grid.minor = element_blank(),
           panel.grid.major = element_line(color = "gray92"),
+          panel.border = element_rect(fill = NA, color = "gray75", linewidth = 0.4),
           plot.margin = ggplot2::margin(2, 4, 2, 2))
 }
 
@@ -283,58 +277,113 @@ report_pdf <- function(path, d, hand, hide, tbl, ref, meta) {
 
   # ---- Top row: movement | release | usage by count ----
   top_y <- 8.5 - 0.78
-  section(0.4, top_y, 2.75, 2.85, "Movement", "catcher's view, both sides", function() {
+  section(0.4, top_y, 2.75, 2.85, "Movement", "pitcher's view, both sides", function() {
     p <- plot_movement(d, hide = hide) |> shrink_layers(0.45)
+    # The app draws with clip off so the arm-angle and extension labels can sit
+    # above the panel, which also lets a steep slot line run on into the title
+    # above. Clipped here, with the panel raised to hold the labels.
+    p$coordinates$limits$y <- c(-22, 26)
+    p$coordinates$clip <- "on"
     # No legend at this size: the pitch codes in both tables carry the colours.
     p <- p + theme(legend.position = "none",
                    text = element_text(size = 7.5), axis.text = element_text(size = 6.5),
                    plot.margin = ggplot2::margin(10, 2, 2, 2))
     draw_plot(p)
   })
-  section(3.35, top_y, 2.35, 2.85, "Release", "catcher's view, both sides", function() {
+  section(3.35, top_y, 2.35, 2.85, "Release", "pitcher's view, both sides", function() {
     draw_plot(plot_release(d, hide = hide))
   })
 
-  usage <- count_usage_tbl(d, hand)
-  if (length(hide)) usage <- filter(usage, !pitch_type %in% hide)
-  # vs LHH and vs RHH sit in front of the count buckets because the side split
-  # is the first thing a coach plans around, and the usage chart that shows it
-  # in the app has no room here. Both sides are shown whatever the selector says.
-  side_share <- function(h) {
-    s <- count_usage_tbl(d, h)
-    s$`All Counts`[match(usage$pitch_type, s$pitch_type)]
-  }
-  u <- data.frame(pitch_type = as.character(usage$pitch_type),
-                  L = side_share("L"), R = side_share("R"), check.names = FALSE)
-  u <- cbind(u, as.data.frame(usage[, -1], check.names = FALSE))
-  pct <- function(x) ifelse(is.na(x), "–", sprintf("%.1f", x))
-  u_cells <- data.frame(lapply(u, function(x) if (is.numeric(x)) pct(x) else x),
-                        check.names = FALSE, stringsAsFactors = FALSE)
-  u_head  <- c("PITCH", "vs LHH", "vs RHH", "ALL", "EARLY", "AHEAD", "BEHIND", "<2K", "2K")
+  both <- identical(hand, "All")
+  pct <- function(x) ifelse(is.na(x), "-", sprintf("%.1f", x))
   # Each bucket shaded by its own share, a light wash so the eye finds the
   # pitch he leans on in each count without reading every number.
-  ramp   <- grDevices::colorRamp(c("#ffffff", "#4a6f9c"))
-  u_fill <- matrix("white", nrow(u), ncol(u))
-  u_col  <- matrix("#1a1a1a", nrow(u), ncol(u))
-  for (j in 2:ncol(u)) {
-    v  <- pmin(1, u[[j]] / 80)
-    ok <- !is.na(v)
-    u_fill[ok, j] <- grDevices::rgb(ramp(v[ok]), maxColorValue = 255)
-    u_col[ok & v > 0.6, j] <- "white"
+  ramp <- grDevices::colorRamp(c("#ffffff", "#4a6f9c"))
+  shade <- function(u) {
+    fill <- matrix("white", nrow(u), ncol(u)); col <- matrix("#1a1a1a", nrow(u), ncol(u))
+    for (j in 2:ncol(u)) {
+      v  <- pmin(1, u[[j]] / 80); ok <- !is.na(v)
+      fill[ok, j] <- grDevices::rgb(ramp(v[ok]), maxColorValue = 255)
+      col[ok & v > 0.6, j] <- "white"
+    }
+    list(cells = data.frame(lapply(u, function(x) if (is.numeric(x)) pct(x) else x),
+                            check.names = FALSE, stringsAsFactors = FALSE),
+         fill = fill, col = col,
+         bold = matrix(names(u) == "All Counts", nrow(u), ncol(u), byrow = TRUE))
   }
-  section(5.95, top_y, 4.65, 2.85, "Usage by count",
-          paste("count columns", hand_txt), function() {
-    grid_table(u_cells, u_head, widths = c(1, 1.15, 1.15, 0.9, 0.95, 0.95, 1, 0.8, 0.8),
-               fill = u_fill, col = u_col, fontsize = 7.5, row_h = unit(0.2, "in"),
-               bold = matrix(names(u_cells) == "All Counts", nrow(u), ncol(u), byrow = TRUE),
-               group_header = list("Overall" = c(2, 3),
-                                   "By count (share of pitches in that count)" = c(4, 9)))
-    n_rows <- nrow(u) + 2
-    grid.text(paste0("Early 0-0, 0-1, 1-0.  Ahead 0-1, 0-2, 1-2, 2-2.  Behind 1-0, 2-0, 3-0, ",
-                     "2-1, 3-1.  Buckets overlap, so rows do not sum to 100."),
-              x = 0, y = unit(1, "npc") - unit(0.2, "in") * (n_rows + 0.6), just = c("left", "top"),
-              gp = gpar(fontsize = 6, col = "#888888"))
-  })
+  side_usage <- function(h) {
+    u <- count_usage_tbl(d, h)
+    if (length(hide)) u <- filter(u, !pitch_type %in% hide)
+    u$pitch_type <- as.character(u$pitch_type)
+    # Early Count left off the sheet by request: 0-0, 0-1 and 1-0 overlap Ahead
+    # and Behind, and the column added width without a separate read.
+    u$`Early Count` <- NULL
+    as.data.frame(u, check.names = FALSE)
+  }
+  # OVERALL, not ALL: it is his usage against that side across every count,
+  # and "ALL" read as a count bucket beside the others.
+  bucket_head <- c("OVERALL", "AHEAD", "BEHIND", "<2K", "2K")
+  side_n <- function(h) format(sum(d$stand == h), big.mark = ",")
+
+  if (both) {
+    # Two tables, one per batter side, because a count plan is a per-side plan:
+    # Ragans' 2K slider is 19% overall and mostly a lefty pitch. Rows are the
+    # pitches he threw to that side, so a pitch he never shows lefties is
+    # absent from the vs LHH table rather than a row of zeroes.
+    uL <- side_usage("L"); uR <- side_usage("R")
+    # Shared row height, sized so both tables fit the box at their own lengths.
+    row_in <- min(0.19, (2.85 - 0.2 - 2 * 0.36) / (nrow(uL) + nrow(uR) + 2))
+    section(5.95, top_y, 4.65, 2.85, "Usage by count",
+            "share of pitches in that count", function() {
+      y <- 0
+      for (h in c("L", "R")) {
+        u <- if (h == "L") uL else uR
+        sh <- shade(u)
+        pushViewport(viewport(y = unit(1, "npc") - unit(y, "in"), just = "top",
+                              height = unit(0.2 + row_in * (nrow(u) + 1), "in")))
+        grid.text(sprintf("%s  \u00b7  %s pitches", hand_label(h), side_n(h)),
+                  x = 0, y = unit(1, "npc"), just = c("left", "top"),
+                  gp = gpar(fontsize = 7.5, fontface = "bold", col = "#1f3a5f"))
+        pushViewport(viewport(y = 0, height = unit(1, "npc") - unit(0.17, "in"), just = "bottom"))
+        if (nrow(u)) {
+          grid_table(sh$cells, c("PITCH", bucket_head), widths = c(1, 1.15, 0.95, 1, 0.8, 0.8),
+                     fill = sh$fill, col = sh$col, bold = sh$bold,
+                     fontsize = 7.5, row_h = unit(row_in, "in"))
+        } else {
+          grid.text("No pitches to this side in the window.", x = 0, y = unit(1, "npc"),
+                    just = c("left", "top"), gp = gpar(fontsize = 7, col = "#888888"))
+        }
+        popViewport(2)
+        y <- y + 0.2 + row_in * (nrow(u) + 1) + 0.16
+      }
+    })
+  } else {
+    usage <- side_usage(hand)
+    # One side selected: vs LHH and vs RHH still sit in front of the count
+    # buckets, because the platoon split is the first thing a coach plans
+    # around and the count columns below describe only the selected side.
+    side_share <- function(h) {
+      s <- count_usage_tbl(d, h)
+      s$`All Counts`[match(usage$pitch_type, as.character(s$pitch_type))]
+    }
+    # The selected side's overall share is already its own column under
+    # Overall, so the OVERALL bucket would print it twice. Dropped here and the
+    # selected side's column is bolded in its place.
+    u <- cbind(data.frame(pitch_type = usage$pitch_type, L = side_share("L"),
+                          R = side_share("R"), check.names = FALSE),
+               usage[, setdiff(names(usage), c("pitch_type", "All Counts"))])
+    sh <- shade(u)
+    sh$bold[, names(u) == hand] <- TRUE
+    section(5.95, top_y, 4.65, 2.85, "Usage by count",
+            paste("count columns", hand_txt), function() {
+      grid_table(sh$cells, c("PITCH", "vs LHH", "vs RHH", bucket_head[-1]),
+                 widths = c(1, 1.15, 1.15, 0.95, 1, 0.8, 0.8),
+                 fill = sh$fill, col = sh$col, bold = sh$bold, fontsize = 7.5,
+                 row_h = unit(0.2, "in"),
+                 group_header = list("Overall" = c(2, 3),
+                                     "By count (share of pitches in that count)" = c(4, 7)))
+    })
+  }
 
   # ---- Middle: characteristics ----
   ch <- report_chars(tbl, ref)
@@ -354,29 +403,63 @@ report_pdf <- function(path, d, hand, hide, tbl, ref, meta) {
   # ---- Bottom: heat maps ----
   hm_y <- mid_y - ch_h - 0.12
   hm_h <- hm_y - 0.3
-  n_types <- length(setdiff(levels(droplevels(d$pitch_type)), hide))
+  side_types <- function(h) {
+    x <- if (h == "All") d else d[d$stand == h, ]
+    length(setdiff(unique(as.character(x$pitch_type)), hide))
+  }
+  # `panel` is the panel edge in inches. The in-panel "Usage 33%  IZ 57%"
+  # label is sized for a one-inch panel and scales down with it, or six
+  # pitches a side push it past the panel edge.
+  hm_plot <- function(h, panel = 1) {
+    p <- plot_heatmap(d, h, hide = hide) |> shrink_layers(0.5 * min(1, panel / 0.85))
+    p + theme(strip.text.x = element_text(face = "bold", size = 8, margin = ggplot2::margin(b = 2)),
+              strip.text.y.left = element_text(face = "bold", size = 8, angle = 90,
+                                               margin = ggplot2::margin(r = 2)),
+              panel.spacing = unit(0.25, "lines"),
+              plot.margin = ggplot2::margin(2, 2, 2, 2))
+  }
   section(0.4, hm_y, 10.2, hm_h, "Location",
-          paste(hand_txt, "· catcher's view · Pre-2K and 2K counts"), function() {
-    p <- plot_heatmap(d, hand, hide = hide) |> shrink_layers(0.5)
-    p <- p + theme(strip.text.x = element_text(face = "bold", size = 8, margin = ggplot2::margin(b = 2)),
-                   strip.text.y.left = element_text(face = "bold", size = 8, angle = 90,
-                                                    margin = ggplot2::margin(r = 2)),
-                   panel.spacing = unit(0.25, "lines"),
-                   plot.margin = ggplot2::margin(2, 2, 2, 2))
-    # Narrower than the box when the arsenal is small, so each panel stays
-    # square at the box's height rather than stretching a two-pitch pitcher.
-    w_in <- min(10.2, (hm_h - 0.35) / 2 * n_types + 0.3)
-    pushViewport(viewport(x = 0, width = unit(w_in, "in"), just = "left"))
-    draw_plot(p)
-    popViewport()
+          paste(if (both) "vs LHH and vs RHH" else hand_txt,
+                "\u00b7 catcher's view \u00b7 Pre-2K and 2K counts"), function() {
+    body_h <- hm_h - 0.2
+    if (!both) {
+      # Narrower than the box when the arsenal is small, so each panel stays
+      # square at the box's height rather than stretching a two-pitch pitcher.
+      w_in <- min(10.2, (body_h - 0.15) / 2 * side_types(hand) + 0.3)
+      pushViewport(viewport(x = 0, width = unit(w_in, "in"), just = "left"))
+      draw_plot(hm_plot(hand, (body_h - 0.15) / 2))
+      popViewport()
+      return(invisible())
+    }
+    # Two blocks side by side, one panel size for both so a lefty panel and a
+    # righty panel read at the same scale. Sized by the wider block, and by
+    # height, whichever binds first.
+    gap <- 0.25; block_w <- (10.2 - gap) / 2
+    n_max <- max(side_types("L"), side_types("R"), 1)
+    panel <- min((body_h - 0.2 - 0.4) / 2, (block_w - 0.35) / n_max)
+    for (k in 1:2) {
+      h <- c("L", "R")[k]
+      x0 <- (k - 1) * (block_w + gap)
+      n  <- side_types(h)
+      grid.text(sprintf("%s  \u00b7  %s pitches", hand_label(h), side_n(h)),
+                x = unit(x0 + 0.27, "in"), y = unit(1, "npc"), just = c("left", "top"),
+                gp = gpar(fontsize = 7.5, fontface = "bold", col = "#1f3a5f"))
+      if (!n) next
+      pushViewport(viewport(x = unit(x0, "in"), y = unit(1, "npc") - unit(0.18, "in"),
+                            width = unit(panel * n + 0.35, "in"),
+                            height = unit(panel * 2 + 0.4, "in"), just = c("left", "top")))
+      draw_plot(hm_plot(h, panel))
+      popViewport()
+    }
   })
 
   # ---- Footer ----
   foot <- c(
     chart_hidden_note(d, hide),
+    "Ahead 0-1, 0-2, 1-2, 2-2. Behind 1-0, 2-0, 3-0, 2-1, 3-1; buckets overlap, so rows do not sum to 100",
     paste("# is the sample behind each row; a number in parentheses is that rate's own",
           "sample (swings, out-of-zone pitches, PA or balls in play) where it is thin."))
-  grid.text(paste(foot, collapse = "  ·  "), x = unit(0.4, "in"), y = unit(0.18, "in"),
-            just = "left", gp = gpar(fontsize = 6, col = "#999999"))
+  grid.text(paste(foot, collapse = "\n"), x = unit(0.4, "in"), y = unit(0.08, "in"),
+            just = c("left", "bottom"), gp = gpar(fontsize = 6, col = "#999999", lineheight = 1.15))
   invisible(path)
 }
