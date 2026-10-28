@@ -358,30 +358,17 @@ report_pdf <- function(path, d, hand, hide, tbl, ref, meta) {
       }
     })
   } else {
-    usage <- side_usage(hand)
-    # One side selected: vs LHH and vs RHH still sit in front of the count
-    # buckets, because the platoon split is the first thing a coach plans
-    # around and the count columns below describe only the selected side.
-    side_share <- function(h) {
-      s <- count_usage_tbl(d, h)
-      s$`All Counts`[match(usage$pitch_type, as.character(s$pitch_type))]
-    }
-    # The selected side's overall share is already its own column under
-    # Overall, so the OVERALL bucket would print it twice. Dropped here and the
-    # selected side's column is bolded in its place.
-    u <- cbind(data.frame(pitch_type = usage$pitch_type, L = side_share("L"),
-                          R = side_share("R"), check.names = FALSE),
-               usage[, setdiff(names(usage), c("pitch_type", "All Counts"))])
+    # One side selected: that side only, the same columns as each table on an
+    # All sheet. A vs RHH column on a vs LHH sheet was there for the platoon
+    # contrast and read as noise on a plan for facing lefties (removed
+    # 2026-10-28); the All sheet is where both sides sit together.
+    u  <- side_usage(hand)
     sh <- shade(u)
-    sh$bold[, names(u) == hand] <- TRUE
     section(5.95, top_y, 4.65, 2.85, "Usage by count",
-            paste("count columns", hand_txt), function() {
-      grid_table(sh$cells, c("PITCH", "vs LHH", "vs RHH", bucket_head[-1]),
-                 widths = c(1, 1.15, 1.15, 0.95, 1, 0.8, 0.8),
+            paste(hand_txt, "\u00b7 share of pitches in that count"), function() {
+      grid_table(sh$cells, c("PITCH", bucket_head), widths = c(1, 1.15, 0.95, 1, 0.8, 0.8),
                  fill = sh$fill, col = sh$col, bold = sh$bold, fontsize = 7.5,
-                 row_h = unit(0.2, "in"),
-                 group_header = list("Overall" = c(2, 3),
-                                     "By count (share of pitches in that count)" = c(4, 7)))
+                 row_h = unit(0.2, "in"))
     })
   }
 
