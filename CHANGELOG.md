@@ -2,6 +2,12 @@
 
 Dated milestones, newest first. Numbers in parentheses are pull requests.
 
+## 2026-10-22 to 10-28: Coach sheet
+
+- Generate report: a one-page coach sheet PDF for the current pitcher, dates and batter side (#30).
+- Both batter sides on an All sheet, and release drawn from the pitcher's view (#31). A one-side sheet shows usage for that side only (#32).
+- Fallback cells no longer carry a marker (#28). Listed heights refreshed (#29).
+
 ## 2026-10-22: Off-season
 
 - Test runner (`tests/run_all.R`) and documentation in `docs/`.

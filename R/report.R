@@ -1,21 +1,8 @@
 # report.R
-#
-# The one-page coach sheet behind the "Generate report" button. One landscape
-# letter page: movement, release and usage by count across the top, the
-# characteristics table in the middle, heat maps along the bottom. The Usage
-# tab's times-through view and the Context tab are left off: a sheet a coach
-# reads in the dugout has room for what a pitch is, how often, and where.
-#
-# Drawn with grid and ggplot2 alone, no gt and no browser. A gt table becomes a
-# PDF only through a headless Chrome (webshot2 / chromote), which shinyapps.io
-# does not have, and patchwork or gridExtra would be a new entry in renv.lock
-# for a layout grid already ships. So the tables here are redrawn by
-# grid_table() below, from the SAME frames and the SAME resolve_table() fills
-# the Characteristics tab renders, which is what keeps the page and the PDF
-# from disagreeing about a number or a colour.
-#
-# Every function takes frames and returns or draws; nothing reads input$ or a
-# file, so the page can be built from the console exactly as the app builds it.
+# The one-page coach sheet behind the "Generate report" button: movement, release, usage by
+# count, the characteristics table and heat maps.
+# Drawn with grid and ggplot2, since a gt table needs a headless Chrome that shinyapps.io lacks.
+# grid_table() redraws the tables from the same frames and fills as the Characteristics tab.
 
 library(grid)
 
@@ -46,15 +33,11 @@ shrink_layers <- function(p, k) {
 #' same side as his arm-side run on the movement chart beside it. It is also
 #' the characteristics table's convention: x is -release_pos_x, exactly the
 #' REL SIDE column (positive toward third, see arsenal_table()), so the axis
-#' and the table agree in sign. Changed 2026-10-27; it was catcher's view.
+#' and the table agree in sign.
 #'
 plot_release <- function(df, hide = character()) {
   pitch_order <- setdiff(levels(df$pitch_type), hide)
-  # Every pitch, drawn small, rather than a usage-weighted sample with a ringed
-  # mean per type: the TruMedia release chart. The spread IS the read here,
-  # whether the types come out of one slot or drift apart, and a mean bubble
-  # covered exactly that. Most-used type drawn first so a rare pitch's dots
-  # land on top instead of under the fastball.
+  # Every pitch, drawn small: the spread is the read. Most-used type first, so rare pitches land on top.
   df <- filter(df, pitch_type %in% pitch_order, !is.na(release_pos_x), !is.na(release_pos_z)) |>
     mutate(rel_side = -release_pos_x,
            pitch_type = factor(as.character(pitch_type), levels = pitch_order)) |>
@@ -200,9 +183,7 @@ report_chars <- function(tbl, ref) {
       fill[ce$row, j] <- ce$fill
       col[ce$row, j]  <- ce$text_color
       bold[ce$row, j] <- identical(ce$font_weight, "bold")
-      # The below-floor denominator, "(2)", is the one marker kept. Without it a
-      # one-start sheet prints GB% 100.0 off two balls in play, filled like any
-      # other cell. The dagger glyphs go, with the legend they point to.
+      # The below-floor denominator, e.g. "(2)", is the only marker kept
       if (startsWith(ce$marker, " (")) cells[[j]][ce$row] <- paste0(cells[[j]][ce$row], ce$marker)
     }
   }
@@ -315,8 +296,7 @@ report_pdf <- function(path, d, hand, hide, tbl, ref, meta) {
     u <- count_usage_tbl(d, h)
     if (length(hide)) u <- filter(u, !pitch_type %in% hide)
     u$pitch_type <- as.character(u$pitch_type)
-    # Early Count left off the sheet by request: 0-0, 0-1 and 1-0 overlap Ahead
-    # and Behind, and the column added width without a separate read.
+    # 0-0, 0-1 and 1-0 overlap Ahead and Behind
     u$`Early Count` <- NULL
     as.data.frame(u, check.names = FALSE)
   }
@@ -326,10 +306,7 @@ report_pdf <- function(path, d, hand, hide, tbl, ref, meta) {
   side_n <- function(h) format(sum(d$stand == h), big.mark = ",")
 
   if (both) {
-    # Two tables, one per batter side, because a count plan is a per-side plan:
-    # Ragans' 2K slider is 19% overall and mostly a lefty pitch. Rows are the
-    # pitches he threw to that side, so a pitch he never shows lefties is
-    # absent from the vs LHH table rather than a row of zeroes.
+    # One table per batter side. Rows are the pitches thrown to that side.
     uL <- side_usage("L"); uR <- side_usage("R")
     # Shared row height, sized so both tables fit the box at their own lengths.
     row_in <- min(0.19, (2.85 - 0.2 - 2 * 0.36) / (nrow(uL) + nrow(uR) + 2))
@@ -358,10 +335,7 @@ report_pdf <- function(path, d, hand, hide, tbl, ref, meta) {
       }
     })
   } else {
-    # One side selected: that side only, the same columns as each table on an
-    # All sheet. A vs RHH column on a vs LHH sheet was there for the platoon
-    # contrast and read as noise on a plan for facing lefties (removed
-    # 2026-10-28); the All sheet is where both sides sit together.
+    # One side selected: that side only, same columns as an All sheet
     u  <- side_usage(hand)
     sh <- shade(u)
     section(5.95, top_y, 4.65, 2.85, "Usage by count",

@@ -109,7 +109,7 @@ The panel has two rows from two sources, kept separate because they support diff
 
 ## Stuff+
 
-Stuff+ grades come from a separate model (v2), built in its own repository: how often a pitch's shape misses bats when swung at, validated on the held-out 2026 season. 100 is the average pitch within its group (fastball: FF, SI, FC; offspeed: CH, FS; hard breaker: SL; soft breaker: ST, SV, CU), and 10 points is one standard deviation within the group. It reads velocity, movement, release point, the gap to the pitcher's hardest fastball, batter side and the gap between movement and spin axis; never the pitch label, count or location.
+Stuff+ grades come from a separate model (v2), built in [its own repository](https://github.com/jbmerlin3/stuff-plus): how often a pitch's shape misses bats when swung at, validated on the held-out 2026 season. 100 is the average pitch within its group (fastball: FF, SI, FC; offspeed: CH, FS; hard breaker: SL; soft breaker: ST, SV, CU), and 10 points is one standard deviation within the group. It reads velocity, movement, release point, the gap to the pitcher's hardest fastball, batter side and the gap between movement and spin axis; never the pitch label, count or location.
 
 The 2026 grades ship as daily sums in `lookups/stuff_v2_2026.csv`, so a grade follows the date window and the batter side selector. "All" weights both batter sides 50/50. A grade compares a pitch with its own group: a 110 sinker and a 110 sweeper are each well above their group, not equally nasty.
 

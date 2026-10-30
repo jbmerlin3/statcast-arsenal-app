@@ -45,7 +45,7 @@ Tracked lookups under `lookups/` change rarely and are refreshed by hand, outsid
 |---|---|
 | `pitcher_heights_2026.csv` | `scripts/build_pitcher_heights.R` |
 | `position_players_2026.csv` | `scripts/build_position_players.R` |
-| `stuff_v2_2026.csv`, `stuff_v2_scale.csv` | exported from the Stuff+ model repository |
+| `stuff_v2_2026.csv`, `stuff_v2_scale.csv` | exported from the [Stuff+ model repository](https://github.com/jbmerlin3/stuff-plus) |
 
 ## Deploy
 
