@@ -2,7 +2,7 @@
 
 **Live app: [jonathanmerlin.shinyapps.io/pitcher-arsenal](https://jonathanmerlin.shinyapps.io/pitcher-arsenal/)** (it sleeps when idle and can take up to a minute to wake)
 
-A Shiny app that shows any pitcher's movement, usage, pitch characteristics and heat maps within major league context, filtered by date range or batter handedness. Its search feature finds pitchers by specific criteria, such as fastballs above 90 mph.
+A Shiny app that shows any pitcher's movement, usage, pitch characteristics and heat maps within major league context, filtered by date range or batter handedness. Its search feature finds pitchers by specific criteria, such as fastballs above 90 mph. A Generate report button downloads a one-page coach sheet PDF for the current pitcher, dates and batter side.
 
 ![Pitch characteristics with league context](docs/screenshot-characteristics.png)
 
@@ -69,7 +69,7 @@ Rscript tests/run_all.R
 
 ```
 app.R          UI and server; logic lives in R/
-R/             data loading, features, league context, tables, plots, search, results
+R/             data loading, features, league context, tables, plots, search, results, report
 scripts/       the data chain, deploy, verification against Savant, local monitoring
 tests/         test files and fixtures; run_all.R runs them
 lookups/       small tracked tables: listed heights, position players, Stuff+ grades
