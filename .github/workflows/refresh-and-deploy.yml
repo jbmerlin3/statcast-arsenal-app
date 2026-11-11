@@ -21,7 +21,11 @@ concurrency:
 
 jobs:
   chain:
-    runs-on: ubuntu-latest
+    # Pinned. ubuntu-latest moved to 26.04 on 2026-11-03. There renv built
+    # packages from source, `later` 1.4.4 failed to compile (pthread_once_t
+    # clash with the newer system headers), and shiny failed with it. Every
+    # run from then to 2026-11-11 died in setup. Move to 26.04 deliberately.
+    runs-on: ubuntu-24.04
     # Up to 7 attempts 20 minutes apart while waiting for Savant
     timeout-minutes: 240
 
