@@ -2,6 +2,8 @@
 #   after the season and fully held: no request
 #   after the season but short: one request ending on the last day
 #   during the season: the request runs to the date asked
+#   after the season, a sweep (repull_days above the daily 21): one request
+#   reaching back, ending on the last day
 suppressMessages({library(dplyr); library(purrr)})
 invisible(lapply(sort(list.files("R", full.names = TRUE)), source))
 suppressMessages(source("scripts/update_data.R"))
@@ -29,9 +31,10 @@ store_ending <- function(last) {
                      stringsAsFactors = FALSE), path)
   path
 }
-run <- function(last, through) {
+run <- function(last, through, repull_days = 7) {
   calls <<- list()
-  out <- suppressMessages(refresh_store(store_ending(last), through = as.Date(through), repull_days = 7))
+  out <- suppressMessages(refresh_store(store_ending(last), through = as.Date(through),
+                                        repull_days = repull_days))
   list(out = out, calls = calls)
 }
 
@@ -43,6 +46,17 @@ expect("day after, store complete: no Savant request", length(r$calls), 0L)
 expect("day after, store complete: store returned unchanged", nrow(r$out), 3L)
 r <- run("2026-09-27", "2026-11-15")
 expect("mid-November, store complete: no Savant request", length(r$calls), 0L)
+
+r <- run("2026-09-27", "2026-11-15", repull_days = 21)
+expect("mid-November, daily 21-day window: still no Savant request", length(r$calls), 0L)
+
+r <- run("2026-09-27", "2026-11-15", repull_days = 200)
+expect("mid-November sweep of 200: one request", length(r$calls), 1L)
+expect("sweep starts at the store's first day",
+       unname(r$calls[[1]]["start"]), "2026-09-25")
+expect("sweep ends on the last day, not in November",
+       unname(r$calls[[1]]["end"]), "2026-09-27")
+expect("sweep with nothing returned leaves the store as it was", nrow(r$out), 3L)
 
 r <- run("2026-09-25", "2026-10-03")
 expect("store short of the last day: one request", length(r$calls), 1L)

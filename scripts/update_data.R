@@ -122,6 +122,13 @@ REPULL_DAYS <- as.integer(Sys.getenv("REPULL_DAYS", "7"))
 # Last regular-season day; no Savant requests after it
 SEASON_LAST_DAY <- as.Date("2026-09-27")
 
+# The in-season re-pull window (the workflow default). A run asking for more is a
+# deliberate sweep and still pulls after the season, ending on SEASON_LAST_DAY.
+# Added 2026-11-12: the store still held old labels on 1,901 pitches Savant had
+# relabeled outside the re-pull window, and the freeze blocked the 200-day sweep
+# meant to bring them in.
+DAILY_REPULL_DAYS <- 21L
+
 #' Pull new days plus the re-pull window and fold them into the store, deduped on
 #' game_pk / at_bat_number / pitch_number. Fails if games were played but the store
 #' did not advance.
@@ -139,7 +146,8 @@ refresh_store <- function(store_path = STORE_PATH, through = baseball_today(),
   }
 
   message("Store holds ", format(nrow(sc), big.mark = ","), " rows through ", last)
-  if (as.Date(through) > SEASON_LAST_DAY && as.Date(last) >= SEASON_LAST_DAY) {
+  sweep <- repull_days > DAILY_REPULL_DAYS
+  if (!sweep && as.Date(through) > SEASON_LAST_DAY && as.Date(last) >= SEASON_LAST_DAY) {
     message("Regular season ended ", SEASON_LAST_DAY, " and the store holds it through ",
             last, ". No pull until next season.")
     return(refresh_derived(sc))
